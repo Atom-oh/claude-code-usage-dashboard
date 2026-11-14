@@ -6,7 +6,7 @@
   <title>构建并部署完整服务 — ccdash</title>
   <meta name="description" content="克隆源代码，构建仪表板镜像，准备 ClickHouse 数据库模式和 OTel Collector，然后选择 EKS、ECS、EC2，或将应用适配到 Lambda 运行时。" />
   <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="../installation.html" />
   <link rel="alternate" hreflang="ko" href="../ko/installation.html" />
   <link rel="alternate" hreflang="ja" href="../ja/installation.html" />
@@ -145,8 +145,8 @@ docker run -d --name ccdash --restart unless-stopped \
 <tr><td>Lambda</td><td>将 HTTP 应用移植到兼容 Lambda 的运行时/适配器。让 ClickHouse 和采集 Collector 继续运行在持久化外部服务上。</td><td>当前 Docker 镜像会启动 Express，但没有 Lambda handler/runtime 集成。未提供现成的 Lambda 部署方案。适配后请验证身份验证 Cookie、流式传输/chat、超时、网络和设备采集；仅选择 Lambda 并不会安装此技术栈。</td></tr>
 </tbody></table></div>
 <p>官方平台参考资料：<a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html">EC2</a> · <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html">ECS/Fargate 任务定义</a> · <a href="https://docs.aws.amazon.com/eks/latest/userguide/sample-deployment.html">EKS 应用部署</a> · <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Lambda 镜像/运行时要求</a>。</p></section>
-<section id="trace"><h2>5. 连接客户端日志、指标和跟踪数据</h2>
-<p>后端运行后，为每个客户端配置本地 Collector 和导出器目标地址。对于设备接入路径，分析师/管理员可在已部署的仪表板中注册设备。选择设备平台并完成注册，然后复制安装命令。终端会提示输入遥测归属 ID 和设备令牌；命令中不会嵌入令牌。必须先安装后端并签发设备令牌。</p>
+<section id="trace"><h2>5. 连接客户端日志、指标和追踪</h2>
+<p>后端正常工作后，请为每个客户端配置本地 Collector 和导出器目标。对于设备安装方式，分析师/管理员可以在已部署的仪表板中注册设备。选择设备平台并完成注册，然后复制安装命令。终端会要求输入遥测归属 ID 和设备令牌；令牌不会嵌入命令中。此操作需要已安装的后端和已签发的设备令牌。</p>
 <h3>设备安装</h3><h4>macOS</h4>
 <pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
 curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
@@ -154,14 +154,14 @@ curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
 <pre><code class="language-bash">: "${CCDASH_DASHBOARD_URL:?Set the deployed HTTPS dashboard origin}"
 sudo loginctl enable-linger "$USER" &amp;&amp;
   curl -fsSL "$CCDASH_DASHBOARD_URL/api/ingest/install.sh" | sh</code></pre>
-<p>脚本使用设备 bearer token 下载软件包，然后通过私有令牌文件调用安装程序。设备令牌不能用于交互式仪表板登录。</p>
-<h3>手动源码安装备用方案</h3><pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
+<p>脚本会使用设备持有者令牌下载软件包，然后通过私有令牌文件调用安装程序。设备令牌不能用于交互式仪表板登录。</p>
+<h3>手动源代码备用安装方式</h3><pre><code class="language-bash">: "${CCDASH_INGEST_ENDPOINT:?Set the deployed HTTPS dashboard URL ending in /api/ingest}"
 : "${CCDASH_USER_ID:?Set the intended telemetry attribution ID}"
 python3 dashboard/collector/install.py install \
   --endpoint "$CCDASH_INGEST_ENDPOINT" --user-id "$CCDASH_USER_ID"</code></pre>
-<p>安装程序要求 macOS/Linux 上安装 Python 3.9+，并会以私密方式提示输入令牌。在 Linux 上，运行 <code>sudo loginctl enable-linger "$USER"</code> 以便在注销/重启后保持服务运行，然后以普通用户身份安装。它会下载并验证 Collector 二进制文件；此命令不会配置仪表板、数据库或中央接收器。设备所有者不会自动成为遥测中报告的身份。</p>
-<ul><li>Claude Code： <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> 和 <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>， <code>OTEL_TRACES_EXPORTER=otlp</code>，本地 OTLP gRPC 目标端口为 4317。</li><li>Codex：单独的 <code>[otel]</code> <code>exporter</code>， <code>metrics_exporter</code> 和 <code>trace_exporter</code> 条目；本地 OTLP HTTP 目标端口为 4318，以及 <code>log_user_prompt=false</code>。</li></ul>
-<p>重启两个客户端，生成新工作，然后按 <a href="index.html#task-trace">用户 → 所选时间范围 → 任务 → Task Trace</a>进行查看。早先的活动不会回填到跟踪数据中。要查看 Codex 诊断跨度，请打开 Analytics 的 Trace 选项卡。</p></section>
+<p>安装程序需要 macOS/Linux 上的 Python 3.9+，并会以私密方式提示输入令牌。在 Linux 上，运行 <code>sudo loginctl enable-linger "$USER"</code>，以便服务在注销或重启后继续运行，然后以普通用户身份安装。程序会下载并验证 Collector 二进制文件；此命令不会配置仪表板、数据库或中央接收器。设备所有者不会自动成为已发出的遥测数据身份。</p>
+<ul><li>Claude Code：<code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> 和 <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code>、<code>OTEL_TRACES_EXPORTER=otlp</code>，本地 OTLP gRPC 目标端口为 4317。</li><li>Codex：分别配置 <code>[otel]</code> 下的 <code>exporter</code>、<code>metrics_exporter</code> 和 <code>trace_exporter</code>；本地 OTLP HTTP 目标端口为 4318，并设置 <code>log_user_prompt=false</code>。</li></ul>
+<p>重启两个客户端并生成新工作，然后依次查看<a href="index.html#task-trace">用户 → 所选时间范围 → 任务 → 任务追踪</a>。此前的活动不会回填到追踪数据中。若要查看 Codex 诊断 Span，请打开 Analytics 的 Trace 选项卡。</p></section>
 <section id="migration"><h2>现有设备和数据库</h2><p>设备迁移期间，请保留客户端私有备份和导出器队列。请遵循受支持的 macOS/Linux 迁移流程，不要停止未知服务。数据库升级依照数据库模式运行手册单独执行，与客户端安装和应用上线分开进行。</p><p><a href="https://github.com/Atom-oh/claude-code-usage-dashboard/blob/main/dashboard/collector/README.md">源代码安装程序和迁移指南</a></p></section>
 <section id="verify"><h2>6. 验证每个边界</h2><ol><li>检查 <code>/healthz</code> 和由 ClickHouse 支持的 <code>/readyz</code>，然后进行身份验证并查看安装/数据库模式诊断信息。</li><li>确认预期表、迁移账本、视图、数据库授权和 Collector 写入成功；数据库模式存在本身并不能证明历史数据已就绪。</li><li>生成新的客户端活动，并验证其以预期身份存储了日志、指标和追踪。Collector 进程运行或设备收到回执，都不能证明数据已持久化。</li><li>检查所选用户的用量和 Task Trace。Codex 追踪/指标观测数据仅用于诊断，不能再计入一份成本总额。</li></ol><p><a href="operations.html#traces">追踪故障排查</a> · <a href="api.html#tasks">API 范围限制</a></p></section>
 <section id="workshops"><h2>由组织者准备的 Workshop</h2><p>已准备好的 Workshop 有自己的客户端和 Collector 生命周期。参与者使用已配置的环境；他们无需部署第二套后端，也无需在已准备好的服务上再安装一个 Collector。组织者必须先提供数据库模式、密钥目标位置和引导资源，然后才能使用 <code>user-data.sh</code>。</p></section>

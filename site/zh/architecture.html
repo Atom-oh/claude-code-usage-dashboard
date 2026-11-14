@@ -6,7 +6,7 @@
   <title>采集与查询管道 — ccdash</title>
   <meta name="description" content="了解 Claude Code 和 Codex 信号如何从采集流向用户任务、智能体泳道，以及与任务完成记录关联的成本。" />
   <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="../architecture.html" />
   <link rel="alternate" hreflang="ko" href="../ko/architecture.html" />
   <link rel="alternate" hreflang="ja" href="../ja/architecture.html" />
@@ -27,7 +27,7 @@
       <p class="caption">更新于 2026 年 11 月 14 日 · 描述源代码行为；请核实你安装的版本。</p>
     </div>
     <section id="task-traces"><h2>关联用户、任务与span</h2>
-<p>用户详情会选择一个确切的遥测身份和趋势时间桶。<code>/api/users/tasks</code>会列出在该时间桶内开始的任务；<code>/api/users/tasks/detail</code>会返回所选任务的泳道、span 以及基于证据的成本说明。</p>
+<p>用户详情会选择精确的遥测身份和时间范围。<code>/api/users/tasks</code>会列出在有效范围内开始的任务；拖动使用量图表可缩小范围，而单击数据点可选择一个区间。<code>/api/users/tasks/detail</code>会返回所选任务的轨道、Span 和基于证据的成本说明。</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="任务追踪数据来源"><table>
   <thead><tr><th scope="col">客户端</th><th scope="col">任务与计时</th><th scope="col">用量与成本</th></tr></thead>
   <tbody>

@@ -6,7 +6,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { apiResponse, from, to } from "./fixtures.mjs";
+import { apiResponse, from, to, task } from "./fixtures.mjs";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const require = createRequire(path.join(root, "dashboard/web/package.json"));
@@ -101,7 +101,7 @@ try {
   await page.getByText("작업 목록 · 상위 20개", { exact: true }).waitFor();
   await capture("user-tasks-en.png", card("사용량·비용 추이"));
   await capture("task-list-en.png", card("작업 목록 · 상위 20개"));
-  await card("작업 목록 · 상위 20개").getByText("claude-sonnet-5-5", { exact: true }).first().click();
+  await card("작업 목록 · 상위 20개").getByText(task.models.join(", "), { exact: true }).first().click();
   const dialog = page.getByRole("dialog", { name: "작업 상세" });
   await page.getByRole("region", { name: "세션 환경" }).waitFor();
   await capture("task-trace-overview-en.png", dialog);

@@ -10,9 +10,9 @@ const usage = { client: "claude", backend: "anthropic", model: "claude-sonnet-5-
   cost_basis: "client_reported", cost_partial: false, tokens_partial: false, unpriced: 0,
   sessions: 4, users: 1, requests: 18, api_errors: 0, tool_calls: 12, tool_errors: 0 };
 export const task = { id: taskId, client: "claude", started_at: "2026-11-13T03:00:00.000Z",
-  duration_ms: 120000, duration_basis: "interaction_span", models: ["claude-sonnet-5-5"],
+  duration_ms: 120000, duration_basis: "interaction_span", models: ["claude-sonnet-5-5", "claude-haiku-5-5"],
   llm_calls: 3, subagents: 2, tokens: { ...tokens(300, 9000, 600, 900), observed_tokens: 10800, tokens_partial: false },
-  cost_usd: 2.5, cost_partial: false, cost_basis: "client_reported",
+  cost_usd: 2.5, cost_partial: false, cost_basis: "mixed",
   workflows: [{ run_id: "demo-run", name: "docs-refresh" }] };
 export const detail = {
   task, lanes: [
@@ -52,10 +52,10 @@ export const detail = {
       { name: "search", status: "failed" },
     ] },
     plugins: { count: 8, skills: 12, agents: 4, commands: 9, with_mcp: 2, counts_partial: false } },
-  why: [{ rule: "cache_read_share", value: 0.83 },
+  why: [{ rule: "cache_read_share", value: 9000 / 10800 },
     { rule: "top_lane_share", value: { lane: "agent-a", share: 0.5 } },
     { rule: "most_expensive_call", value: { span: "llm-2", cost_usd: 1.25 } },
-    { rule: "retries", value: 0 }],
+    { rule: "permission_wait", value: 400 }],
 };
 
 export function apiResponse(url) {

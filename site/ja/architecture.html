@@ -6,7 +6,7 @@
   <title>収集とクエリのパイプライン — ccdash</title>
   <meta name="description" content="Claude Code と Codex のシグナルが、収集からユーザータスク、エージェントレーン、完了に紐づくコストへとつながる流れを確認します。" />
   <link rel="stylesheet" href="../assets/site.css" />
-  <link rel="icon" type="image/png" href="../assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="../architecture.html" />
   <link rel="alternate" hreflang="ko" href="../ko/architecture.html" />
   <link rel="alternate" hreflang="ja" href="architecture.html" />
@@ -27,7 +27,7 @@
       <p class="caption">2026年11月14日更新 · ソースコードの動作を説明しています。インストール済みのリビジョンをご確認ください。</p>
     </div>
     <section id="task-traces"><h2>ユーザー、タスク、spanを関連付ける</h2>
-<p>ユーザー詳細では、正確なテレメトリ ID とトレンドのバケットを選択します。<code>/api/users/tasks</code> はそのバケット内で開始したタスクを一覧表示し、<code>/api/users/tasks/detail</code> は選択したタスクのレーン、span、根拠に基づくコストの説明を返します。</p>
+<p>ユーザー詳細では、正確なテレメトリー ID と時間範囲を選択します。<code>/api/users/tasks</code> は有効範囲内に開始するタスクを一覧表示します。利用状況グラフをドラッグすると範囲が絞り込まれ、ポイントをクリックすると1つのバケットが選択されます。<code>/api/users/tasks/detail</code> は選択したタスクのレーン、スパン、根拠に基づくコストの説明を返します。</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace のデータソース"><table>
   <thead><tr><th scope="col">クライアント</th><th scope="col">タスクとタイミング</th><th scope="col">使用量とコスト</th></tr></thead>
   <tbody>

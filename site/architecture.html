@@ -6,7 +6,7 @@
   <title>The collection and query pipeline — ccdash</title>
   <meta name="description" content="Follow Claude Code and Codex signals from collection to user tasks, agent lanes and completion-linked cost." />
   <link rel="stylesheet" href="assets/site.css" />
-  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg" />
   <link rel="alternate" hreflang="en" href="architecture.html" />
   <link rel="alternate" hreflang="ko" href="ko/architecture.html" />
   <link rel="alternate" hreflang="ja" href="ja/architecture.html" />
@@ -27,7 +27,7 @@
       <p class="caption">Updated November 14, 2026 · Describes source behavior; verify your installed revision.</p>
     </div>
     <section id="task-traces"><h2>Connect a user, task and span</h2>
-<p>User detail selects an exact telemetry identity and a trend bucket. <code>/api/users/tasks</code> lists tasks starting in that bucket; <code>/api/users/tasks/detail</code> returns the selected task's lanes, spans and evidence-based cost explanations.</p>
+<p>User detail selects an exact telemetry identity and time range. <code>/api/users/tasks</code> lists tasks starting in the effective range; dragging the usage chart narrows the range, while clicking a point selects one bucket. <code>/api/users/tasks/detail</code> returns the selected task's lanes, spans and evidence-based cost explanations.</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Task Trace data sources"><table>
   <thead><tr><th scope="col">Client</th><th scope="col">Task and timing</th><th scope="col">Usage and cost</th></tr></thead>
   <tbody>

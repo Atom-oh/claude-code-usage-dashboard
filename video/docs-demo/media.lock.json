@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "Atom-oh/claude-code-usage-dashboard",
-  "commit": "ba85b014b7e98715348fde39380b0fbcbaca59b9",
+  "commit": "c775db6d46f66b19587260088e2b3ee815b1342d",
   "files": [
     {
       "path": "site/assets/img/call-detail-en.png",
@@ -30,18 +30,18 @@
     },
     {
       "path": "site/assets/img/task-list-en.png",
-      "bytes": 89453,
-      "sha256": "5136905bf634c2976ef03900a1b520535ef9769e539abc970b19984ff779d1cc"
+      "bytes": 94374,
+      "sha256": "036847367cade22d0e9d4a562cc0ebd7889cfce0a41c8fa28650c222edf330e3"
     },
     {
       "path": "site/assets/img/task-trace-en.png",
-      "bytes": 436803,
-      "sha256": "d565087fe413d1f6ac53dc8564b60ae3fbadc54f74542cbd9b52733205371066"
+      "bytes": 441019,
+      "sha256": "44c6f5e158da7a464d3f75ccfeda7bde50ca670e424d1134a5326c36faaaa1d7"
     },
     {
       "path": "site/assets/img/task-trace-model-en.png",
-      "bytes": 416704,
-      "sha256": "12b96f9659a5374b64c9cec79289933ef86991aec03e432b2c40469285cc910c"
+      "bytes": 419292,
+      "sha256": "2eaf1f805f38248427cb57d2931648bcb659196c4c409d1410f4f69347cd13ec"
     },
     {
       "path": "site/assets/img/task-trace-model-table-en.png",
@@ -50,13 +50,13 @@
     },
     {
       "path": "site/assets/img/task-trace-overview-en.png",
-      "bytes": 422769,
-      "sha256": "fe900a700606400922a50c7a42751d76ab297e37907f53090366200a60cdc322"
+      "bytes": 426843,
+      "sha256": "c9948ab5c848c2f6c580a996da0cd15f31266791b4c2ec781f511d06f3c13e36"
     },
     {
       "path": "site/assets/img/task-trace.png",
-      "bytes": 379951,
-      "sha256": "0a0e42e971f463ec07a77258d58b1a47ba28b31440a43fb2813e1fa281b16b2e"
+      "bytes": 382529,
+      "sha256": "d15e110a4f8a680a01c8ef1ecce666e412601d19d175af7c3dd2dae48c17dfe9"
     },
     {
       "path": "site/assets/img/time-range-en.png",
@@ -75,13 +75,13 @@
     },
     {
       "path": "site/assets/video/dashboard-demo-en-20261114.mp4",
-      "bytes": 4192206,
-      "sha256": "2f8195a1f2ecc489c8ee39b81e3d2c529f84f61d362bda5930c0c8414e729cd4"
+      "bytes": 4208464,
+      "sha256": "45610479e426c285fc0c215faa1f02f0dc19fb7eb949a361f0f3669f7d814524"
     },
     {
       "path": "site/assets/video/dashboard-demo-en-20261114.webm",
-      "bytes": 2744037,
-      "sha256": "60e8785bcf8dc7ac8b37aee5ad11f2b89f382f8683a69b3ad77968581464e882"
+      "bytes": 2753080,
+      "sha256": "16c49cde68fb254ce8907b2beb79002cf9a821f0b8b85c28f186747de318be8f"
     },
     {
       "path": "video/docs-demo/remotion/public/background.wav",
@@ -120,8 +120,8 @@
     },
     {
       "path": "video/docs-demo/remotion/public/visual-base.mp4",
-      "bytes": 3719732,
-      "sha256": "8b80451af7dde63f9b4f6ab7044f5e89d3acc599dba215d6f06aa7892c59e5e7"
+      "bytes": 3735646,
+      "sha256": "fa72e98247125afe0627bd9964d9deff0df56a74b6204eecd8c0d65e8aae0a23"
     },
     {
       "path": "video/docs-demo/runtime/NotoSans.ttf",

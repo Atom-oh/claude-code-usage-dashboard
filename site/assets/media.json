@@ -30,10 +30,10 @@
     {
       "name": "task-trace.png",
       "path": "img/task-trace.png",
-      "bytes": 379951,
-      "sha256": "0a0e42e971f463ec07a77258d58b1a47ba28b31440a43fb2813e1fa281b16b2e",
+      "bytes": 382529,
+      "sha256": "d15e110a4f8a680a01c8ef1ecce666e412601d19d175af7c3dd2dae48c17dfe9",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "Original Korean UI",
@@ -45,10 +45,10 @@
     {
       "name": "task-trace-overview-en.png",
       "path": "img/task-trace-overview-en.png",
-      "bytes": 422769,
-      "sha256": "fe900a700606400922a50c7a42751d76ab297e37907f53090366200a60cdc322",
+      "bytes": 426843,
+      "sha256": "c9948ab5c848c2f6c580a996da0cd15f31266791b4c2ec781f511d06f3c13e36",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -60,10 +60,10 @@
     {
       "name": "task-trace-en.png",
       "path": "img/task-trace-en.png",
-      "bytes": 436803,
-      "sha256": "d565087fe413d1f6ac53dc8564b60ae3fbadc54f74542cbd9b52733205371066",
+      "bytes": 441019,
+      "sha256": "44c6f5e158da7a464d3f75ccfeda7bde50ca670e424d1134a5326c36faaaa1d7",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -75,10 +75,10 @@
     {
       "name": "task-trace-model-en.png",
       "path": "img/task-trace-model-en.png",
-      "bytes": 416704,
-      "sha256": "12b96f9659a5374b64c9cec79289933ef86991aec03e432b2c40469285cc910c",
+      "bytes": 419292,
+      "sha256": "2eaf1f805f38248427cb57d2931648bcb659196c4c409d1410f4f69347cd13ec",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -93,7 +93,7 @@
       "bytes": 56751,
       "sha256": "247ed6286b0658929e0eaa6377b8bfd59948c0006cf7040844e4c8d0b8e2afdb",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -108,7 +108,7 @@
       "bytes": 70540,
       "sha256": "aa65116484fce80ed201646d386ebca6d871b93ae51f467342a59e69d053ea8e",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskSpanPanel.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -123,7 +123,7 @@
       "bytes": 140010,
       "sha256": "3a95ee31f65150a20ed41b745409fa18e4db512b25ff0ed44b009a5f582daf8c",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/pages/CollectorSetup.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -138,7 +138,7 @@
       "bytes": 63727,
       "sha256": "61b59f4a8286ffc61edd20db3be73b4af71936dc161f87d9bc5ce4ba87d32730",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTraceOverlay.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -153,7 +153,7 @@
       "bytes": 28293,
       "sha256": "6e12e575c27aa7e04072a5abba6f2bb58b3a6bd39e4c0dd524409d68fd19932f",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskTimeline.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -165,10 +165,10 @@
     {
       "name": "task-list-en.png",
       "path": "img/task-list-en.png",
-      "bytes": 89453,
-      "sha256": "5136905bf634c2976ef03900a1b520535ef9769e539abc970b19984ff779d1cc",
+      "bytes": 94374,
+      "sha256": "036847367cade22d0e9d4a562cc0ebd7889cfce0a41c8fa28650c222edf330e3",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/TaskList.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -183,7 +183,7 @@
       "bytes": 38588,
       "sha256": "186ed8b2974e5e856bf1750a579ee8047d65c30c911f1757eece03968cc39e30",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/DateRangePopover.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -198,7 +198,7 @@
       "bytes": 89531,
       "sha256": "6365fd98e947c9343b3742462565ebc19f25f422a0300d52437feac82cb51d01",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/pages/TokenEconomics.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -213,7 +213,7 @@
       "bytes": 158077,
       "sha256": "dc11243b6bea0d28cb83206ba004895bc7fd3a000cd74474e806e4fe445176c5",
       "capture_date": "2026-11-14",
-      "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+      "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
       "component": "dashboard/web/src/components/ClientTrend.jsx",
       "fixture_source": "video/docs-demo/capture/fixtures.mjs",
       "display_translation": "openai.gpt-6-luna translated display text; see capture/translation.json for the correction log.",
@@ -227,9 +227,9 @@
   "current_demo": {
     "created_date": "2026-11-14",
     "language": "en",
-    "source_revision": "af9b245a12ebcedca535a74687823623dde9459b",
+    "source_revision": "d4a3553332fd869c0a874b09ad85c1f5062695ce",
     "composition": "video/docs-demo/index.html",
-    "source_state": "Current React source captured with capture/fixtures.mjs; new composition and media identified by file hashes.",
+    "source_state": "v1.8.0 React source; corrected synthetic task cost basis, models and missing-attempt evidence. Capture and composition source hashes identify the rendered state.",
     "duration_seconds": 48,
     "format": "1920x1080 H.264/AAC MP4 and VP9/Opus WebM, 24 fps, 1152 video frames, English narration and original background music",
     "render": {
@@ -244,20 +244,20 @@
       "react": "18.3.1",
       "audio_delivery": "Remotion WAV mix, FFmpeg AAC/Opus encoding; preserved Remotion-rendered video frames",
       "capture_mode": "screenshot",
-      "visual_render_seconds": 38.4
+      "visual_render_seconds": 43.0
     },
     "privacy": "Actual React screens using synthetic fixtures with Luna-translated English display labels; no production telemetry.",
     "validation": "HyperFrames strict check passed at all six scene midpoints, with 41/41 overlay contrast checks. Both encodes fully decode to 1152 frames at 1920x1080, 24 fps, with AAC/Opus audio. Six decoded MP4 midpoints were visually inspected and compared with snapshots. Audio tests confirm complete speech fit, ducking and exact VTT text/timing. Browser checks cover 24 pages at desktop/mobile sizes, 144 locale links, and all four players using automatic WebM fallback plus direct WebM playback. This Chromium build does not support H.264/AAC playback; MP4 is verified by FFmpeg, not browser playback.",
     "files": [
       {
         "path": "video/dashboard-demo-en-20261114.mp4",
-        "bytes": 4192206,
-        "sha256": "2f8195a1f2ecc489c8ee39b81e3d2c529f84f61d362bda5930c0c8414e729cd4"
+        "bytes": 4208464,
+        "sha256": "45610479e426c285fc0c215faa1f02f0dc19fb7eb949a361f0f3669f7d814524"
       },
       {
         "path": "video/dashboard-demo-en-20261114.webm",
-        "bytes": 2744037,
-        "sha256": "60e8785bcf8dc7ac8b37aee5ad11f2b89f382f8683a69b3ad77968581464e882"
+        "bytes": 2753080,
+        "sha256": "16c49cde68fb254ce8907b2beb79002cf9a821f0b8b85c28f186747de318be8f"
       },
       {
         "path": "video/dashboard-demo-en-20261114.vtt",
@@ -267,9 +267,7 @@
       {
         "path": "img/docs-demo-en-poster.jpg",
         "bytes": 129259,
-        "sha256": "912cdaae9b84fe490545e61031f42d08b8f2e769f2030f268dc4e6471432138b",
-        "width": 1920,
-        "height": 1080
+        "sha256": "912cdaae9b84fe490545e61031f42d08b8f2e769f2030f268dc4e6471432138b"
       }
     ],
     "runtime_assets": [
@@ -342,28 +340,28 @@
       },
       {
         "path": "video/docs-demo/capture/fixtures.mjs",
-        "bytes": 7589,
-        "sha256": "e79345112b0489cbb474256e6f1a4e91db7f19e9e622cdf974e37ca1f94cba2f"
+        "bytes": 7617,
+        "sha256": "2843e958f8e7dbf600d9a4848dab5ffb185a5337f381f8e3dd5129ff181494d6"
       },
       {
         "path": "video/docs-demo/capture/capture.mjs",
-        "bytes": 8474,
-        "sha256": "2c1fd70ebd8c67462f43759698644f718ecc8af9dbeae3cd25ae3e158437fa6f"
+        "bytes": 8483,
+        "sha256": "343c2ac366b8628829f1ae97deb38b97312b00722c48cce15b9cdd2acd3f2114"
       },
       {
         "path": "video/docs-demo/capture/labels.en.json",
-        "bytes": 32661,
-        "sha256": "7743509ea8ebea8ed9447173bcd03295145b4dc9ef32efeae278cf647e877dae"
+        "bytes": 32745,
+        "sha256": "00faeaa82ff105b627f3ae1527d96f6b1f3f490771b24af4296d7573d442a30c"
       },
       {
         "path": "video/docs-demo/capture/translation.json",
-        "bytes": 895,
-        "sha256": "dae93e5287894d82dd1a49feda1d91de2c7739fb288a3de25fb93677468871a5"
+        "bytes": 1784,
+        "sha256": "e23d9a6f705559555e24dd7a60aee500a83151c872eabaf1869af9455d149c97"
       },
       {
         "path": "video/docs-demo/capture/evidence.json",
         "bytes": 1282,
-        "sha256": "f1bbebfadccf8141c2b22cd8a96624e8374fc2f640229349239d5f3f082d17c7"
+        "sha256": "4a177bbe6532f5bea7a11afd4bcba196af319ddc34f9be1d857fb2ffd1b9183c"
       }
     ],
     "webm_encoding": {
@@ -433,22 +431,9 @@
     ],
     "visual_base": {
       "path": "video/docs-demo/remotion/public/visual-base.mp4",
-      "bytes": 3719732,
-      "sha256": "8b80451af7dde63f9b4f6ab7044f5e89d3acc599dba215d6f06aa7892c59e5e7",
-      "origin_commit": "ba85b014b7e98715348fde39380b0fbcbaca59b9"
-    },
-    "content_review": {
-      "reviewer": "aws-content-plugin/content-review-agent via Claude CLI",
-      "date": "2026-11-10",
-      "verdict": "PASS",
-      "score": 90,
-      "max_score": 90,
-      "normalized_score_100": 100,
-      "critical_count": 0,
-      "warning_count": 0,
-      "scope": "Source-only final correction review with prior unchanged coverage; coordinator performed final audiovisual/browser checks.",
-      "report_repository_path": "video/docs-demo/results/Narration_Review_Report.md",
-      "report_sha256": "7c65e3671fa958b27dc6cfb50a3f6c789c401851503eaecf242e480a006a169a"
+      "bytes": 3735646,
+      "sha256": "fa72e98247125afe0627bd9964d9deff0df56a74b6204eecd8c0d65e8aae0a23",
+      "origin_commit": "c775db6d46f66b19587260088e2b3ee815b1342d"
     },
     "encoded_verification": {
       "encodes": [
@@ -513,8 +498,8 @@
   },
   "delivery": {
     "manifest_repository_path": "video/docs-demo/media.lock.json",
-    "snapshot_commit": "ba85b014b7e98715348fde39380b0fbcbaca59b9",
-    "snapshot_tag": "docs-media-20261114-narrated",
+    "snapshot_commit": "c775db6d46f66b19587260088e2b3ee815b1342d",
+    "snapshot_tag": "docs-media-20261114-narrated-r2",
     "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
   },
   "previous_demo": {
@@ -522,6 +507,19 @@
     "snapshot_commit": "d71dd1c2b81227d5982b425228df594d7401ef3c",
     "snapshot_tag": "docs-media-20261110-narrated",
     "source_revision": "8ee4b3e6d213cf7b2bc007e0a3aa67ace185bf14",
-    "scope": "Historical November 10 delivery; review scores and validation do not apply to the replacement."
+    "scope": "Historical November 10 delivery; review scores and validation do not apply to the replacement.",
+    "content_review": {
+      "reviewer": "aws-content-plugin/content-review-agent via Claude CLI",
+      "date": "2026-11-10",
+      "verdict": "PASS",
+      "score": 90,
+      "max_score": 90,
+      "normalized_score_100": 100,
+      "critical_count": 0,
+      "warning_count": 0,
+      "scope": "Historical November 10 source review only; no score applies to the November 14 replacement.",
+      "report_repository_path": "video/docs-demo/results/Narration_Review_Report.md",
+      "report_sha256": "020274d94acf9ac3f044c988f353fdf55a5c055749053ea8907aad010692ad5e"
+    }
   }
 }

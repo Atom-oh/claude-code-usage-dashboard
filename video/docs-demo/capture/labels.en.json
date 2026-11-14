@@ -335,5 +335,7 @@
   "활성 사용자": "Active users",
   "활성일": "Active days",
   "활용·비용 요약": "Usage · cost summary",
-  "회색 = 도구 실행": "Gray = tool execution"
+  "회색 = 도구 실행": "Gray = tool execution",
+  "권한 대기 400ms": "Permission wait 400ms",
+  "혼합 기준": "Mixed basis"
 }

@@ -19,10 +19,33 @@
   "labels_sha256": "7743509ea8ebea8ed9447173bcd03295145b4dc9ef32efeae278cf647e877dae",
   "host_corrections": [
     {
-      "source": "search \uc2e4\ud328",
+      "source": "search 실패",
       "model_output": "Search failed",
       "corrected_output": "search failed",
       "reason": "Preserve the lowercase synthetic MCP server identifier."
+    },
+    "Changed Luna Mixed criteria to Mixed basis and Authorization wait to Permission wait for consistent telemetry terminology."
+  ],
+  "followup_calls": [
+    {
+      "model": "openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "region": "us-east-1",
+      "date": "2026-11-14",
+      "target_language": "English",
+      "source_sha256": "4885c80a7a0d2de19f506e9f67e85116e924de1f6dee034e302e28829c1b198d",
+      "output_sha256": "97208fcaea3ac8dda5f0dbef0407c1ff4cce127fd1dbba6e9bdde86812b8b793",
+      "usage": {
+        "inputTokens": 116,
+        "outputTokens": 131,
+        "totalTokens": 247,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "strings": 2
     }
-  ]
+  ],
+  "current_labels_sha256": "00faeaa82ff105b627f3ae1527d96f6b1f3f490771b24af4296d7573d442a30c"
 }
