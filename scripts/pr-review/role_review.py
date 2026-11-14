@@ -3,7 +3,7 @@
 
 CLI:
   prepare --diff RAW --context CONTEXT --head SHA --base SHA --work WORK
-          [--context-cap BYTES] [--paths JSON_FILE] [--provenance JSON_FILE]
+          [--paths JSON_FILE] [--provenance JSON_FILE]
           [--allow-exclusions-only --policy TRUSTED_BASE_JSON_FILE]
   issue --work WORK --tag TAG
   record --work WORK --tag TAG --output FILE --stderr FILE --exit-code RC --nonce NONCE
@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
 from input_limits import (
     MAX_DIFF_BYTES, MAX_DIFF_LINES, MAX_KIRO_DIFF_BYTES, MAX_KIRO_DIFF_LINES,
-    MAX_CONTEXT_BYTES, MAX_REQUEST_BYTES, MAX_FULL_REQUEST_BYTES, needs_summary,
+    MAX_REQUEST_BYTES, MAX_FULL_REQUEST_BYTES, needs_summary,
 )
 ROLES = {
     "codex": ("implementation", "OpenAI", "global.openai.gpt-6-astra",
@@ -568,8 +568,9 @@ def prepare(args):
     lines = len(raw.split(b"\n")) - int(raw.endswith(b"\n")) if raw else 0
     if lines > MAX_DIFF_LINES:
         failures.append("diff_line_limit")
-    if not context.strip() or len(context.encode()) > args.context_cap:
-        failures.append("context_size")
+    # Context has no separate budget: the framed request guards below bound what is sent.
+    if not context.strip():
+        failures.append("context_empty")
     provenance = {}
     if args.provenance:
         try:
@@ -631,7 +632,7 @@ def prepare(args):
     plan = {
         "schema_version": 1, "head_sha": args.head, "base_sha": args.base,
         "diff_sha256": digest(raw), "context_sha256": digest(context.encode()),
-        "diff_bytes": len(raw), "diff_lines": lines, "context_cap": args.context_cap,
+        "diff_bytes": len(raw), "diff_lines": lines,
         "paths": paths, "roles": {}, "provenance": provenance,
         "exclusions_policy_sha256": policy_hash,
     }
@@ -2057,20 +2058,12 @@ def aggregate(args):
     return 2 if mode == "blocked" else 0
 
 
-def context_cap(value):
-    number = int(value)
-    if not 1 <= number <= MAX_CONTEXT_BYTES:
-        raise argparse.ArgumentTypeError("context cap must be 1..24000")
-    return number
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     prep = commands.add_parser("prepare")
     for name in ("diff", "context", "head", "base", "work"):
         prep.add_argument("--" + name, required=True)
-    prep.add_argument("--context-cap", type=context_cap, default=MAX_CONTEXT_BYTES)
     prep.add_argument("--paths", help="JSON array of complete repository-relative changed paths")
     prep.add_argument("--allow-exclusions-only", action="store_true",
                       help="Opt into no-model PASS for the trusted collector's exclusions-only scope")

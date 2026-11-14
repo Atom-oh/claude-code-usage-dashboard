@@ -66,7 +66,7 @@ class ReviewContextTests(unittest.TestCase):
         self.assertIn("CSV follows visible columns", outputs["L5"])
         self.assertNotIn("pinned media toolchain", outputs["L5"])
         self.assertEqual(set(outputs), {"L2", "L3", "L4", "L5"})
-        self.assertTrue(all(v["prompt_bytes"] <= PROMPTS.MAX_PROMPT_BYTES for v in manifest["lenses"].values()))
+        self.assertTrue(all(v["prompt_bytes"] < PROMPTS.MAX_LENS_ARGUMENT_BYTES for v in manifest["lenses"].values()))
 
     def test_missing_excerpt_is_not_an_absence_finding(self):
         outputs, _ = PROMPTS.build(PROMPTS.Snapshot(self.root), "")
@@ -113,10 +113,14 @@ class ReviewContextTests(unittest.TestCase):
         with self.assertRaises(PROMPTS.ContextError):
             PROMPTS.build(PROMPTS.Snapshot(self.root), "")
 
-    def test_context_budget_counts_utf8_bytes(self):
-        (self.root / "AGENTS.md").write_text("\N{EURO SIGN}" * (PROMPTS.MAX_CONTEXT_BYTES // 3 + 1))
+    def test_context_has_no_budget_but_lens_argument_limit_counts_utf8_bytes(self):
+        self.assertFalse(hasattr(PROMPTS, "MAX_CONTEXT_BYTES"))
+        (self.root / "AGENTS.md").write_text("x" * 60_000)
         self.commit()
-        with self.assertRaises(PROMPTS.ContextError):
+        PROMPTS.build(PROMPTS.Snapshot(self.root), "")
+        (self.root / "AGENTS.md").write_text("\N{EURO SIGN}" * (PROMPTS.MAX_LENS_ARGUMENT_BYTES // 3 + 1))
+        self.commit()
+        with self.assertRaisesRegex(PROMPTS.ContextError, "argument limit"):
             PROMPTS.build(PROMPTS.Snapshot(self.root), "")
 
     def test_manifest_describes_snapshot_content(self):
@@ -245,7 +249,7 @@ class ReviewContextTests(unittest.TestCase):
             self.assertIn("Use reported_cost", file.read_text())
             self.assertNotIn("UNTRUSTED_WORKTREE_OVERRIDE", file.read_text())
 
-    def test_project_guides_fit_combined_api_review_without_raising_caps(self):
+    def test_project_guides_fit_combined_api_review_within_the_lens_argument_limit(self):
         paths = subprocess.check_output(
             ["git", "-C", str(ROOT), "ls-files", "*.md"], text=True,
         ).splitlines()
@@ -260,9 +264,7 @@ class ReviewContextTests(unittest.TestCase):
         ))
         outputs, record = PROMPTS.build(PROMPTS.Snapshot(self.root), diff)
         self.assertEqual(set(outputs), {"L2", "L3", "L4", "L5"})
-        self.assertEqual(PROMPTS.MAX_CONTEXT_BYTES, 20_000)
-        self.assertEqual(PROMPTS.MAX_PROMPT_BYTES, 22_000)
-        self.assertTrue(all(lens["prompt_bytes"] <= 22_000 for lens in record["lenses"].values()))
+        self.assertTrue(all(lens["prompt_bytes"] < PROMPTS.MAX_LENS_ARGUMENT_BYTES for lens in record["lenses"].values()))
 
 
 if __name__ == "__main__":

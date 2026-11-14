@@ -54,13 +54,13 @@ class PreparationTests(unittest.TestCase):
             prepare.prepare(head, base, self.root / "work")
         return calls
 
-    def test_committed_context_hook_receives_selected_scope_and_lowers_cap(self):
+    def test_committed_context_hook_receives_selected_scope_without_a_cap(self):
         directory = self.root / "scripts/pr-review"
         directory.mkdir(parents=True)
         hook = directory / "prepare_context_roles.py"
         hook.write_text(
-            "def prepare(head, base, paths, diff, cap):\n"
-            "    return 'Scoped BASE rules.', {'paths': paths, 'diff': diff}, min(cap, 20000)\n"
+            "def prepare(head, base, paths, diff):\n"
+            "    return 'Scoped BASE rules.', {'paths': paths, 'diff': diff}\n"
         )
         (self.root / "server.py").write_text("old branch\n")
         self.git("add", ".")
@@ -77,7 +77,7 @@ class PreparationTests(unittest.TestCase):
         source = json.loads((work / "role-source.json").read_text())
         self.assertEqual(source["scoped_context"]["paths"], ["server.py"])
         self.assertEqual(source["scoped_context"]["diff"], (work / "role-diff.txt").read_text())
-        self.assertEqual(calls[0][calls[0].index("--context-cap") + 1], "20000")
+        self.assertNotIn("--context-cap", calls[0])
         hook.write_text("raise RuntimeError('must never execute replacement')\n")
         with self.assertRaisesRegex(ValueError, "trusted base"):
             self.prepare_locally(head, base, directory)
@@ -98,7 +98,7 @@ class PreparationTests(unittest.TestCase):
 
     def test_context_comes_from_git_object_not_dirty_working_file(self):
         (self.root / "AGENTS.md").write_text("UNTRUSTED changed instructions.\n")
-        self.assertEqual(prepare.context_at(self.base, 24000), "Trusted reviewer context.\n")
+        self.assertEqual(prepare.context_at(self.base), "Trusted reviewer context.\n")
 
     def test_stale_generated_context_is_rejected(self):
         (self.root / "AGENTS.md").write_text(
@@ -108,7 +108,7 @@ class PreparationTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "stale")
         with self.assertRaisesRegex(ValueError, "stale"):
-            prepare.context_at(self.git("rev-parse", "HEAD").strip(), 24000)
+            prepare.context_at(self.git("rev-parse", "HEAD").strip())
 
     def test_wrong_base_checkout_is_rejected_before_network_or_provider_use(self):
         with self.assertRaisesRegex(ValueError, "pinned base"):
@@ -118,9 +118,17 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "immutable"):
             prepare.prepare("main", self.base, self.root / "work")
 
-    def test_candidate_context_size_limit_is_enforced(self):
-        with self.assertRaisesRegex(ValueError, "oversized"):
-            prepare.context_at(self.base, 3)
+    def test_candidate_context_has_no_size_budget_but_must_not_be_empty(self):
+        (self.root / "AGENTS.md").write_text("x" * 50_000 + "\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "large guide")
+        large = self.git("rev-parse", "HEAD").strip()
+        self.assertEqual(len(prepare.context_at(large)), 50_001)
+        (self.root / "AGENTS.md").write_text(" \n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "empty guide")
+        with self.assertRaisesRegex(ValueError, "missing or empty"):
+            prepare.context_at(self.git("rev-parse", "HEAD").strip())
 
     def test_directory_exclusions_do_not_exclude_same_named_source_files(self):
         policy = self.root / "scripts/pr-review/role-input-scope.json"
@@ -146,7 +154,7 @@ class PreparationTests(unittest.TestCase):
         (self.root / "AGENTS.md").write_bytes(context.encode())
         self.git("add", ".")
         self.git("commit", "-qm", "CRLF source")
-        self.assertEqual(prepare.context_at(self.git("rev-parse", "HEAD").strip(), 24000), context)
+        self.assertEqual(prepare.context_at(self.git("rev-parse", "HEAD").strip()), context)
 
     def test_exclusions_opt_in_passes_exact_base_policy_bytes_to_engine(self):
         policy = self.root / "scripts/pr-review/role-input-scope.json"

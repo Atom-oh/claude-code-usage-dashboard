@@ -7,7 +7,7 @@ instructions/commands. Never check out HEAD with credentials.
 applicable AWS/operations patches or bounded chair summary. Trusted routing alone
 deactivates roles. Failed/incomplete coverage blocks.
 
-- `build-prompts.py`: bounded English BASE contracts; PRs may update them.
+- `build-prompts.py`: English BASE contracts; PRs may update them.
   Missing excerpts do not prove absence; verify claims.
 - [Limits](../../docs/reference/pr-review-headless-limits.md): no truncation.
   Kiro hashes cover every metadata/hunk unit; disclose basis/uncertainty.

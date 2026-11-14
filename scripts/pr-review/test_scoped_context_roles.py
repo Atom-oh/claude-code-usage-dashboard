@@ -47,21 +47,20 @@ class ScopedContextTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "candidate")
         head = self.git("rev-parse", "HEAD").strip()
-        context, manifest, cap = self.adapter.prepare(head, self.base, ["dashboard/server/app.py"], "", 24000)
+        context, manifest = self.adapter.prepare(head, self.base, ["dashboard/server/app.py"], "")
         self.assertIn("BASE query and counter invariants", context)
         self.assertNotIn("UNTRUSTED", context)
-        self.assertEqual(20000, cap)
         self.assertIn("dashboard/server/AGENTS.md", [x["path"] for x in manifest["files"]])
 
-    def test_candidate_oversized_module_guide_blocks_before_activation(self):
-        (self.root / "dashboard/web/AGENTS.md").write_text("x" * 20001)
+    def test_large_candidate_module_guide_is_validated_but_never_becomes_context(self):
+        (self.root / "dashboard/web/AGENTS.md").write_text("CANDIDATE " + "x" * 30_000)
         self.git("add", ".")
-        self.git("commit", "-qm", "oversized candidate")
-        with self.assertRaisesRegex(ValueError, "budget"):
-            self.adapter.prepare(self.git("rev-parse", "HEAD").strip(), self.base,
-                                 ["dashboard/web/app.tsx"], "", 24000)
+        self.git("commit", "-qm", "large candidate")
+        context, _ = self.adapter.prepare(self.git("rev-parse", "HEAD").strip(), self.base,
+                                          ["dashboard/web/app.tsx"], "")
+        self.assertNotIn("CANDIDATE", context)
 
     def test_working_tree_context_builder_cannot_replace_base_code(self):
         (self.root / "scripts/pr-review/build-prompts.py").write_text("raise RuntimeError('untrusted')\n")
         with self.assertRaisesRegex(ValueError, "trusted base"):
-            self.adapter.prepare(self.base, self.base, ["dashboard/server/app.py"], "", 24000)
+            self.adapter.prepare(self.base, self.base, ["dashboard/server/app.py"], "")
