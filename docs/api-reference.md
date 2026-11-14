@@ -155,6 +155,13 @@ status; canonical `tokens` and components retain strict nulls for ratios and exi
 consumers. These fields also appear in Codex detail summary/Effort rows. See
 [ADR-014](decisions/ADR-014-observed-token-subtotals.md).
 
+`by_client` rows also carry `observed_input`: `{ input_tokens, cache_read_tokens,
+cache_write_tokens, partial }`, the known non-cached input, cache read and cache write sums
+from usage rows whose three parts are all known. `partial` is true when a usage row lacked a
+part or a Codex request had no usage-bearing completion (for example an interrupted stream);
+parts are null when none is known or a sum is unsafe. The input/cache composition card shows
+this labelled subtotal when the strict components are null.
+
 `cost_usd` uses `cost_basis=client_reported` (Claude) or `aws_list_estimate` (Codex), or
 (Claude, this endpoint only) `computed_estimate`/`mixed` for a token-priced fallback when
 no report is usable ([ADR-017](decisions/ADR-017-backend-cost-fallback.md)); `cost_estimated`

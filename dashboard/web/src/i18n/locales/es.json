@@ -1900,5 +1900,6 @@
   "m3b769098ae63": "Si es la primera instalación, usa el comando de instalación siguiente. Si ya instalaste el paquete nuevo, vuelve a ejecutar el mismo comando para conectar un dispositivo. Revoca el dispositivo anterior en la lista de abajo.",
   "m13a94afb24ac": "La plantilla de arranque actual del taller instala el recolector con credenciales de ingestión de SSM SecureString. El organizador debe configurar primero las instancias EC2 que no estén preparadas. Para recopilar datos desde un Mac personal, usa el comando de instalación de esta página.",
   "m29f900219c52": "Token caducado o revocado, o error de autenticación: vuelve a ejecutar el comando de instalación para reconectar el dispositivo (o instalar con un token nuevo) y después revoca el dispositivo anterior.",
-  "me7bcfd8c0da5": "ID de usuario de recopilación"
+  "me7bcfd8c0da5": "ID de usuario de recopilación",
+  "ma1a91661679d": "Subtotal conocido · se excluyen las respuestas sin uso recopilado."
 }

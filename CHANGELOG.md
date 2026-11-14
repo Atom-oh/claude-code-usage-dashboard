@@ -27,6 +27,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Correct Spanish installation prerequisites and localized credits links; keep token
   composition emphasis across language changes and clarify translated cost help.
 
+### Fixed
+
+- The input/cache composition card no longer turns unavailable for a whole range when one
+  Codex response has no collected usage (for example an interrupted stream). It shows the
+  known subtotal, labelled as such; strict totals for ratios and cost are unchanged.
+
 ## [1.9.0] - 2026-11-14
 
 ### Added

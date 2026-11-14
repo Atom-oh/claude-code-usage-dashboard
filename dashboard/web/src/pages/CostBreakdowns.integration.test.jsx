@@ -223,6 +223,29 @@ test("effort requests share effective bounds and supported filters while indepen
   expect(card("입력·캐시 구성 — Claude Code").textContent).toContain("220");
 });
 
+test("input composition falls back to the labelled known subtotal when a response has no usage", async () => {
+  const partialRow = { ...codex, input_tokens: null, cache_read_tokens: null, cache_write_tokens: null,
+    tokens: null, tokens_partial: true, observed_records: 5,
+    observed_input: { input_tokens: 74, cache_read_tokens: 50, cache_write_tokens: 16, partial: true } };
+  mount({ enabledClients: ["codex"], entry: "/cost?client=codex",
+    data: overview({ clients: ["codex"], by_client: [partialRow], by_model: [partialRow] }) });
+  await waitFor(() => expect(card(TITLES[2]).textContent).toContain("알려진 부분합"));
+  const input = card(TITLES[2]);
+  expect(input.textContent).toContain("74");
+  expect(input.textContent).toContain("50");
+  expect(input.textContent).not.toContain("입력·캐시 구성 미확인");
+});
+
+test("input composition stays unavailable when no part is known", async () => {
+  const unknownRow = { ...codex, input_tokens: null, cache_read_tokens: null, cache_write_tokens: null,
+    tokens: null, tokens_partial: true, observed_records: 5,
+    observed_input: { input_tokens: null, cache_read_tokens: null, cache_write_tokens: null, partial: true } };
+  mount({ enabledClients: ["codex"], entry: "/cost?client=codex",
+    data: overview({ clients: ["codex"], by_client: [unknownRow], by_model: [unknownRow] }) });
+  await waitFor(() => expect(card(TITLES[2]).textContent).toContain("입력·캐시 구성 미확인"));
+  expect(card(TITLES[2]).textContent).not.toContain("알려진 부분합");
+});
+
 test("unknown Claude effort backend uses the shared Korean placeholder", async () => {
   mount({ enabledClients: ["claude"], entry: "/cost?client=claude",
     effort: claudeDetail([{ effort: "medium", backend: "unknown", cost_usd: 3,

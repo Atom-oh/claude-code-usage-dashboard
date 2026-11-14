@@ -1900,5 +1900,6 @@
   "m3b769098ae63": "For a first installation, use the install command below. If you already installed the new package, run the same command again to connect a device. Revoke the previous device in the list below.",
   "m13a94afb24ac": "The current workshop boot template installs the collector using ingest credentials from an SSM SecureString. The organizer must configure any EC2 instance that is not ready. To collect from a personal Mac, use the install command on this page.",
   "m29f900219c52": "Expired or revoked token, or authentication error: Run the install command again to reconnect the device (or install with a new token), then revoke the previous device.",
-  "me7bcfd8c0da5": "Collection user ID"
+  "me7bcfd8c0da5": "Collection user ID",
+  "ma1a91661679d": "Known subtotal · responses without collected usage are excluded."
 }
