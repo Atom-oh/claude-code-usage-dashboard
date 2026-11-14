@@ -36,6 +36,18 @@ export function createDynamoDeviceStore({ tableName, client }) {
   }
 
   const keyNames = { "#owner": "owner", "#id": "id" };
+  const TEAM_SETTINGS_KEY = { owner: "settings", id: "team-mapping" };
+  const teamHistoryOwner = (attribute) => "team-history#" + attribute;
+  // Optimistic concurrency: null creates the record, a number replaces exactly that version.
+  async function putVersioned(item, expectedVersion, options) {
+    const create = expectedVersion === null;
+    const result = await send(new PutCommand({ TableName: tableName,
+      Item: { ...item, version: create ? 1 : expectedVersion + 1 },
+      ConditionExpression: create ? "attribute_not_exists(#id)" : "#version = :expected",
+      ExpressionAttributeNames: create ? { "#id": "id" } : { "#version": "version" },
+      ...(create ? {} : { ExpressionAttributeValues: { ":expected": expectedVersion } }) }), options, true);
+    return result !== false;
+  }
   return {
     async put(record, options) {
       await send(new PutCommand({ TableName: tableName, Item: record,
@@ -89,6 +101,31 @@ export function createDynamoDeviceStore({ tableName, client }) {
         UpdateExpression: "SET reuseDetectedAt = :at",
         ExpressionAttributeNames: keyNames, ExpressionAttributeValues: { ":at": at } }), options, true);
       return result !== false;
+    },
+    async getTeamSettings(options) {
+      const result = await send(new GetCommand({ TableName: tableName, Key: TEAM_SETTINGS_KEY, ConsistentRead: true }), options);
+      if (!result.Item) return null;
+      const { owner: _owner, id: _id, ...settings } = result.Item;
+      return settings;
+    },
+    async putTeamSettings(record, expectedVersion, options) {
+      return putVersioned({ ...record, ...TEAM_SETTINGS_KEY }, expectedVersion, options);
+    },
+    async listTeamHistory(attribute, options) {
+      const history = [];
+      let cursor;
+      do {
+        const result = await send(new QueryCommand({ TableName: tableName,
+          KeyConditionExpression: "#owner = :owner", ExpressionAttributeNames: { "#owner": "owner" },
+          ExpressionAttributeValues: { ":owner": teamHistoryOwner(attribute) }, ConsistentRead: true,
+          ...(cursor ? { ExclusiveStartKey: cursor } : {}) }), options);
+        for (const item of result.Items || []) history.push({ id: item.id, entries: item.entries, version: item.version });
+        cursor = result.LastEvaluatedKey;
+      } while (cursor);
+      return history;
+    },
+    async putTeamHistory(attribute, { id, entries }, expectedVersion, options) {
+      return putVersioned({ owner: teamHistoryOwner(attribute), id, entries }, expectedVersion, options);
     },
     async touch(owner, id, at, options) {
       const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner, id },
