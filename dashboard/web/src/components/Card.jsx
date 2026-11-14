@@ -1,8 +1,10 @@
+import { translate, useLocale } from "../i18n/index.js";
 import { Info } from "lucide-react";
 import { cn } from "../cn.js";
 
 // ../awsops web/components/ui/Card.tsx 포팅 — white surface, ink-100 hairline, radius-lg, shadow-card.
 export function Card({ children, title, subtitle, help, right, padded = true, className }) {
+  const _locale = useLocale();
   const hasHeader = title != null || subtitle != null || right != null;
   return (
     <div className={cn("bg-card border border-ink-100 rounded-lg shadow-card overflow-hidden", className)}>
@@ -26,9 +28,11 @@ export function Card({ children, title, subtitle, help, right, padded = true, cl
 }
 
 export function Loading() {
-  return <div className="text-ink-500 text-sm">불러오는 중...</div>;
+  const _locale = useLocale();
+  return <div className="text-ink-500 text-sm">{translate("m1035a5731b39")}</div>;
 }
 
 export function ErrorBox({ error }) {
-  return <div className="text-negative text-sm" title={error.message}>데이터를 불러오지 못했습니다.</div>;
+  const _locale = useLocale();
+  return <div className="text-negative text-sm" title={error.message}>{translate("m9fb49e475d14")}</div>;
 }

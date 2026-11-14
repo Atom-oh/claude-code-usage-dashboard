@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 // Lane timeline of one task (mockup v3 option B): one row per agent lane with its icon, name
 // and "N 호출 · $X", LLM bars shaded by input context, tool bars and permission-wait marks
 // under the lane, dashed connectors from a spawning tool span to its subagent lane.
@@ -17,21 +18,22 @@ const FOCUS_STROKE = "var(--brand-600)", SELECTED_STROKE = "var(--ink-800)";
 const DIM = 0.15;
 
 export function laneStats(lane, truncated) {
-  if (truncated) return "합계 미표시";
+  if (truncated) return translate("m8eb8ad978705");
   const calls = observedNumber(lane.llm_calls);
   const cost = observedNumber(lane.cost_usd);
-  const callText = calls === null ? "호출 미수집" : `${formatObserved(calls)} 호출`;
-  const costText = cost === null ? "비용 미수집" : `${formatClientCost(cost)}${lane.cost_partial ? " (부분합)" : ""}`;
+  const callText = calls === null ? translate("mc555ba3f6bc2") : translate("mfeff7cd98688", [formatObserved(calls)]);
+  const costText = cost === null ? translate("mc554f0409705") : `${formatClientCost(cost)}${lane.cost_partial ? translate("m830e860c2bd2") : ""}`;
   return `${callText} · ${costText}`;
 }
 
 export function spanLabel(span, laneLabel, number) {
-  if (span.kind === "llm") return `LLM 호출 #${number} · ${laneLabel}`;
-  if (span.kind === "wait") return `권한 대기 · ${laneLabel}`;
-  return `${span.attrs?.tool_name || span.name || "도구"} 도구 · ${laneLabel}`;
+  if (span.kind === "llm") return translate("m0b3849d9b065", [number, laneLabel]);
+  if (span.kind === "wait") return translate("md56d85bb5889", [laneLabel]);
+  return translate("m76c170c8e9e5", [span.attrs?.tool_name || span.name || translate("m36c416ead2ce"), laneLabel]);
 }
 
 export function TimeAxis({ end, y }) {
+  const _locale = useLocale();
   return <g aria-hidden="true">
     {Array.from({ length: TICKS + 1 }, (_, i) => <text key={i} x={X0 + (i * PLOT_W) / TICKS} y={y} textAnchor="middle"
       style={{ fill: "var(--chart-axis)", fontSize: 11 }}>{formatTaskDuration((end * i) / TICKS)}</text>)}
@@ -41,6 +43,7 @@ export function TimeAxis({ end, y }) {
 // `highlight` (optional): a predicate over llm spans; when set, non-matching LLM bars are
 // dimmed (data-dimmed). Tool and wait marks are unaffected. Omitted = nothing dimmed.
 export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId, onSelect, highlight = null }) {
+  const _locale = useLocale();
   const x = (ms) => X0 + (end > 0 ? (ms / end) * PLOT_W : 0);
   const width = (ms) => Math.max(2, end > 0 ? ((observedNumber(ms) ?? 0) / end) * PLOT_W : 2);
   const row = new Map(lanes.map((l, i) => [l.id, TOP + i * LANE_H]));
@@ -75,10 +78,10 @@ export function TaskTimeline({ lanes, spans, numbers, end, truncated, selectedId
       : width(s.duration_ms)} height={MARK_H} style={{ ...common.style, fill: s.kind === "wait" ? WAIT_FILL : TOOL_FILL }} />;
   };
 
-  return <svg viewBox={`0 0 ${VIEW_W} ${height}`} width="100%" className="block" aria-label="에이전트 레인 타임라인">
+  return <svg viewBox={`0 0 ${VIEW_W} ${height}`} width="100%" className="block" aria-label={translate("m5d7f51f4e267")}>
     {lanes.map((l) => {
       const y = row.get(l.id), color = laneColor(l);
-      return <g key={l.id} role="group" aria-label={`${names.get(l.id)} 레인`}>
+      return <g key={l.id} role="group" aria-label={translate("m6cc3cfaaaeb1", [names.get(l.id)])}>
         <TaskIconMark icon={iconFor(l.kind, "agent")} x={8} y={y + 4} size={20} color={color} />
         <text x={36} y={y + 14} style={{ fill: "var(--text-primary)", fontSize: 12, fontWeight: 600 }}>{names.get(l.id)}</text>
         <text x={36} y={y + 30} style={{ fill: "var(--text-secondary)", fontSize: 11 }}>{laneStats(l, truncated)}</text>

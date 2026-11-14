@@ -1,3 +1,4 @@
+import { localeTag, translate, useLocale } from "../i18n/index.js";
 import { Check } from "lucide-react";
 import { cn } from "../cn.js";
 
@@ -12,13 +13,13 @@ const COLS = "grid grid-cols-[1fr_10rem_1fr] items-stretch";
 export function fmtValue(v, format) {
   const n = Number(v);
   if (v == null || !Number.isFinite(n)) return "—";
-  if (format === "usd") return `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString()}`;
+  if (format === "usd") return `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString(localeTag())}`;
   if (format === "pct") {
     const p = n * 100;
     return `${p.toFixed(p < 10 ? 1 : 0)}%`;
   }
-  if (format === "hours") return `${n.toLocaleString(undefined, { maximumFractionDigits: n < 10 ? 1 : 0 })}시간`;
-  return n.toLocaleString(undefined, { maximumFractionDigits: n < 10 ? 1 : 0 });
+  if (format === "hours") return translate("m9a58de84ee31", [n.toLocaleString(localeTag(), { maximumFractionDigits: n < 10 ? 1 : 0 })]);
+  return n.toLocaleString(localeTag(), { maximumFractionDigits: n < 10 ? 1 : 0 });
 }
 
 function winnerOf({ bedrock, enterprise, betterIs }) {
@@ -45,6 +46,7 @@ function splitShare({ bedrock, enterprise }) {
 // 쪽이 커도 같은 크기로 읽히고, ±100%로 캡. 색은 값이 큰 그룹의 시리즈 색(우세 판정 아님 —
 // 지출처럼 큰 게 나쁜 지표도 있어서 방향은 크기만 나른다).
 export function DeltaBars({ rows }) {
+  const _locale = useLocale();
   const items = (rows || [])
     .map((r) => {
       const b = Number(r.bedrock), e = Number(r.enterprise);
@@ -57,9 +59,9 @@ export function DeltaBars({ rows }) {
   return (
     <div>
       <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.04em]">
-        <span style={{ color: "var(--series-bedrock)" }}>◀ Bedrock이 큼</span>
-        <span className="text-ink-400">동률</span>
-        <span style={{ color: "var(--series-enterprise)" }}>Enterprise가 큼 ▶</span>
+        <span style={{ color: "var(--series-bedrock)" }}>{translate("mf169bf37eade")}</span>
+        <span className="text-ink-400">{translate("m9b16ef4c8ded")}</span>
+        <span style={{ color: "var(--series-enterprise)" }}>{translate("m402ebd70897a")}</span>
       </div>
       <ul className="space-y-2">
         {items.map((it) => {
@@ -80,7 +82,7 @@ export function DeltaBars({ rows }) {
                 />
               </div>
               <span className="tabular w-14 shrink-0 text-[12px] font-medium text-ink-800">
-                {it.delta === 0 ? "동률" : `+${Math.abs(it.delta).toFixed(0)}%`}
+                {it.delta === 0 ? translate("m9b16ef4c8ded") : `+${Math.abs(it.delta).toFixed(0)}%`}
               </span>
             </li>
           );
@@ -91,6 +93,7 @@ export function DeltaBars({ rows }) {
 }
 
 export default function ABScoreboard({ rows }) {
+  const _locale = useLocale();
   return (
     <div className="overflow-hidden rounded-lg border border-ink-100 bg-card shadow-card">
       <div className={cn(COLS, "border-b border-ink-100")}>
@@ -116,7 +119,7 @@ export default function ABScoreboard({ rows }) {
             <div className={COLS}>
               <div className="flex items-center justify-end gap-2 py-3.5 pl-5 pr-4" style={{ background: "var(--series-bedrock-tint)" }}>
                 {win === "bedrock" && (
-                  <Check size={14} strokeWidth={3} className="shrink-0" style={{ color: "var(--series-bedrock)" }} aria-label="우세" />
+                  <Check size={14} strokeWidth={3} className="shrink-0" style={{ color: "var(--series-bedrock)" }} aria-label={translate("m0b1610dc6503")} />
                 )}
                 <span className="tabular text-[24px] font-semibold leading-none" style={{ color: "var(--series-bedrock)" }}>
                   {fmtValue(row.bedrock, row.format)}
@@ -130,7 +133,7 @@ export default function ABScoreboard({ rows }) {
                   {fmtValue(row.enterprise, row.format)}
                 </span>
                 {win === "enterprise" && (
-                  <Check size={14} strokeWidth={3} className="shrink-0" style={{ color: "var(--series-enterprise)" }} aria-label="우세" />
+                  <Check size={14} strokeWidth={3} className="shrink-0" style={{ color: "var(--series-enterprise)" }} aria-label={translate("m0b1610dc6503")} />
                 )}
               </div>
             </div>

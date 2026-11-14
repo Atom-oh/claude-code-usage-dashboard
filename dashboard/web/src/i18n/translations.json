@@ -9,42 +9,42 @@
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
   "updated_at": "2026-11-14T11:20:51.138899+00:00",
-  "source_messages": 1833,
+  "source_messages": 1840,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1833,
-      "bytes": 136192,
-      "sha256": "7df1756f46fb9c67c135c402147ee51b8bd18bb1b82ae1d0ea1fbd8351abcc3a"
+      "messages": 1840,
+      "bytes": 137199,
+      "sha256": "6c0b827bf6c29d5c7537f5ef29354744f23654c4fbe69bd162349236c54d7c7c"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1833,
-      "bytes": 160416,
-      "sha256": "8fb0b950e7c1ed944c70a80c27a2f6b20df4a6a06f8384124f0f14d7433ab896"
+      "messages": 1840,
+      "bytes": 161708,
+      "sha256": "952063d6b4dbd893631804ad7ed1683c6b1fed7ab7cc0f5a3fee542695d6c300"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1833,
-      "bytes": 167335,
-      "sha256": "216dafe3511c2a938a3ed996fbc7295fbcc23cb7e16cd33dbd84cbcaf5bd0f2b"
+      "messages": 1840,
+      "bytes": 168718,
+      "sha256": "9cf3e4a0a19bbeee8755ebb87029a26b17ebb5bac38c8ce64e7c9c11a63dd526"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1833,
-      "bytes": 144381,
-      "sha256": "39a5184b814d64d2f4590cd18570bbe9b7de3700c121c311bc5f96ca772dc9bf"
+      "messages": 1840,
+      "bytes": 145453,
+      "sha256": "13bba7ac9ec3fd4daea4e54409c1f453e1609540407640c2b64a08547b02b7f5"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1833,
-      "bytes": 129070,
-      "sha256": "c3fe0e828e5c0faf265f8a1d3083538103ba4dd8a0b2546e2e8ed0177f493117"
+      "messages": 1840,
+      "bytes": 130035,
+      "sha256": "24f9702d3f5610dbd1d27901b1d4c8be5545dab62f4eb31ffb0d0e34a80e0223"
     }
   ],
   "catalog_calls": [
@@ -736,5 +736,11 @@
       ]
     },
     "reason": "Use the preceding equal-length period and distinguish uncollected data from measured zero."
+  },
+  "release_182_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "input_sha256": "3c6353c3113b9087af8a9bb862908c03d71d94e282c603056c76e83a6592c389",
+    "output_sha256": "74a5982107dd255ee43598bc2167a4f0ca35c31a5f2a2e63115550b371f5bd0c",
+    "messages": 7
   }
 }

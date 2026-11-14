@@ -1,12 +1,13 @@
+import { localize, translate } from "./i18n/index.js";
 import { observedNumber, presentationRow } from "./clientPresentation.js";
 
 // /api/clients/productivity `unavailable` reasons. A labelled value is never shown as a number.
-export const UNAVAILABLE_LABELS = { not_collected: "미수집", not_aggregated: "미집계", not_derived: "미산출" };
-export const UNAVAILABLE_HELP = {
+export const UNAVAILABLE_LABELS = localize({ not_collected: "미수집", not_aggregated: "미집계", not_derived: "미산출" });
+export const UNAVAILABLE_HELP = localize({
   not_collected: "기본 OTel에 해당 지표가 없습니다. Git/CI 연동 같은 별도 수집이 필요합니다.",
   not_aggregated: "확인된 원천 지표가 없어 대시보드가 집계하지 않습니다.",
   not_derived: "대시보드가 계산하는 값이지만 필요한 입력이 없어 산출하지 않습니다.",
-};
+});
 export const unavailableLabel = (row, key) => UNAVAILABLE_LABELS[row?.unavailable?.[key]] || null;
 
 const ratio = (n, d, scale = 1) => {
@@ -69,18 +70,18 @@ export function hasProductivityObservations(data) {
 // Per-tool rows (sections 5 and 6): the server's top tools, then its remainder row. A client
 // with an empty list keeps one "no observed tool" row with measured zeros; a client without a
 // list (no response) keeps one row of unknowns, never zeros.
-export const toolLabel = (row) => row.other ? `기타 (${observedNumber(row.tools) ?? "—"}개 도구)`
-  : row.tool ? row.tool : "(도구 이름 없음)";
+export const toolLabel = (row) => row.other ? translate("m37ee91901d62", [observedNumber(row.tools) ?? "—"])
+  : row.tool ? row.tool : translate("m8fa5feca24b3");
 function perTool(productivity, clients, key, map, empty) {
   return clients.flatMap((client) => {
     const list = productivity.find((row) => row.client === client)?.[key];
     if (!Array.isArray(list)) return [{ client, tool_label: "—", other: false, unavailable: {} }];
-    if (list.length === 0) return [{ client, tool_label: "관측된 도구 없음", other: false, unavailable: {}, ...empty }];
+    if (list.length === 0) return [{ client, tool_label: translate("m97015336066d"), other: false, unavailable: {}, ...empty }];
     return list.map((row) => ({ client, tool_label: toolLabel(row), other: row.other === true, unavailable: {}, ...map(row) }));
   });
 }
 export const sourceLabel = (row) => row.source === null || row.source === undefined ? null
-  : row.source === "" ? "(출처 없음)" : row.source;
+  : row.source === "" ? translate("mcd41d025b157") : row.source;
 export function toolDecisionRows(productivity = [], clients = []) {
   return perTool(productivity, clients, "by_tool_decisions", (row) => ({
     allowed: observedNumber(row.allowed), denied: observedNumber(row.denied), allow_pct: percent(row.allow_rate),

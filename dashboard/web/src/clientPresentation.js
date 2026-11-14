@@ -1,12 +1,13 @@
+import { localizedFormat, translate } from "./i18n/index.js";
 import { formatObserved, observedTokens } from "./clientUsage.js";
 
 export const CLIENT_NAMES = { claude: "Claude Code", codex: "Codex" };
 export const clientName = (value) => CLIENT_NAMES[value] || value || "—";
 // Mixed can combine reports, AWS list estimates and computed fallback; it does not imply fallback.
 export const basisLabel = (value) => ({
-  client_reported: "클라이언트 보고", aws_list_estimate: "AWS 정가 추정",
-  computed_estimate: "계산 추정", mixed: "혼합 기준",
-})[value] || value || "기준 미제공";
+  client_reported: translate("m0a5f11e8fcff"), aws_list_estimate: translate("mb1f65242642d"),
+  computed_estimate: translate("m3d0c19dbbe23"), mixed: translate("m8f0a4cce5c2c"),
+})[value] || value || translate("m46b2992298c1");
 
 const MEASURES = [
   "tokens", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens",
@@ -31,16 +32,16 @@ export function costBasisLabel(source, label = basisLabel(source.cost_basis)) {
   const estimated = observedNumber(source.cost_estimated);
   const unknown = observedNumber(source.cost_usd) === null;
   const partial = source.cost_partial === true || unpriced > 0;
-  return [label, unknown ? "미산정" : partial ? "부분합" : null,
-    unpriced > 0 ? `${unknown ? "" : "미산정 "}${formatObserved(unpriced)}건 제외` : null,
+  return [label, unknown ? translate("ma8761601c736") : partial ? translate("md15c830a6f1c") : null,
+    unpriced > 0 ? translate("m6a424dfb5f2c", [unknown ? "" : translate("m346403545b96"), formatObserved(unpriced)]) : null,
     // ADR-017: 계산 추정으로 채운 건수를 별도로 드러낸다.
-    estimated > 0 ? `계산 추정 ${formatObserved(estimated)}건` : null]
+    estimated > 0 ? translate("m696c5779a77a", [formatObserved(estimated)]) : null]
     .filter(Boolean).join(" · ");
 }
 
 export const OBSERVED_TOKEN_HELP = "확인된 토큰의 합계입니다. Claude Code는 토큰 메트릭, Codex는 완료 응답의 입력·출력 쌍을 사용하며 캐시·추론을 중복 합산하지 않습니다. 일부 사용량 정보가 불완전하면 부분합, 확인된 합계가 없으면 —로 표시합니다. 비율은 기존 전체 토큰·구성값 기준입니다.";
 export function tokenStatusLabel(row) {
-  return observedTokens(row) === null ? "미확인" : row.tokens_partial === true ? "부분합" : "관측됨";
+  return observedTokens(row) === null ? translate("mdc0c487c9693") : row.tokens_partial === true ? translate("md15c830a6f1c") : translate("mce2dbc682157");
 }
 
 export function presentationRow(source = {}) {
@@ -70,9 +71,11 @@ export function formatPercent(value) {
   const n = observedNumber(value);
   return n === null ? "—" : n > 0 && n < 0.01 ? "<0.01%" : `${formatObserved(n)}%`;
 }
-const shortTime = new Intl.DateTimeFormat("ko-KR", {
+const shortTime = localizedFormat("DateTimeFormat", {
   month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
 });
+// Keep exact diagnostic timestamps in one padded numeric form; short labels use
+// the selected locale. Both formatters retain the browser's time zone.
 const fullTime = new Intl.DateTimeFormat("en-GB", {
   year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
   second: "2-digit", fractionalSecondDigits: 3, hourCycle: "h23", timeZoneName: "short",
