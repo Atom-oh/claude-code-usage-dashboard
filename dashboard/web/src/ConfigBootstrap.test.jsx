@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import ConfigBootstrap from "./ConfigBootstrap.jsx";
 import { ConfigProvider, useConfig } from "./ConfigContext.jsx";
-import { maskEmail, setPiiMask } from "./fmt.js";
+import { maskEmail, maskTeam, setPiiMask, setTeamMask } from "./fmt.js";
 
 const EMAIL = "fixture@example.test";
 const CODEX_CONFIG = { enabledClients: ["codex"], groupMode: "single", schema: { projectColumns: true } };
@@ -55,6 +55,7 @@ beforeEach(() => {
   initialUrl = window.location.href;
   // A new bootstrap must restore safe defaults even after an unmasked app.
   setPiiMask(false);
+  setTeamMask(false);
   fetchMock = vi.fn(() => Promise.resolve(response([])));
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -214,4 +215,24 @@ test("StrictMode sends one config request and cleanup aborts it without late sid
   expect(vi.getTimerCount()).toBe(0);
   await act(async () => { pending.resolve(response({ piiMask: false })); });
   expectBlocked();
+});
+
+test.each([
+  ["an explicit team setting", { teamMask: false, piiMask: true }, "alpha"],
+  ["an explicit team setting with email masking off", { teamMask: true, piiMask: false }, "al**·"],
+  ["an older server without teamMask (follows piiMask)", { piiMask: false }, "alpha"],
+  ["an older server without teamMask (masked)", { piiMask: true }, "al**·"],
+])("team masking follows %s", async (_label, fields, expected) => {
+  fetchMock.mockReturnValueOnce(Promise.resolve(response({ ...CODEX_CONFIG, ...fields })));
+  renderBootstrap();
+  await act(async () => {});
+  expect(screen.getByLabelText("received config")).toBeTruthy();
+  expect(maskTeam("alpha").startsWith(expected)).toBe(true);
+});
+
+test("a failed config keeps team names masked", async () => {
+  fetchMock.mockReturnValueOnce(Promise.resolve({ ok: false, status: 503, json: async () => ({ teamMask: false }) }));
+  renderBootstrap();
+  await act(async () => {});
+  expect(maskTeam("alpha")).toMatch(/^al\*\*·/);
 });

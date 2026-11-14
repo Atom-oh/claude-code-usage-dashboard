@@ -112,6 +112,11 @@ test("team settings and history writes are version-conditional", async () => {
   } });
   assert.equal(await lost.putTeamSettings(settings, 1), false);
   assert.equal(await lost.putTeamHistory("custom:team", { id: "b", entries: [] }, null), false);
+  assert.equal(await store.putDisplaySettings({ teamMask: false }, null), true);
+  assert.equal(await store.putDisplaySettings({ teamMask: true }, 1), true);
+  assert.deepEqual(commands.at(-2).input.Item, { teamMask: false, owner: "settings", id: "display", version: 1 });
+  assert.equal(commands.at(-2).input.ConditionExpression, "attribute_not_exists(#id)");
+  assert.equal(commands.at(-1).input.Item.version, 2);
 });
 
 test("team settings read is consistent and returns the whole stored record", async () => {

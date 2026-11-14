@@ -39,6 +39,7 @@ export function createDynamoDeviceStore({ tableName, client }) {
 
   const keyNames = { "#owner": "owner", "#id": "id" };
   const TEAM_SETTINGS_KEY = { owner: "settings", id: "team-mapping" };
+  const DISPLAY_SETTINGS_KEY = { owner: "settings", id: "display" };
   const teamHistoryOwner = (attribute) => "team-history#" + attribute;
   // Optimistic concurrency: null creates the record, a number replaces exactly that version.
   async function putVersioned(item, expectedVersion, options) {
@@ -112,6 +113,15 @@ export function createDynamoDeviceStore({ tableName, client }) {
     },
     async putTeamSettings(record, expectedVersion, options) {
       return putVersioned({ ...record, ...TEAM_SETTINGS_KEY }, expectedVersion, options);
+    },
+    async getDisplaySettings(options) {
+      const result = await send(new GetCommand({ TableName: tableName, Key: DISPLAY_SETTINGS_KEY, ConsistentRead: true }), options);
+      if (!result.Item) return null;
+      const { owner: _owner, id: _id, ...settings } = result.Item;
+      return settings;
+    },
+    async putDisplaySettings(record, expectedVersion, options) {
+      return putVersioned({ ...record, ...DISPLAY_SETTINGS_KEY }, expectedVersion, options);
     },
     async listTeamHistory(attribute, options) {
       const history = [];

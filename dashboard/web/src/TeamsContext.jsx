@@ -1,6 +1,7 @@
 import { translate, translateSource, useLocale } from "./i18n/index.js";
 import { createContext, useContext, useMemo } from "react";
 import { useApi } from "./useApi.js";
+import { maskTeam } from "./fmt.js";
 
 // Range-only team lookups (GET /api/teams, /api/users/teams) shared by the filter control and every
 // user-level view. Filters never change them, so they are requested unfiltered. Team is client-provided
@@ -44,12 +45,13 @@ export function teamsValue(list, users) {
   };
 }
 
-// Label when one exists, else the raw value. Raw values stay the filter/URL identity.
+// Label when one exists (an administrator-chosen display name, shown as is), else the raw value
+// under the display masking policy (maskTeam). Raw values stay the filter/URL identity.
 // Only an own, non-empty string label counts; inherited properties never do.
 export function teamName(teams, raw) {
   const labels = teams.labels;
   const label = labels && typeof labels === "object" && Object.hasOwn(labels, raw) ? labels[raw] : null;
-  return typeof label === "string" && label ? label : raw;
+  return typeof label === "string" && label ? label : maskTeam(raw);
 }
 
 // Only a device-only source is marked, and only while directory teams apply; "directory" and "both" render alike.

@@ -5,6 +5,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import { PageHeader } from "../components/PageHeader.jsx";
 import { Card, Loading } from "../components/Card.jsx";
 import { DataTable } from "../components/DataTable.jsx";
+import { setTeamMask } from "../fmt.js";
 
 const BUTTON = "inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
 const PRIMARY = `${BUTTON} bg-brand-600 text-white hover:bg-brand-700`;
@@ -48,6 +49,94 @@ export default function Settings() {
     <div className="p-4 sm:p-8"><Notice>{translate("m865d52f9da0b")}</Notice></div>
   </div>;
   return <TeamMapping />;
+}
+
+const MASK_CHOICES = [
+  { value: "default", label: "배포 설정 따름" },
+  { value: "on", label: "켜기" },
+  { value: "off", label: "끄기" },
+];
+const choiceOf = override => (override === true ? "on" : override === false ? "off" : "default");
+const overrideOf = choice => (choice === "on" ? true : choice === "off" ? false : null);
+const onOff = value => (value ? "켜짐" : "꺼짐");
+
+// Team-name masking for shared screens such as public demos: the deployment chooses the default,
+// an administrator may override it. Screens and CSV only; API responses keep raw values.
+function TeamMasking() {
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState({ loading: true, data: null, error: false });
+  const [choice, setChoice] = useState("default");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState({ tone: null, text: "" });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ loading: true, data: null, error: false });
+    apiGet("/api/settings/display", {}, controller.signal).then(data => {
+      if (controller.signal.aborted) return;
+      if (!data?.teamMask) throw new Error("invalid display settings");
+      setState({ loading: false, data, error: false });
+      setChoice(choiceOf(data.teamMask.override));
+    }).catch(() => {
+      if (!controller.signal.aborted) setState({ loading: false, data: null, error: true });
+    });
+    return () => controller.abort();
+  }, [attempt]);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setMessage({ tone: null, text: "" });
+    try {
+      const response = await fetch("/api/settings/display", {
+        method: "PUT", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamMask: overrideOf(choice), version: state.data.version }),
+      });
+      checkAuthentication(response);
+      if (response.ok) {
+        const next = await response.json();
+        setState({ loading: false, data: next, error: false });
+        setTeamMask(next.teamMask.effective);
+        setMessage({ tone: "positive", text: "저장했습니다. 이 화면에는 바로, 다른 사용자에게는 새로 고침 후(최대 30초) 적용됩니다." });
+        return;
+      }
+      const code = (await response.json().catch(() => ({}))).error;
+      setMessage({ tone: "negative", text: code === "version_conflict"
+        ? "다른 곳에서 설정이 먼저 바뀌었습니다. 최신 설정을 불러온 뒤 다시 저장해 주세요."
+        : "저장하지 못했습니다. 잠시 후 다시 시도해 주세요." });
+      if (code === "version_conflict") setAttempt(n => n + 1);
+    } catch {
+      setMessage({ tone: "negative", text: "저장하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const data = state.data;
+  return <Card title="팀 이름 마스킹" subtitle="여러 사람이 보는 화면(데모 등)에서 팀 이름을 앞 두 글자와 짧은 식별값으로 가립니다. 화면과 CSV 표시만 바꾸며 API 응답은 그대로입니다. 표시 이름을 붙인 팀은 그 이름을 그대로 보여 줍니다.">
+    {state.loading ? <Loading /> : state.error ? <div className="space-y-3">
+      <Notice>팀 이름 마스킹 설정을 불러오지 못했습니다.</Notice>
+      <button type="button" className={SECONDARY} onClick={() => setAttempt(n => n + 1)}>다시 시도</button>
+    </div> : <div className="space-y-3">
+      <p className="text-sm text-ink-700">현재 적용: <strong>{onOff(data.teamMask.effective)}</strong>
+        <span className="text-ink-500"> · 배포 설정: {onOff(data.teamMask.deployment)}</span></p>
+      {data.available ? <>
+        <fieldset className="space-y-2">
+          <legend className="sr-only">팀 이름 마스킹</legend>
+          {MASK_CHOICES.map(option => <label key={option.value} className="flex items-center gap-2 text-sm text-ink-800">
+            <input type="radio" name="team-mask" value={option.value} checked={choice === option.value}
+              onChange={() => { setChoice(option.value); setMessage({ tone: null, text: "" }); }} />
+            <span>{option.value === "default" ? `${option.label} (${onOff(data.teamMask.deployment)})` : option.label}</span>
+          </label>)}
+        </fieldset>
+        {message.text && (message.tone === "positive"
+          ? <p role="status" className="text-sm text-positive-text">{message.text}</p> : <Notice>{message.text}</Notice>)}
+        <button type="button" className={PRIMARY} disabled={saving || choice === choiceOf(data.teamMask.override)}
+          onClick={save}>{saving ? "저장 중..." : "마스킹 설정 저장"}</button>
+      </> : <Notice tone="warning" role="status">설정 저장소가 없어 배포 설정을 따릅니다. 배포 시 TEAM_MASK_ENABLED(Terraform team_mask_enabled)로 바꿀 수 있습니다.</Notice>}
+    </div>}
+  </Card>;
 }
 
 function TeamMapping() {
@@ -208,6 +297,6 @@ function TeamMapping() {
 
   return <div>
     <PageHeader title={translate("m115bced49291")} subtitle={translate("m66f508b7b7ed")} />
-    <div className="p-4 sm:p-8">{body}</div>
+    <div className="space-y-6 p-4 sm:p-8"><TeamMasking />{body}</div>
   </div>;
 }
