@@ -134,6 +134,37 @@ test("direct collector route denies viewers and gives analysts and admins a dedi
   }
 });
 
+test("settings route is reachable and its sidebar item needs settings:manage", async () => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  const fetch = vi.fn(url => Promise.resolve({ ok: true, status: 200, json: async () =>
+    String(url).startsWith("/api/settings/teams/preview") ? { attribute: "custom:team", values: [], missing: 0, excluded: 0 }
+      : String(url).startsWith("/api/settings/teams") ? { available: false, reason: "basic_auth", poolId: null, status: null,
+        attributes: [], current: null, labels: {}, options: [], directoryError: null, version: null }
+        : String(url).startsWith("/api/health/data") ? { status: "ok" } : [] }));
+  vi.stubGlobal("fetch", fetch);
+  for (const allowed of [false, true]) {
+    cleanup();
+    fetch.mockClear();
+    const session = { mode: "oidc", role: allowed ? "admin" : "analyst", expiresAt: new Date(Date.now() + 900000).toISOString(),
+      permissions: allowed ? ["telemetry:read", "chat:query", "settings:manage"] : ["telemetry:read", "chat:query"] };
+    const { container } = render(<MemoryRouter initialEntries={["/settings?days=7"]}>
+      <ConfigProvider config={{ enabledClients: ["claude", "codex"], session }}><App /></ConfigProvider>
+    </MemoryRouter>);
+    expect(screen.getByRole("heading", { level: 1, name: "설정" })).toBeTruthy();
+    // Like /installation: only the page itself, no FilterBar container.
+    expect(container.querySelector("main").children.length).toBe(1);
+    const links = [...container.querySelector("nav").querySelectorAll("a")];
+    expect(links.some(link => new URL(link.href).pathname === "/settings")).toBe(allowed);
+    if (allowed) {
+      expect((await screen.findByRole("status")).textContent).toContain("조직 SSO");
+      expect(fetch.mock.calls.every(([url]) => !String(url).includes("days="))).toBe(true);
+    } else {
+      expect(screen.getByRole("alert").textContent).toContain("권한");
+      expect(fetch.mock.calls.some(([url]) => String(url).includes("/api/settings"))).toBe(false);
+    }
+  }
+});
+
 test("the device connection link opens its approval page without chat or a filter bar", async () => {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   const handle = "a".repeat(32);

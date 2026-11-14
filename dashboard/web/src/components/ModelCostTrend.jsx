@@ -164,7 +164,7 @@ function TrendTooltip({ active, payload, frame, fmtTick, c, hidden }) {
 }
 
 export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t", bucketHours, bounds,
-  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent, dimension = "model", userSuffix }) {
+  pinned, top = 6, basis, tickFormatter, zoomDisabled = false, height = 260, clampRange, accent, dimension = "model", userSuffix, teamLabel }) {
   const _locale = useLocale();
   const noun = dimension === "user" ? translate("m1ac6e422b7dc") : dimension === "team" ? translate("m321639b7ad86") : translate("mf9f4d4113aa1");
   const c = useChartColors();
@@ -187,8 +187,8 @@ export function ModelCostTrend({ title, subtitle, help, right, cells, xKey = "t"
   const pinnedKey = JSON.stringify(pinned ?? []);
   const fromMs = boundMs(bounds?.from), toMs = boundMs(bounds?.to);
   const frame = useMemo(() => (Array.isArray(cells)
-    ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours, dimension, userSuffix })
-    : null), [cells, top, pinnedKey, fromMs, toMs, hours, dimension, userSuffix, _locale]);
+    ? buildModelCostFrame(cells, { top, pinned: JSON.parse(pinnedKey), bounds: { from: fromMs, to: toMs }, bucketHours: hours, dimension, userSuffix, teamLabel })
+    : null), [cells, top, pinnedKey, fromMs, toMs, hours, dimension, userSuffix, teamLabel, _locale]);
 
   const chip = basis ? <span className="rounded-full border border-ink-200 px-2 py-0.5 text-[11px] text-ink-600"
     style={accent ? { borderColor: accent } : undefined}>{basis}</span> : null;

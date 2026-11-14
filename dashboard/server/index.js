@@ -37,6 +37,11 @@ import { createPriceDiscovery, setPriceDiscoveryObserver } from "./pricingDiscov
 import { clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
 import { taskCacheKey, userTasks, validateTaskQuery } from "./taskTraces.js";
 import { taskDetailCacheKey, userTaskDetail, validateTaskDetailQuery } from "./taskTraceDetail.js";
+import { directoryVersion } from "./teamDirectoryParams.js";
+import { createDynamoDeviceStore } from "./deviceTokenStore.js";
+import { createCognitoDirectory } from "./cognitoDirectory.js";
+import { createTeamSync } from "./teamSync.js";
+import { createTeamSettings, teamDirectoryConfig } from "./teamSettingsRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -123,6 +128,16 @@ collectorFeature.installIngest(app);
 app.use(authentication.middleware);
 app.use("/api", createRequestAdmission());
 collectorFeature.installManagement(app);
+// Directory teams need OIDC, a Cognito issuer and the device-token table; otherwise the settings
+// routes still answer with the reason and teams stay device-provided. The sync starts after listen().
+const teamDirectory = teamDirectoryConfig({ mode: authentication.mode, env: process.env });
+const teamStore = teamDirectory.reason ? null : createDynamoDeviceStore({ tableName: teamDirectory.tableName });
+const teamCognito = teamDirectory.reason ? null
+  : createCognitoDirectory({ region: teamDirectory.region, poolId: teamDirectory.poolId });
+const teamSync = teamDirectory.reason ? null
+  : createTeamSync({ store: teamStore, directory: teamCognito, issuer: teamDirectory.issuer });
+createTeamSettings({ authentication, store: teamStore, directory: teamCognito, sync: teamSync,
+  issuer: teamDirectory.issuer, poolId: teamDirectory.poolId, reason: teamDirectory.reason }).install(app);
 app.get("/api/session", (req, res) => res.json(authentication.sessionInfo(req)));
 
 // /api/* 응답 전체에 no-store. 라우트마다 res.set을 부르던 예전 방식은 route() 래퍼를 거치는
@@ -284,7 +299,12 @@ function validateModelTime(raw) {
   if (raw.modelTime !== undefined && raw.modelTime !== "1")
     throw new ValidationError("invalid modelTime", "modelTime accepts only 1");
 }
+// Every cached response may resolve teams, so each key carries the directory version: a sync
+// or settings change then misses the old entries instead of serving stale team attribution.
 function cacheKey(path, query) {
+  return `${routeCacheKey(path, query)}&teamdir=${directoryVersion()}`;
+}
+function routeCacheKey(path, query) {
   if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
@@ -675,6 +695,8 @@ if (isMain) {
     if (clientConfig.enabledClients.includes("claude")) insights.start();
     // Background and unref'd: startup and requests never wait for the AWS Price List.
     startPriceListRefresh(priceListSettings);
+    // Background and unref'd: the first directory sync never delays startup or requests.
+    teamSync?.start();
   });
 
   // k8s 롤링 업데이트에서 SIGTERM은 파드가 Service endpoints에서 빠지기 *전에* 도착한다 —

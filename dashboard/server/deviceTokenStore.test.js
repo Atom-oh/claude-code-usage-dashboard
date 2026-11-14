@@ -83,6 +83,83 @@ test("renewal staging and promotion are conditional updates on verified hashes",
     UpdateExpression: "SET reuseDetectedAt = :at", ExpressionAttributeValues: { ":at": 16 } });
 });
 
+test("team settings and history writes are version-conditional", async () => {
+  const commands = [];
+  const store = createDynamoDeviceStore({ tableName: "devices", client: {
+    async send(command) { commands.push(command); return {}; },
+  } });
+  const settings = { attributes: ["custom:team"], labels: { a: "A" }, historyStart: "2026-01-01", updatedAt: 5, updatedBy: "admin" };
+  assert.equal(await store.putTeamSettings(settings, null), true);
+  assert.equal(await store.putTeamSettings(settings, 3), true);
+  assert.deepEqual(commands[0].input, { TableName: "devices",
+    Item: { ...settings, owner: "settings", id: "team-mapping", version: 1 },
+    ConditionExpression: "attribute_not_exists(#id)", ExpressionAttributeNames: { "#id": "id" } });
+  assert.equal(commands[1].input.Item.version, 4);
+  assert.equal(commands[1].input.ConditionExpression, "#version = :expected");
+  assert.deepEqual(commands[1].input.ExpressionAttributeNames, { "#version": "version" });
+  assert.deepEqual(commands[1].input.ExpressionAttributeValues, { ":expected": 3 });
+
+  assert.equal(await store.putTeamHistory("custom:team", { id: "a".repeat(64), entries: [1] }, null), true);
+  assert.equal(await store.putTeamHistory("custom:team", { id: "a".repeat(64), entries: [2] }, 7), true);
+  assert.deepEqual(commands[2].input.Item, { owner: "team-history#custom:team", id: "a".repeat(64), entries: [1], version: 1 });
+  assert.equal(commands[2].input.ConditionExpression, "attribute_not_exists(#id)");
+  assert.equal(commands[3].input.Item.version, 8);
+  assert.equal(commands[3].input.ConditionExpression, "#version = :expected");
+  assert.deepEqual(commands[3].input.ExpressionAttributeValues, { ":expected": 7 });
+
+  const lost = createDynamoDeviceStore({ tableName: "devices", client: {
+    async send() { throw Object.assign(new Error("x"), { name: "ConditionalCheckFailedException" }); },
+  } });
+  assert.equal(await lost.putTeamSettings(settings, 1), false);
+  assert.equal(await lost.putTeamHistory("custom:team", { id: "b", entries: [] }, null), false);
+});
+
+test("team settings read is consistent and returns the whole stored record", async () => {
+  const calls = [];
+  const store = createDynamoDeviceStore({ tableName: "devices", client: {
+    async send(command) {
+      calls.push(command);
+      return calls.length === 1 ? {} : { Item: { owner: "settings", id: "team-mapping", attributes: ["t"], historyStart: "x", version: 2 } };
+    },
+  } });
+  assert.equal(await store.getTeamSettings(), null);
+  assert.deepEqual(await store.getTeamSettings(), { attributes: ["t"], historyStart: "x", version: 2 });
+  assert.deepEqual(calls[0].input, { TableName: "devices", Key: { owner: "settings", id: "team-mapping" }, ConsistentRead: true });
+});
+
+test("team history lists every page", async () => {
+  const calls = [];
+  const store = createDynamoDeviceStore({ tableName: "devices", client: {
+    async send(command) {
+      calls.push(command);
+      return calls.length === 1
+        ? { Items: [{ owner: "team-history#t", id: "u1", entries: [1], version: 1 }], LastEvaluatedKey: { owner: "team-history#t", id: "u1" } }
+        : { Items: [{ owner: "team-history#t", id: "u2", entries: [2], version: 4 }] };
+    },
+  } });
+  assert.deepEqual(await store.listTeamHistory("t"),
+    [{ id: "u1", entries: [1], version: 1 }, { id: "u2", entries: [2], version: 4 }]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].input.ConsistentRead, true);
+  assert.deepEqual(calls[0].input.ExpressionAttributeValues, { ":owner": "team-history#t" });
+  assert.equal(calls[0].input.ExclusiveStartKey, undefined);
+  assert.deepEqual(calls[1].input.ExclusiveStartKey, { owner: "team-history#t", id: "u1" });
+});
+
+test("one team history record is read consistently by key", async () => {
+  const calls = [];
+  const store = createDynamoDeviceStore({ tableName: "devices", client: {
+    async send(command) {
+      calls.push(command);
+      return calls.length === 1 ? {} : { Item: { owner: "team-history#t", id: "u1", entries: [1], version: 3 } };
+    },
+  } });
+  assert.equal(await store.getTeamHistory("t", "u1"), null);
+  assert.deepEqual(await store.getTeamHistory("t", "u1"), { id: "u1", entries: [1], version: 3 });
+  assert.equal(calls[0].constructor.name, "GetCommand");
+  assert.deepEqual(calls[0].input, { TableName: "devices", Key: { owner: "team-history#t", id: "u1" }, ConsistentRead: true });
+});
+
 test("enrollment requests live in their own partition and decisions are single, pending and before the deadline", async () => {
   const commands = [];
   let conflict = false;

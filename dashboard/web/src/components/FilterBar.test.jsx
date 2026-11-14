@@ -5,7 +5,7 @@ import { ConfigProvider } from "../ConfigContext.jsx";
 import { FilterProvider } from "../FilterContext.jsx";
 import { FilterBar } from "./FilterBar.jsx";
 import { ClientProvider } from "../ClientContext.jsx";
-import { TeamsContext } from "../TeamsContext.jsx";
+import { DEVICE_TEAM_MARKER, TeamsContext } from "../TeamsContext.jsx";
 
 afterEach(() => cleanup());
 
@@ -119,4 +119,41 @@ test("observed teams populate the control in shared views", () => {
   const select = screen.getByRole("combobox", { name: "팀" });
   expect(select.value).toBe("");
   expect([...select.options].map((o) => [o.value, o.textContent])).toEqual([["", "모든 팀"], ["fsi", "fsi"], ["ops", "ops"]]);
+});
+
+test("team options show labels and device markers while the value stays raw", () => {
+  render(
+    <MemoryRouter initialEntries={["/cost"]}>
+      <ClientProvider><FilterProvider>
+        <TeamsContext.Provider value={{ options: ["field-cs", "dev", "both-team"], byUser: new Map(), loading: false,
+          labels: { "field-cs": "Korea CS" }, sources: { "field-cs": "directory", dev: "device", "both-team": "both" }, directory: true }}>
+          <FilterBar />
+        </TeamsContext.Provider>
+      </FilterProvider></ClientProvider>
+    </MemoryRouter>
+  );
+  const select = screen.getByRole("combobox", { name: "팀" });
+  expect([...select.options].map((o) => [o.value, o.textContent])).toEqual([["", "모든 팀"],
+    ["field-cs", "Korea CS"], ["dev", `dev ${DEVICE_TEAM_MARKER}`], ["both-team", "both-team"]]);
+  expect(select.title).toContain("조직 디렉터리(Cognito)");
+  expect(select.options[2].title).toContain("기기가 보낸 team 값");
+  expect(select.options[1].title).toBe("");
+  fireEvent.change(select, { target: { value: "field-cs" } });
+  expect(select.value).toBe("field-cs");
+});
+
+test("without a directory, device teams render unmarked as before", () => {
+  render(
+    <MemoryRouter initialEntries={["/cost"]}>
+      <ClientProvider><FilterProvider>
+        <TeamsContext.Provider value={{ options: ["dev"], byUser: new Map(), loading: false,
+          labels: {}, sources: { dev: "device" }, directory: false }}>
+          <FilterBar />
+        </TeamsContext.Provider>
+      </FilterProvider></ClientProvider>
+    </MemoryRouter>
+  );
+  const select = screen.getByRole("combobox", { name: "팀" });
+  expect([...select.options].map((o) => o.textContent)).toEqual(["모든 팀", "dev"]);
+  expect(select.title).toBe("");
 });

@@ -889,6 +889,20 @@ const teamCells = () => {
     bounds: { from: Date.parse(day), to: Date.parse(day) + 86400000 } };
 };
 
+test("team trend series and the 팀 없음/기타 rows use the given team labels for display only", () => {
+  const { cells, bounds } = teamCells();
+  const frame = buildModelCostFrame(cells, { bucketHours: 24, dimension: "team", top: 8, bounds,
+    teamLabel: (raw) => (raw === "t7" ? "Team Seven" : raw) });
+  const seven = frame.series.find((s) => s.label === "Team Seven");
+  expect(seven).toBeTruthy();
+  expect(frame.series.some((s) => s.label === "t7")).toBe(false);
+  expect(frame.series.map((s) => s.label)).toContain("팀 없음");
+  expect(frame.others.label).toBe("기타 3개 팀");
+  // Keys stay raw so pinning, colors and filters are label-independent.
+  const plain = buildModelCostFrame(cells, { bucketHours: 24, dimension: "team", top: 8, bounds });
+  expect(seven.key).toBe(plain.series.find((s) => s.label === "t7").key);
+});
+
 test("team trend keeps 8 teams and 팀 없음 as its own series", () => {
   const { cells, bounds } = teamCells();
   const frame = buildModelCostFrame(cells, { bucketHours: 24, dimension: "team", top: 8, bounds });

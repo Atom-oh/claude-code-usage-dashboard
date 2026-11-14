@@ -91,6 +91,22 @@ on the account's readonly profile; it does **not** set `readonly=1` per request.
 or undetermined results disable chat with HTTP 503. See [chat](agent-llm.md) for limits and
 the active tool-context cap and disconnect/deadline cancellation limits.
 
+## Team directory
+
+Cognito-sourced team attribution ([runbook](../runbooks/organization-sso.md#team-attribution-from-cognito))
+runs only with `AUTH_MODE=oidc`, a Cognito `OIDC_ISSUER` and `INGEST_TOKEN_TABLE`.
+
+- Terraform grants the dashboard role `cognito-idp:ListUsers` and `cognito-idp:DescribeUserPool` on the one
+  user pool parsed from `oidc_issuer` ([dashboard.tf](../../infra/dashboard.tf)); nothing else, no networking change.
+- `/api/settings/teams*` requires `settings:manage`, held only by `admin`. In Basic mode the settings report `available: false` with reason `basic_auth` and a save returns 409 `directory_unavailable`.
+- The DynamoDB table stores only `sha256(issuer + "\0" + sub)` and `sha256(issuer + "\0" + lower(email))`
+  digests as identities; team names (raw directory values) and display labels are stored in clear.
+- Directory values reach ClickHouse only as bound parameters of server queries
+  ([clickhouse.js](../../dashboard/server/clickhouse.js) `query()`). `queryReadonly`, which runs chat SQL, never
+  receives them, so chat cannot read the directory.
+- `user.email` is client-provided telemetry. A device that claims another user's email inherits that
+  user's directory team; the mapping is attribution for reporting, not verified identity.
+
 ## Data visibility and masking
 
 Ordinary data APIs return raw identities. `PII_MASK_ENABLED` controls presentation masking,

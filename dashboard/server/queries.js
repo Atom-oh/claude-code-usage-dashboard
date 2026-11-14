@@ -9,6 +9,7 @@ import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetric
 import { knownReportedCost } from "./reportedCost.js";
 import { foldSessionTurns } from "./sessionTurns.js";
 import { claudeCallKeySql, claudeTurnKeySql } from "./sessionTurnsSchema.js";
+import { directoryMeta } from "./teamDirectoryParams.js";
 
 // Every query here goes through this wrapper: a query that prices Claude cost counters
 // (nacCostSql) gets its non-Anthropic factor params for the window it reads (ADR-017).
@@ -193,49 +194,87 @@ const TEAM_SESSIONS = {
   codex: ["LogAttributes['conversation.id']", "startsWith(EventName, 'codex.')"],
 };
 const LOG_USER = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
-// Columns: client, session, team, user, last_seen (latest in-window team evidence; epoch if none).
+// Directory teams (teamDirectoryParams.js): the entry of the session user's email digest whose
+// [from, to) interval holds the session start wins over the device team; a cleared entry ('')
+// falls back to it. With empty arrays no entry matches, so the device-only result is unchanged:
+// team, user and last_seen then come only from team-bearing rows, as before.
+const DIR_INDEX = `if(session_user = '', 0, arrayFirstIndex((k, f, t) -> k = user_key AND f <= started AND started < t,
+        {dirKey:Array(String)}, {dirFrom:Array(DateTime)}, {dirTo:Array(DateTime)}))`;
+// Columns: client, session, team, team_source ('directory' | 'device'), user, last_seen (latest
+// in-window team evidence; epoch if none). Only sessions with a resolved team are returned.
 export function sessionTeamsSql(clients, since = "{from:DateTime}") {
   const branches = clients.map((client) => {
     if (!TEAM_SESSIONS[client]) throw new Error(`unknown client ${client}`);
     const [session, where] = TEAM_SESSIONS[client];
     return `SELECT '${client}' AS client, ${session} AS session, ${TEAM_EXPR} AS value, count() AS n,
-        maxIf(Timestamp, Timestamp >= {from:DateTime}) AS seen, argMax(${LOG_USER}, Timestamp) AS identity
+        maxIf(Timestamp, Timestamp >= {from:DateTime}) AS seen, argMax(${LOG_USER}, Timestamp) AS identity,
+        max(Timestamp) AS latest, min(Timestamp) AS first_seen
       FROM claude_code.otel_logs
       WHERE Timestamp >= toStartOfHour(${since}) - INTERVAL ${LOOKBACK_DAYS} DAY AND Timestamp < {to:DateTime}
-        AND ${where} AND session != '' AND value IS NOT NULL
+        AND ${where} AND session != ''
       GROUP BY session, value`;
   });
   // Distinct output names: an alias shadowing its own aggregate argument nests aggregates.
-  return `SELECT client, session, argMin(value, (-n, value)) AS team, argMax(identity, seen) AS user,
-      max(seen) AS last_seen
-    FROM (${branches.join("\n    UNION ALL\n    ")}) GROUP BY client, session`;
+  // value IS NOT NULL scopes the device evidence only: a session whose sole team evidence is the
+  // directory still needs its rows for the start time and identity.
+  return `SELECT client, session,
+      ${DIR_INDEX} AS dir_index,
+      dir_index > 0 AND {dirTeam:Array(String)}[dir_index] != '' AS dir_hit,
+      if(dir_hit, {dirTeam:Array(String)}[dir_index], device_team) AS team,
+      multiIf(dir_hit, 'directory', device_team IS NOT NULL, 'device', NULL) AS team_source,
+      if(dir_hit, session_user, device_user) AS user,
+      if(dir_hit, session_seen, device_seen) AS last_seen
+    FROM (
+      SELECT client, session, argMinIf(value, (-n, value), value IS NOT NULL) AS device_team,
+          argMaxIf(identity, seen, value IS NOT NULL) AS device_user, maxIf(seen, value IS NOT NULL) AS device_seen,
+          argMax(identity, latest) AS session_user, max(seen) AS session_seen,
+          toDateTime(min(first_seen)) AS started,
+          lower(hex(SHA256(concat({dirIssuer:String}, '\\0', lower(session_user))))) AS user_key
+      FROM (${branches.join("\n      UNION ALL\n      ")}) GROUP BY client, session
+    )
+    WHERE team IS NOT NULL`;
 }
 
-// Teams of sessions with team evidence inside the window (the filter control's options).
-export async function listTeams(from, to, clients) {
-  const rows = await query(`SELECT DISTINCT team FROM (${sessionTeamsSql(clients)})
-    WHERE last_seen >= {from:DateTime} ORDER BY team`, range(from, to, true));
-  return { teams: rows.map((row) => row.team) };
+const teamSource = (seen) => (seen.size > 1 ? "both" : [...seen][0]);
+
+// Teams of sessions with team evidence inside the window (the filter control's options), each
+// with where it came from. Labels are display-only; the web UI applies them.
+export async function listTeams(from, to, clients, run = query) {
+  const rows = await run(`SELECT DISTINCT team, team_source FROM (${sessionTeamsSql(clients)})
+    WHERE last_seen >= {from:DateTime} ORDER BY team, team_source`, range(from, to, true));
+  const seen = new Map();
+  for (const { team, team_source: source } of rows) {
+    if (!seen.has(team)) seen.set(team, new Set());
+    seen.get(team).add(source);
+  }
+  const sources = {};
+  for (const [team, set] of seen) sources[team] = teamSource(set);
+  return { teams: [...seen.keys()], sources, ...directoryMeta() };
 }
 
 // User display lookup: every team of the user's in-window sessions, the most recent first.
 export async function userTeams(from, to, clients) {
-  return { users: foldUserTeams(await query(`SELECT user, team, max(last_seen) AS seen
+  return { users: foldUserTeams(await query(`SELECT user, team, team_source, max(last_seen) AS seen
     FROM (${sessionTeamsSql(clients)}) WHERE last_seen >= {from:DateTime} AND user != ''
-    GROUP BY user, team`, range(from, to, true))) };
+    GROUP BY user, team, team_source`, range(from, to, true))) };
 }
 
 const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+// sources[i] is where teams[i] came from; a team seen from both sources is "both".
 export function foldUserTeams(rows) {
   const users = new Map();
-  for (const { user, team, seen } of rows) {
+  for (const { user, team, team_source: source, seen } of rows) {
     if (!user || !team) continue;
-    if (!users.has(user)) users.set(user, []);
-    users.get(user).push({ team, seen: String(seen) });
+    if (!users.has(user)) users.set(user, new Map());
+    const teams = users.get(user);
+    const entry = teams.get(team) || { team, seen: "", sources: new Set() };
+    if (byText(String(seen), entry.seen) > 0) entry.seen = String(seen);
+    if (source) entry.sources.add(source);
+    teams.set(team, entry);
   }
-  return [...users].sort(([a], [b]) => byText(a, b)).map(([user, list]) => {
-    const teams = list.sort((a, b) => byText(b.seen, a.seen) || byText(a.team, b.team)).map((e) => e.team);
-    return { user, team: teams[0], teams };
+  return [...users].sort(([a], [b]) => byText(a, b)).map(([user, map]) => {
+    const list = [...map.values()].sort((a, b) => byText(b.seen, a.seen) || byText(a.team, b.team));
+    return { user, team: list[0].team, teams: list.map((e) => e.team), sources: list.map((e) => teamSource(e.sources)) };
   });
 }
 

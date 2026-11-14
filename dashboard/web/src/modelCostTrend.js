@@ -127,11 +127,12 @@ const USER_AXIS = localize({
 });
 // /api/cost/by-team-daily: "" is 팀 없음 (never folded); the server residual is keyed like users'.
 export const REST_TEAMS_PREFIX = "\u0000rest-teams:";
-const teamLabel = (key) => (key === "" ? translate("mb02c62680e03")
-  : key.startsWith(REST_TEAMS_PREFIX) ? translate("m6e4782c34768", [key.slice(REST_TEAMS_PREFIX.length)]) : key);
+// name (raw team -> display text, e.g. a directory label) applies to real teams only; keys stay raw.
+const teamLabel = (key, name = (raw) => raw) => (key === "" ? translate("mb02c62680e03")
+  : key.startsWith(REST_TEAMS_PREFIX) ? translate("m6e4782c34768", [key.slice(REST_TEAMS_PREFIX.length)]) : name(key));
 const TEAM_AXIS = localize({
   ...USER_AXIS,
-  label: teamLabel,
+  label: (key) => teamLabel(key),
   identity: (team) => (team === null ? translate("m0ffa13e2ef9a") : teamLabel(team)),
   color: (key, rank) => ({ key: `team-${rank}` }),
   others: (n) => (n ? translate("m6e4782c34768", [n]) : translate("m0ffa13e2ef9a")),
@@ -140,9 +141,13 @@ const TEAM_AXIS = localize({
   // 팀 없음 is never folded into 기타 and does not take a top-N slot.
   alwaysSeries: (key) => key === "",
 });
-// userSuffix (raw identity -> text) extends user series labels, e.g. with a team; keys stay raw.
-const axisFor = (dimension, userSuffix) => (dimension === "team" ? TEAM_AXIS : dimension !== "user" ? MODEL_AXIS
-  : userSuffix ? { ...USER_AXIS, label: (key) => userLabel(key) + userSuffix(key) } : USER_AXIS);
+// userSuffix (raw identity -> text) extends user series labels, e.g. with a team; teamName (raw team ->
+// text) names team series, e.g. with directory labels. Keys stay raw.
+const axisFor = (dimension, userSuffix, teamName) => (dimension === "team"
+  ? teamName ? { ...TEAM_AXIS, label: (key) => teamLabel(key, teamName),
+    identity: (team) => (team === null ? translate("m0ffa13e2ef9a") : teamLabel(team, teamName)) } : TEAM_AXIS
+  : dimension !== "user" ? MODEL_AXIS
+    : userSuffix ? { ...USER_AXIS, label: (key) => userLabel(key) + userSuffix(key) } : USER_AXIS);
 
 export function reasonLabel(reason) {
   const group = REASON_GROUPS.find((g) => g.reasons.includes(reason));
@@ -402,8 +407,8 @@ function parseBound(value) {
 }
 
 export function buildModelCostFrame(cells, { top = 6, pinned = [], bounds, bucketHours, maxIntervals = MAX_INTERVALS,
-  dimension = "model", userSuffix } = {}) {
-  const axis = axisFor(dimension, userSuffix);
+  dimension = "model", userSuffix, teamLabel: teamName } = {}) {
+  const axis = axisFor(dimension, userSuffix, teamName);
   const list = Array.isArray(cells) ? cells : [];
   const isModelCell = (cell) => cell.idle !== true && cell.model !== null;
 
