@@ -89,35 +89,37 @@ internal compaction.
 
 [input_limits.py](../../scripts/pr-review/input_limits.py) owns transport and
 request budgets; [build-prompts.py](../../scripts/pr-review/build-prompts.py)
-owns this repository's context and instruction budgets. They remain unchanged
-by this evidence update:
+owns the lens argument guard. The former 24,000-byte context ceiling, this
+repository's 20,000-byte context budget and the 22,000-byte specialist instruction
+template budget were removed on 2026-11-14. Trusted context now counts only toward
+the guards below; Kiro receives the AWS scope the trusted routing selects, or the
+chair packet when that scope exceeds its direct budget.
 
 | Input | Existing policy budget |
 | --- | --- |
 | Complete PR diff | At most 512,000 UTF-8 bytes and 12,000 lines |
-| Trusted context | At most 24,000 bytes; this repository uses 20,000 |
-| Specialist instruction template | At most 22,000 UTF-8 bytes, including trusted context, paths and response instructions; before nonce framing |
 | Full reviewer or chair request | Below 640,000 bytes, including instructions and framing |
 | Direct Kiro AWS patch | At most 95,000 bytes and 3,000 lines |
 | Chair AWS packet | At most 64,000 bytes of compact JSON |
 | Complete Kiro V3 request | Below 120,000 bytes, including context, metadata and framing |
 | Claude instruction argument | Below 120,000 bytes |
+| Codex lens prompt argument (legacy panel) | Below 120,000 bytes |
 
-[prepare_context_roles.py](../../scripts/pr-review/prepare_context_roles.py)
-checks the rendered instruction template against the 22,000-byte budget before
-provider calls. Context below 20,000 bytes can still fail after adding role and
-response instructions and metadata. Guide selection follows the changed paths.
-[frame_request](../../scripts/pr-review/role_review.py) later adds nonce boundary
-instructions and frames the evidence payload; the complete framed request has
-its own guard above.
+Guide selection follows the changed paths.
+[frame_request](../../scripts/pr-review/role_review.py) adds nonce boundary
+instructions and frames the evidence payload; `role_review.py prepare` checks the
+complete framed request of each required role and Claude's instruction argument
+against the guards above before any provider call.
+Codex's stdin ceiling has not been measured; its full-request guard remains a
+policy budget.
 
 Commit `4e2dc91` introduced the 512,000-byte / 12,000-line guard on 2026-11-04;
 `7590682` centralized it on 2026-11-08. No sizing experiment, token-count
 derivation or provider source for the exact values was found in those changes.
 The earlier runbook described matching limits in cc-on-bedrock; that historical
 comparison is not vendor documentation or a sizing experiment.
-The 120,000-byte instruction guard leaves space below the observed Linux
-single-argument limit; Kiro V3 now uses stdin and does not inherit that argument
+The 120,000-byte instruction and lens-argument guards leave space below the observed
+Linux single-argument limit; Kiro V3 now uses stdin and does not inherit that argument
 constraint. Its request and summary ceilings remain policy choices.
 
 An AWS scope exceeding the direct budget triggers one shared chair summary.

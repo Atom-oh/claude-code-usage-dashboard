@@ -133,11 +133,10 @@ Codex/Claude: full diff up to 512,000 UTF-8 bytes / 12,000 lines, framed request
 below 640,000 bytes. Direct Kiro AWS patches: up to 95,000 bytes / 3,000 lines,
 with the complete V3 stdin request below 120,000 bytes. Larger AWS scopes need a
 shared chair packet of at most 64,000 bytes of compact JSON. Claude's instruction
-argument also stays below 120,000 bytes; its diff uses stdin. Context is at most
-24,000 bytes, reduced to
-20,000 by this repository's context builder. The builder also caps specialist
-instruction templates at 22,000 bytes, including context, paths and response
-instructions, before invocation nonce framing.
+argument also stays below 120,000 bytes; its diff uses stdin. Trusted context and
+specialist instruction templates have no separate budget; they count toward these
+framed-request and argument guards. Lens prompts, passed as one Codex argument,
+stay below 120,000 bytes.
 Projects may lower budgets. `input_limits.py` and `build-prompts.py` own these
 policy budgets. The 512,000-byte / 12,000-line guard
 has no recorded sizing experiment or provider derivation; it is not a measured
@@ -177,5 +176,5 @@ Tool output and progress text are not review results. Recovered transport notice
 remain visible; terminal provider errors still block.
 
 `prepare_context_roles.py` reuses the committed BASE context builder and selected
-module guides, retaining its 20,000-byte context and 22,000-byte prompt limits.
-Candidate guide size is validated without using candidate instructions.
+module guides without a context or prompt budget of its own. Candidate guides are
+validated as UTF-8 regular files without using candidate instructions.

@@ -111,8 +111,10 @@ Panel and chair instructions use English. Reviewers must verify claims against e
 behavior rather than treating removed prose as automatically correct. Baseline contracts
 may be intentionally updated by a PR; real introduced defects still block.
 
-Each context is limited to 20,000 UTF-8 bytes and each lens prompt to 22,000 bytes. Context
-overflow fails explicitly rather than silently dropping guidance. Split oversized changes.
+Context and specialist instructions have no separate byte budget. Each lens prompt is
+one Codex argument and stays below 120,000 bytes (the measured single-argument limit is
+131,071); specialist requests are bounded by their framed-request guards. Overflow fails
+explicitly rather than silently dropping guidance.
 `lenses/context-manifest.json` records the base revision, included files, content hashes,
 sizes, and missing optional guides.
 

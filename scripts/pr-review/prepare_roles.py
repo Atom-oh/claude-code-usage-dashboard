@@ -46,13 +46,13 @@ def git_file(revision, path):
     return result.stdout.decode("utf-8") if result.returncode == 0 else None
 
 
-def context_at(revision, cap):
+def context_at(revision):
     context = git_file(revision, "AGENTS.md")
     source = git_file(revision, "CLAUDE.md")
     if context is None:
         context = source
-    if context is None or not context.strip() or len(context.encode()) > cap:
-        raise ValueError("Base/candidate reviewer context is missing or oversized")
+    if context is None or not context.strip():
+        raise ValueError("Base/candidate reviewer context is missing or empty")
     if "generated-by: co-agent" in context:
         if source is None:
             raise ValueError("Generated context has no canonical source")
@@ -102,9 +102,6 @@ def prepare(head, base, work, supplied_diff=None):
         ["git", "fetch", "--no-tags", "--depth=1", "origin", merge_base, head],
         check=True, stdout=subprocess.DEVNULL,
     )
-    cap = int(os.environ.get("REVIEW_CONTEXT_CAP", "24000"))
-    if not 0 < cap <= 24000:
-        raise ValueError("REVIEW_CONTEXT_CAP must be between 1 and 24000 bytes")
     policy = project_policy()
     exclusion_source = None
     if policy:
@@ -148,8 +145,8 @@ def prepare(head, base, work, supplied_diff=None):
         file = DIRECTORY / "prepare_context_roles.py"
         expected = git_file(base, "scripts/pr-review/prepare_context_roles.py")
         if expected is None and not file.exists() and not file.is_symlink():
-            context = context_at(base, cap)
-            context_at(head, cap)  # Candidate bytes never become instructions.
+            context = context_at(base)
+            context_at(head)  # Candidate bytes never become instructions.
         else:
             if (file.is_symlink() or not file.is_file() or expected is None
                     or file.read_bytes() != expected.encode("utf-8")):
@@ -157,12 +154,10 @@ def prepare(head, base, work, supplied_diff=None):
             spec = importlib.util.spec_from_file_location("project_scoped_context", file)
             hook = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(hook)
-            context, manifest, effective_cap = hook.prepare(head, base, paths, diff, cap)
-            if (not isinstance(manifest, dict) or type(effective_cap) is not int
-                    or not 0 < effective_cap <= cap):
-                raise ValueError("Invalid scoped context manifest or increased cap")
+            context, manifest = hook.prepare(head, base, paths, diff)
+            if not isinstance(context, str) or not isinstance(manifest, dict):
+                raise ValueError("Invalid scoped context or manifest")
             provenance["scoped_context"] = manifest
-            cap = effective_cap
     provenance["aws_source_revisions"] = [merge_base, head]
     work.mkdir(parents=True, exist_ok=True)
     (work / "project-context.md").write_bytes(context.encode("utf-8"))
@@ -180,7 +175,6 @@ def prepare(head, base, work, supplied_diff=None):
         "--context", str(work / "project-context.md"),
         "--diff", str(work / "role-diff.txt"),
         "--paths", str(work / "role-paths.json"),
-        "--context-cap", str(cap),
         "--provenance", str(work / "role-source.json"),
         *opt_in,
     ])

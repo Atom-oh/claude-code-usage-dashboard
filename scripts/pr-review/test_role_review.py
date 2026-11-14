@@ -391,11 +391,16 @@ VERDICT: PASS
         self.assertEqual(self.prepare(raw, extra=("--paths", manifest))["paths"], ["link"])
         self.assertEqual(self.prepare(raw)["paths"], ["link"])
 
-    def test_context_default_supports_24000_bytes_and_lower_configured_cap(self):
-        self.context.write_text("x" * 22892)
-        self.prepare()
-        self.prepare(extra=("--context-cap", "12288"), expected=2)
+    def test_context_has_no_own_cap_and_claude_argument_guard_still_blocks(self):
+        self.context.write_text("x" * 60_000)
+        plan = self.prepare()
+        self.assertNotIn("context_cap", plan)
+        self.assertEqual(plan["input_failures"], [])
+        self.context.write_text("x" * 130_000)
+        self.assertIn("prompt_byte_limit:claude-self", self.prepare(expected=2)["input_failures"])
         self.assert_blocked()
+        self.context.write_text(" \n")
+        self.assertIn("context_empty", self.prepare(expected=2)["input_failures"])
 
     def test_revision_identifiers_must_be_full_hex_sha(self):
         self.prepare(head="HEAD", expected=2)

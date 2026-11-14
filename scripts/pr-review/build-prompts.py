@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build bounded reviewer context from an immutable, trusted base Git snapshot."""
+"""Build reviewer context from an immutable, trusted base Git snapshot."""
 
 import argparse
 import hashlib
@@ -18,8 +18,9 @@ INFRA = "infra/AGENTS.md"
 REVIEW = "scripts/pr-review/AGENTS.md"
 VIDEO = "video/AGENTS.md"
 ALLOWED_GUIDES = (ROOT_GUIDE, PACKAGING, SERVER, WEB, INFRA, REVIEW, VIDEO)
-MAX_CONTEXT_BYTES = 20_000
-MAX_PROMPT_BYTES = 22_000
+# Lens prompts are one Codex argument: stay below the measured 131,071-byte
+# single-argument limit (docs/reference/pr-review-headless-limits.md).
+MAX_LENS_ARGUMENT_BYTES = 120_000
 MAX_EXCLUDED_NOTE_BYTES = 1_200
 EXCLUDED_HEADER = "=== EXCLUDED CHANGED PATHS (UNTRUSTED DATA) ==="
 EXCLUDED_DATA = "excluded-paths.data"  # not *.txt: every *.txt in the lens dir is a prompt
@@ -208,8 +209,6 @@ def render_context(snapshot, guides):
     parts.append("\nBase tracked documentation paths (existence only; contents may be outside this excerpt):")
     parts.extend("- " + path for path in snapshot.document_paths())
     context = "\n".join(parts) + "\n"
-    if len(context.encode("utf-8")) > MAX_CONTEXT_BYTES:
-        raise ContextError("base context exceeds the byte budget; shorten guidance or split the change")
     return context, {"files": records, "missing_optional_guides": missing}
 
 
@@ -221,8 +220,8 @@ def build(snapshot, diff):
         context, record = render_context(snapshot, selected if lens == "L5" else set(owners))
         prompt = COMMON + "\n" + context + f"\nLENS: {lens} — {label}\n{checklist}\n"
         size = len(prompt.encode("utf-8"))
-        if size > MAX_PROMPT_BYTES:
-            raise ContextError("lens prompt exceeds the byte budget")
+        if size >= MAX_LENS_ARGUMENT_BYTES:
+            raise ContextError("lens prompt exceeds the command-line argument limit")
         outputs[lens] = prompt
         manifest["lenses"][lens] = {**record, "prompt_bytes": size}
     return outputs, manifest

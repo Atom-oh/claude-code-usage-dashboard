@@ -41,9 +41,9 @@ Only deterministic routing may record NOT_APPLICABLE; provider failures never do
 base, fetches Git objects and generates a complete diff without executing head
 code. Workflow context rendering uses the same event `BASE_SHA` as the trusted
 checkout, including advanced or stacked PR bases. Reviewer instructions come from
-the base Git object. Candidate context is checked for availability, size and
-generated-source freshness, then discarded.
-The shared context ceiling is 24,000 bytes; repositories may enforce a smaller one.
+the base Git object. Candidate context is checked for availability and
+generated-source freshness, then discarded. Context has no separate ceiling; it counts
+toward each role's framed-request guard and Claude's instruction-argument guard.
 
 Every result confirms its role, HEAD and reviewed paths. Codex and Claude must
 cover all changed paths; Kiro must cover all projected paths. Host metadata binds

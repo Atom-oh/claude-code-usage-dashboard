@@ -8,7 +8,6 @@ Evidence and update rules: docs/reference/pr-review-headless-limits.md.
 
 MAX_DIFF_BYTES = 512000
 MAX_DIFF_LINES = 12000
-MAX_CONTEXT_BYTES = 24000
 MAX_FULL_REQUEST_BYTES = 640000
 MAX_REQUEST_BYTES = 120000
 MAX_KIRO_DIFF_BYTES = 95000

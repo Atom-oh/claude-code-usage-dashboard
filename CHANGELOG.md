@@ -15,6 +15,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- AI PR review no longer caps trusted context (24,000 and 20,000 bytes) or specialist
+  instruction templates (22,000 bytes). A change touching several owner areas failed
+  review on these policy budgets although every model call was far below its transport
+  guards. Context now counts toward the remaining framed-request guards (below 640,000
+  bytes for Codex/Claude, below 120,000 for Kiro), Claude's instruction argument and the
+  legacy lens prompt argument (both below 120,000 bytes, under the measured 131,071-byte
+  single-argument limit). `REVIEW_CONTEXT_CAP` and `role_review.py prepare --context-cap`
+  are removed; an empty context reports `context_empty`.
+
 ## [1.7.0] - 2026-11-13
 
 ### Added
