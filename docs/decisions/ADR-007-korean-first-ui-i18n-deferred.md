@@ -1,8 +1,13 @@
 # ADR-007: Korean-first UI; defer internationalization
 
-- Status: Accepted for product UI; documentation-language requirement superseded by ADR-010
+- Status: Product-language decision superseded by ADR-022; documentation-language requirement superseded by ADR-010
 - Date: 2026-09-03
-- Updated: 2026-09-13
+- Updated: 2026-11-14
+
+The explicit five-language requirement supersedes the product deferral and
+deployment-time preference below; see
+[ADR-022](ADR-022-per-viewer-interface-language.md). This document retains the
+original decision as historical context.
 
 ## Context
 

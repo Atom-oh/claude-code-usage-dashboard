@@ -1,9 +1,11 @@
 import express from "express";
+import { createHash } from "node:crypto";
 import { openSync, readFileSync, fstatSync, closeSync } from "node:fs";
 import { resolve } from "node:path";
 import { createDeviceTokenService, DeviceTokenError, TOKEN_LIFETIME_DAYS } from "./deviceTokens.js";
 import { createDynamoDeviceStore } from "./deviceTokenStore.js";
 import { collectorInstallScript } from "./collectorInstallScript.js";
+import { createEnrollmentService, isPollToken } from "./collectorEnrollment.js";
 
 const BODY_LIMIT = 2 * 1024 * 1024;
 const RESPONSE_LIMIT = 64 * 1024;
@@ -12,6 +14,10 @@ const SIGNAL_PATHS = new Set(["/api/ingest/v1/metrics", "/api/ingest/v1/logs", "
 const RENEW_PATH = "/api/ingest/renew";
 const INSTALL_PATH = "/api/ingest/install.sh";
 const DEVICE_PACKAGE_PATH = /^\/api\/ingest\/package\/([a-z]+)$/;
+const HELPER_PATH = "/api/ingest/enroll.py";
+const ENROLL_START_PATH = "/api/ingest/enroll/start";
+const ENROLL_POLL_PATH = "/api/ingest/enroll/poll";
+const ENROLL_BODY_LIMIT = 1024;
 const COLLECTOR_VERSION = "0.163.1";
 const mediaType = value => (value || "").split(";")[0].trim().toLowerCase();
 const fail = (code, status) => new DeviceTokenError(code, status);
@@ -69,7 +75,7 @@ function fixedWindow(limit, duration, now) {
   };
 }
 
-function requestBody(req, signal) {
+function requestBody(req, signal, limit = BODY_LIMIT) {
   return new Promise((resolveBody, reject) => {
     let bytes = 0;
     const chunks = [];
@@ -85,7 +91,7 @@ function requestBody(req, signal) {
     const aborted = () => error(fail("request_aborted", 400));
     const data = chunk => {
       bytes += chunk.length;
-      if (bytes > BODY_LIMIT) return error(fail("body_too_large", 413));
+      if (bytes > limit) return error(fail("body_too_large", 413));
       chunks.push(chunk);
     };
     const end = () => { cleanup(); resolveBody(Buffer.concat(chunks, bytes)); };
@@ -133,19 +139,47 @@ function errorResponse(res, error, fallback = "store_unavailable") {
   res.status(known ? error.status : 503).json({ error: known ? error.code : fallback });
 }
 
+// Built by collector/build-packages.mjs next to the archives. Absent files disable browser enrollment.
+function enrollmentArtifacts(packageDir) {
+  let helper = null;
+  let packageHashes = {};
+  try {
+    helper = readFileSync(resolve(packageDir, "enroll.py"));
+    const manifest = JSON.parse(readFileSync(resolve(packageDir, "manifest.json"), "utf8"));
+    for (const platform of ["linux", "darwin"]) {
+      const hash = manifest?.packages?.[`ccdash-collector-${platform}.tar.gz`];
+      if (typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash)) packageHashes[platform] = hash;
+    }
+  } catch { helper = null; packageHashes = {}; }
+  if (!helper || !Object.keys(packageHashes).length) return null;
+  return { helper, helperSha256: createHash("sha256").update(helper).digest("hex"), packageHashes };
+}
+
 /** Install ingestion before human authentication/body parsers, and management after human auth. */
 export function createCollectorFeature({ env = process.env, authentication, packageDir = "/app/collector-packages",
   store, fetchImpl = globalThis.fetch, now = Date.now }) {
   const config = configuration(env, authentication);
-  const service = config.enabled ? createDeviceTokenService({
-    store: store || createDynamoDeviceStore({ tableName: config.tableName }), issuer: config.issuer, now,
-  }) : null;
+  const deviceStore = config.enabled ? store || createDynamoDeviceStore({ tableName: config.tableName }) : null;
+  const service = config.enabled ? createDeviceTokenService({ store: deviceStore, issuer: config.issuer, now }) : null;
   const mintAllowed = fixedWindow(10, 3600000, now);
   const ingestAllowed = fixedWindow(120, 60000, now);
   const renewAllowed = fixedWindow(6, 3600000, now);
   const packageAllowed = fixedWindow(10, 3600000, now);
-  const installScript = config.enabled ? collectorInstallScript(config.endpoint) : null;
+  const artifacts = config.enabled ? enrollmentArtifacts(packageDir) : null;
+  const enrollment = artifacts ? createEnrollmentService({ store: deviceStore, issuer: config.issuer,
+    publicOrigin: config.publicOrigin, now, packageHashes: artifacts.packageHashes }) : null;
+  const installScript = config.enabled ? collectorInstallScript(config.endpoint, artifacts?.helperSha256 ?? null) : null;
+  // Per replica. Per source (req.ip behind the trusted proxy hop): a workshop sharing one NAT
+  // address can still start ~140 installs with retries; the global ceiling only bounds store work.
+  const startFromSourceAllowed = fixedWindow(200, 600000, now);
+  const startAllowed = fixedWindow(1200, 600000, now);
+  // Bounds anonymous poll traffic per client address before any per-enrollment state exists
+  // (sized for a workshop behind one NAT address: ~140 helpers polling every 5 s).
+  const pollFromSourceAllowed = fixedWindow(2400, 60000, now);
+  const pollAllowed = fixedWindow(30, 60000, now);
+  const decideAllowed = fixedWindow(30, 3600000, now);
   let active = 0;
+  let enrollActive = 0;
   let pendingTouches = 0;
 
   function touchAccepted(identity) {
@@ -227,8 +261,84 @@ export function createCollectorFeature({ env = process.env, authentication, pack
     sendPackage(res, platform);
   }
 
+  // Public terminal side of browser enrollment. Neither route accepts cookies or issues ingest access.
+  async function enroll(req, res) {
+    res.set("Connection", "close");
+    if (req.method !== "POST") { res.set("Allow", "POST"); return errorResponse(res, fail("method_not_allowed", 405)); }
+    if (req.originalUrl.includes("?") || (req.get("content-encoding")
+      && req.get("content-encoding").toLowerCase() !== "identity")) return errorResponse(res, fail("invalid_request", 400));
+    const starting = req.path === ENROLL_START_PATH;
+    const length = req.get("content-length");
+    let pollToken;
+    if (starting) {
+      if (mediaType(req.get("content-type")) !== "application/json") return errorResponse(res, fail("unsupported_media_type", 415));
+      if (length && (!/^\d+$/.test(length) || Number(length) > ENROLL_BODY_LIMIT))
+        return errorResponse(res, fail("body_too_large", 413));
+      // The source check runs first so one source exhausting its budget never spends the global one.
+      if (!startFromSourceAllowed(req.ip || req.socket?.remoteAddress || "unknown") || !startAllowed("all")) {
+        res.set("Retry-After", "60");
+        return errorResponse(res, fail("enroll_rate_limited", 429));
+      }
+    } else {
+      if (req.get("transfer-encoding") || (length !== undefined && length !== "0"))
+        return errorResponse(res, fail("invalid_request", 400));
+      pollToken = bearer(req);
+      if (!isPollToken(pollToken)) return errorResponse(res, fail("invalid_enrollment", 401));
+      // Anonymous traffic spends a per-source budget first; per-enrollment limiter state is
+      // allocated only after the polling credential verifies (see enrollment.poll admit).
+      if (!pollFromSourceAllowed(req.ip || req.socket?.remoteAddress || "unknown")) {
+        res.set("Retry-After", "10");
+        return errorResponse(res, fail("poll_rate_limited", 429));
+      }
+    }
+    // Separate admission from ingest: pending installers must never starve telemetry delivery.
+    if (enrollActive >= 16) { res.set("Retry-After", "2"); return errorResponse(res, fail("enroll_busy", 429)); }
+    enrollActive++;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(fail("enroll_timeout", 504)), 10000);
+    const closed = () => controller.abort(fail("request_aborted", 400));
+    res.once("close", closed);
+    try {
+      let reply;
+      if (starting) {
+        let input;
+        try { input = JSON.parse((await requestBody(req, controller.signal, ENROLL_BODY_LIMIT)).toString("utf8")); }
+        catch (error) {
+          if (error instanceof DeviceTokenError || controller.signal.aborted) throw controller.signal.reason || error;
+          throw fail("invalid_json", 400);
+        }
+        reply = await enrollment.start(input, { signal: controller.signal });
+        controller.signal.throwIfAborted();
+        res.status(201);
+      } else {
+        reply = await enrollment.poll(pollToken, { signal: controller.signal, admit: handle => pollAllowed(handle) });
+        controller.signal.throwIfAborted();
+      }
+      res.json(reply);
+    } catch (error) {
+      const failure = controller.signal.aborted ? controller.signal.reason : error;
+      if (failure?.code === "poll_rate_limited") res.set("Retry-After", "10");
+      errorResponse(res, failure);
+    } finally {
+      clearTimeout(timer);
+      res.off("close", closed);
+      enrollActive--;
+    }
+  }
+
+  function helper(req, res) {
+    if (!["GET", "HEAD"].includes(req.method)) {
+      res.set({ Allow: "GET, HEAD", Connection: "close" });
+      return errorResponse(res, fail("method_not_allowed", 405));
+    }
+    if (req.originalUrl.includes("?")) return errorResponse(res, fail("invalid_request", 400));
+    res.type("text/x-python; charset=utf-8").send(artifacts.helper);
+  }
+
   async function ingest(req, res) {
     res.set("Cache-Control", "no-store");
+    if (enrollment && req.path === HELPER_PATH) return helper(req, res);
+    if (enrollment && (req.path === ENROLL_START_PATH || req.path === ENROLL_POLL_PATH)) return enroll(req, res);
     if (config.enabled && req.path === INSTALL_PATH) return install(req, res);
     const devicePackage = config.enabled && DEVICE_PACKAGE_PATH.exec(req.path);
     if (devicePackage) return install(req, res, devicePackage[1]);
@@ -345,7 +455,8 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       const router = express.Router({ strict: true, caseSensitive: true });
       router.use(noStore, authentication.requirePermission("collector:manage"));
       router.get("/", (_req, res) => res.json({ enabled: config.enabled,
-        ...(config.enabled ? { endpoint: config.endpoint, installScriptUrl: `${config.endpoint}/install.sh` } : {}),
+        ...(config.enabled ? { endpoint: config.endpoint, installScriptUrl: `${config.endpoint}/install.sh`,
+          browserEnrollment: !!enrollment } : {}),
         tokenLifetimeDays: TOKEN_LIFETIME_DAYS, collectorVersion: COLLECTOR_VERSION, platforms: ["linux", "darwin"] }));
       router.use((req, res, next) => {
         if (!config.enabled) return errorResponse(res, fail("collector_disabled", 503));
@@ -369,6 +480,20 @@ export function createCollectorFeature({ env = process.env, authentication, pack
       router.delete("/devices/:id", route(async (req, res) => {
         await service.revoke(req.principal?.subject, req.params.id);
         res.status(204).end();
+      }));
+      router.get("/enrollments/:handle", route(async (req, res) => {
+        if (!enrollment) throw fail("enrollment_unavailable", 503);
+        res.json(await enrollment.view(req.principal, req.params.handle));
+      }));
+      // Only an explicit same-origin POST decides; GET and the SSO callback never do.
+      for (const decision of ["approve", "deny"]) router.post(`/enrollments/:handle/${decision}`, route(async (req, res) => {
+        if (!enrollment) throw fail("enrollment_unavailable", 503);
+        if (req.get("content-length") && req.get("content-length") !== "0") throw fail("invalid_request", 400);
+        if (!decideAllowed(req.principal?.subject)) {
+          res.set("Retry-After", "3600");
+          throw fail("decision_rate_limited", 429);
+        }
+        res.json(await enrollment[decision](req.principal, req.params.handle));
       }));
       router.get("/package/:platform", (req, res) => {
         if (!["linux", "darwin"].includes(req.params.platform)) return errorResponse(res, fail("not_found", 404));

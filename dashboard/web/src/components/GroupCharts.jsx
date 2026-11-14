@@ -1,3 +1,4 @@
+import { richMessage, localeTag, translate, useLocale } from "../i18n/index.js";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, DefaultTooltipContent, Legend, Line, LineChart, Pie, PieChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, usePlotArea, useXAxisInverseDataSnapScale } from "recharts";
 import { cn } from "../cn.js";
@@ -23,6 +24,7 @@ import { Card } from "./Card.jsx";
 import EmptyState from "./EmptyState.jsx";
 
 function DragZoomAxis({ binding }) {
+  const _locale = useLocale();
   const snap = useXAxisInverseDataSnapScale();
   const plot = usePlotArea();
   useLayoutEffect(() => {
@@ -52,6 +54,7 @@ function DragZoomAxis({ binding }) {
 // onPick (optional, time axes only): a pure click (below the zoom threshold) reports the
 // clicked bucket's start (ms) instead of being ignored. Drags still zoom and never pick.
 export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled = false, clamp, onPick) {
+  const _locale = useLocale();
   const chartColors = useChartColors();
   const { setRange, intervalHours: globalIntervalHours } = useRange();
   const startRef = useRef(null);
@@ -143,6 +146,7 @@ export function useDragZoom(yAxisId, bucketHoursOverride, timeDomain, disabled =
 // 교체될 때마다 차트가 처음부터 다시 그려져 "화면을 유지한 채 바꿔 끼운다"는 동작이 무의미해진다.
 // 시계열, 그룹별 area 하나씩 — ../awsops AreaTrend와 같은 그라디언트 기법, 그룹 색상만 다중.
 export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, valueKey, height = 240, tickFormatter, bucketHours, zoomDisabled = false }) {
+  const _locale = useLocale();
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled);
   if ((rows || []).length === 0) {
@@ -185,6 +189,7 @@ export function GroupAreaChart({ title, subtitle, help, right, rows, xKey, value
 // 그룹 간 단일 지표 비교 — 소수 카테고리 막대 비교. colorFn(row)이 없으면 그룹 색상을 그대로 씀
 // (accept/reject처럼 "상태"가 카테고리인 경우엔 colorFn으로 status 팔레트를 넘긴다).
 export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "group", valueKey, height = 220, colorFn }) {
+  const _locale = useLocale();
   const c = useChartColors();
   if ((rows || []).length === 0) {
     return (
@@ -219,6 +224,7 @@ export function GroupBarChart({ title, subtitle, help, right, rows, xKey = "grou
 // 다 안 보인다 — Recharts의 layout="vertical"(막대는 가로)로 뒤집고 카테고리 축을 Y로 옮긴다.
 // Horizontal bars have category Y and numeric X; they never select a time range.
 export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, seriesKey, valueKey, height, tickFormatter, valuePrefix = "", bucketHours, horizontal = false, colorOf, seriesSort, zoomDisabled = false }) {
+  const _locale = useLocale();
   const c = useChartColors();
   const zoom = useDragZoom(undefined, bucketHours, undefined, zoomDisabled || horizontal);
   // 엠퍼시스(dataviz: "한 시리즈가 주인공이면 나머지는 회색") — 범례 클릭으로 강조 대상을
@@ -246,16 +252,16 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>
         <div role="status" className="text-sm text-ink-500">
-          <p>데이터 확인 필요: 일부 값이 누락되거나 유효하지 않아 전체 차트를 표시하지 않습니다.</p>
-          <p className="mt-2">확인 필요 항목 {affected.length}개</p>
+          <p>{translate("ma3453ea662cf")}</p>
+          <p className="mt-2">{richMessage("m7e970f1f625a", [affected.length])}</p>
           <ul className="mt-1 list-disc space-y-1 pl-5">
             {visible.map((row) => (
               <li key={JSON.stringify([row[xKey], row[seriesKey]])} className="break-words">
-                {tickFormatter ? tickFormatter(row[xKey]) : String(row[xKey] ?? "미지정")} — {String(row[seriesKey] ?? "미지정")}
+                {tickFormatter ? tickFormatter(row[xKey]) : String(row[xKey] ?? translate("m050d981c6c43"))} — {String(row[seriesKey] ?? translate("m050d981c6c43"))}
               </li>
             ))}
           </ul>
-          {affected.length > visible.length && <p className="mt-1">외 {affected.length - visible.length}개</p>}
+          {affected.length > visible.length && <p className="mt-1">{richMessage("m5431f546296b", [affected.length - visible.length])}</p>}
         </div>
       </Card>
     );
@@ -264,7 +270,7 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
   // seriesSort는 모델 차트처럼 값(지출 순위)과 무관한 고정 범례 순서가 필요할 때만 쓴다 —
   // 기본은 데이터 등장 순(pivotByKey)을 그대로 둔다(예: tool/skill 시리즈는 이 순서 그대로가 맞음).
   const series = seriesSort ? [...rawSeries].sort(seriesSort) : rawSeries;
-  const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
+  const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString(localeTag())}`;
   const h = height ?? (horizontal ? Math.max(220, data.length * 28) : 260);
   return (
     <Card title={title} subtitle={subtitle} help={help} right={right}>
@@ -313,9 +319,10 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
 // 호출부(Executive/Overview/Productivity/Trends)는 그대로다. axis:"left"/"right"는 이제
 // "위 패널"/"아래 패널" 배정으로 읽는다.
 function AvailableTooltipContent(props) {
+  const _locale = useLocale();
   // Recharts skips its formatter for null values; replace only their display text.
   return <DefaultTooltipContent {...props}
-    payload={props.payload?.map(entry => entry.value == null ? { ...entry, value: "미확인" } : entry)} />;
+    payload={props.payload?.map(entry => entry.value == null ? { ...entry, value: translate("mdc0c487c9693") } : entry)} />;
 }
 
 // Visual guides only: preserve unknown values in both the series and tooltip.
@@ -336,6 +343,7 @@ function gapConnections(rows, xKey, line) {
 }
 
 function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickFormatter, showXAxis, zoom, c, timeDomain, tooltipFormatter, clickable = false, showGapConnections = false }) {
+  const _locale = useLocale();
   return (
     <ResponsiveContainer width="100%" height={height} className={cn(zoom.className, clickable && "cursor-pointer")}>
       <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} syncId="dual" {...zoom.handlers}>
@@ -384,6 +392,7 @@ function MetricPanel({ panelLines, rows, xKey, height, tickFormatter, valueTickF
 
 // onBucketClick(startMs): optional; a click on a time-axis bucket (not a drag) reports its start.
 export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines, height = 240, tickFormatter, valueTickFormatter, bucketHours, timeDomain, tooltipFormatter, zoomDisabled = false, onBucketClick, showGapConnections = false }) {
+  const _locale = useLocale();
   const c = useChartColors();
   const domain = Array.isArray(timeDomain) && timeDomain.length === 2
     && timeDomain.every(Number.isFinite) && timeDomain[0] < timeDomain[1] ? timeDomain : undefined;
@@ -443,6 +452,7 @@ export function DualLineChart({ title, subtitle, help, right, rows, xKey, lines,
 // 링을 채워서" 보여준다(예: 96% → 링의 96%). Executive.jsx의 ScoreGauge와 같은 SVG 패턴이지만
 // 점수 색 램프가 없다 — 색은 호출부가 주입(그룹 색 등).
 export function RingGauge({ pct, color, label, sub }) {
+  const _locale = useLocale();
   const r = 26, c = 2 * Math.PI * r;
   const filled = Math.max(0, Math.min(1, pct || 0));
   return (
@@ -466,6 +476,7 @@ export function RingGauge({ pct, color, label, sub }) {
 // 모델별 지출 비중 bedrock/enterprise 나란히). colorOf(name, i, theme)로 색을 넘기면 도넛 간에
 // 같은 항목이 같은 색을 갖도록 밖에서 고정할 수 있다.
 export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", valueFormatter, colorOf, legendRenderer }) {
+  const _locale = useLocale();
   const c = useChartColors();
   // colorOf가 전역 top-N에서 만든 고정 맵이면, 그 top-N 밖 모델이 이 도넛에 등장할 때
   // undefined를 반환할 수 있다 — Cell fill/범례 스와치가 깨지지 않도록 팔레트로 폴백한다
@@ -475,8 +486,8 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", va
   // Math.round만 쓰면 짧은 기간의 소액 tier(몇 센트)가 전부 "$0"으로 보인다 — $10 미만은 소수 2자리.
   const fmt = valueFormatter || ((v) =>
     valuePrefix === "$"
-      ? `$${Number(v) < 10 ? v.toFixed(2) : Math.round(v).toLocaleString()}`
-      : v.toLocaleString());
+      ? `$${Number(v) < 10 ? v.toFixed(2) : Math.round(v).toLocaleString(localeTag())}`
+      : v.toLocaleString(localeTag()));
 
   return (
     <div className="min-w-0">
@@ -497,7 +508,7 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", va
             </PieChart>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <div className="tabular text-[20px] font-semibold leading-none text-ink-800">{fmt(total)}</div>
-              <div className="text-[10px] uppercase tracking-[0.04em] text-ink-400 mt-1">합계</div>
+              <div className="text-[10px] uppercase tracking-[0.04em] text-ink-400 mt-1">{translate("m149df7a8bd3e")}</div>
             </div>
           </div>
           <ul className={cn("min-w-0 flex-1 space-y-1.5", legendRenderer && "basis-40")}>
@@ -520,6 +531,7 @@ export function DonutBody({ label, data, nameKey, valueKey, valuePrefix = "", va
 
 // ../awsops DonutBreakdown 포팅 — innerRadius 55/outerRadius 80, 중앙 합계 라벨 + 사이드 범례.
 export function DonutBreakdown({ title, subtitle, help, right, data, nameKey, valueKey, valuePrefix = "", valueFormatter, colorOf }) {
+  const _locale = useLocale();
   return (
     <Card title={title} subtitle={subtitle} help={help} right={right}>
       <DonutBody data={data} nameKey={nameKey} valueKey={valueKey} valuePrefix={valuePrefix} valueFormatter={valueFormatter} colorOf={colorOf} />
@@ -532,6 +544,7 @@ export function DonutBreakdown({ title, subtitle, help, right, data, nameKey, va
 // 크기를 나른다. 모든 행이 같은 스케일(전체 최대값)을 공유해야 행 간 비교가 성립한다.
 // data: [{label, prev, cur}] — prev/cur가 둘 다 숫자가 아닌 행은 건너뛴다.
 export function DumbbellChart({ title, subtitle, right, data, valuePrefix = "", colorOf }) {
+  const _locale = useLocale();
   const c = useChartColors();
   const rows = (data || []).filter((d) => Number.isFinite(Number(d.prev)) && Number.isFinite(Number(d.cur)));
   if (rows.length === 0) {
@@ -542,13 +555,13 @@ export function DumbbellChart({ title, subtitle, right, data, valuePrefix = "", 
     );
   }
   const max = rows.reduce((m, d) => Math.max(m, Number(d.prev), Number(d.cur)), 0) || 1;
-  const fmt = (v) => `${valuePrefix}${valuePrefix === "$" && Number(v) < 10 ? Number(v).toFixed(2) : Math.round(Number(v)).toLocaleString()}`;
+  const fmt = (v) => `${valuePrefix}${valuePrefix === "$" && Number(v) < 10 ? Number(v).toFixed(2) : Math.round(Number(v)).toLocaleString(localeTag())}`;
   const pos = (v) => 2 + (Number(v) / max) * 96; // 좌우 2% 패딩 안에서의 %
   return (
     <Card title={title} subtitle={subtitle} right={right}>
       <div className="mb-3 flex items-center gap-4 text-[11px] text-ink-500">
-        <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full bg-ink-300" />이전 기간</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full" style={{ background: c.lead }} />이번 기간</span>
+        <span className="flex items-center gap-1.5">{richMessage("m26fa9941705c", [<span className="inline-block h-2 w-2 rounded-full bg-ink-300" />])}</span>
+        <span className="flex items-center gap-1.5">{richMessage("md9009b7071ac", [<span className="inline-block h-2 w-2 rounded-full" style={{ background: c.lead }} />])}</span>
       </div>
       <ul className="space-y-3">
         {rows.map((d, i) => {
@@ -581,6 +594,7 @@ export function DumbbellChart({ title, subtitle, right, data, valuePrefix = "", 
 // ../awsops HBarList 포팅 — recharts 아님, label / 트랙+채움 / 우측 정렬 금액의 단순 flex 리스트.
 // color: 지정하면 채움 막대를 브랜드색 대신 그 색으로(예: 그룹별로 나란히 놓은 카드에서 colorFor(group)).
 export function HBarList({ title, subtitle, help, right, data, labelKey, valueKey, valuePrefix = "", color }) {
+  const _locale = useLocale();
   if ((data || []).length === 0) {
     return (
       <Card title={title} subtitle={subtitle} help={help} right={right}>
@@ -589,7 +603,7 @@ export function HBarList({ title, subtitle, help, right, data, labelKey, valueKe
     );
   }
   const max = data.reduce((m, d) => Math.max(m, Number(d[valueKey]) || 0), 0);
-  const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString()}`;
+  const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString(localeTag())}`;
 
   return (
     <Card title={title} subtitle={subtitle} help={help} right={right}>

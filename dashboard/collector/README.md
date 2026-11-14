@@ -25,9 +25,8 @@ inputs and secret provisioning and is not a ready-to-run generic instance setup.
 
 ## Install
 
-1. Sign in as an editor/admin, open **Collector installation**, select your OS, and
-   register the device. Keep its one-time token available until setup finishes.
-   Viewer/demo accounts cannot register devices or download packages.
+1. Sign in as an editor/admin, open **Collector installation** and select your OS.
+   Viewer/demo accounts cannot approve devices, register devices or download packages.
 2. On the machine that will run Claude Code/Codex, run `python3 --version`. Install a
    supported Python if absent or older than 3.9. Install the clients separately.
 3. On EC2/Linux, enable the user service at boot and after logout once:
@@ -48,8 +47,30 @@ macOS uses a per-user LaunchAgent, which runs while that user is logged in.
 curl -fsSL 'https://YOUR-DASHBOARD/api/ingest/install.sh' | sh
 ```
 
-The script detects Linux or macOS and asks for the attribution ID/email and then the
-device token, reading both from the terminal (it refuses to run without one). Enter your
+The script detects Linux or macOS, downloads the dashboard's `enroll.py` helper and checks
+it against the SHA-256 embedded in the script (a mismatch during a rolling deployment asks
+you to retry). The helper prints a confirmation code and an approval link, opening the
+browser on a desktop; on EC2 or another headless host, open the link on your own computer.
+Sign in, confirm the code matches and select **Connect this device** within ten minutes. The helper
+keeps the device secret in memory, builds the token from the approval, downloads the
+package with it and checks the package hash, then runs `install.py install` with a mode
+0600 token file in a private temporary directory that is removed afterwards. A new
+installation uses the approving account's verified email as its attribution ID
+(`--default-user-id`); a reinstall keeps its existing ID. To choose another ID:
+
+```bash
+curl -fsSL 'https://YOUR-DASHBOARD/api/ingest/install.sh' | sh -s -- --user-id 'YOUR-ID'
+```
+
+If browser approval is unavailable, register the device in the advanced **manual token installation** section
+and run the token flow:
+
+```bash
+curl -fsSL 'https://YOUR-DASHBOARD/api/ingest/install.sh' | sh -s -- --token
+```
+
+The token flow asks for the attribution ID/email and then the device token, reading both
+from the terminal (it refuses to run without one). Enter your
 existing attribution ID/email to preserve user grouping; new users should choose their
 organization's intended identifier. Allowed characters are letters, numbers, `.`, `_`,
 `+`, `@`, and `-`. The token prompt does not echo. The script downloads this package from

@@ -503,8 +503,11 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
   const total = spanTotal(rows);
   const ordered = rows.map(r => ({ r, start: count(r.start_ms), id: r.span_id })).sort(byStart);
   const ids = new Set(rows.map(r => r.span_id));
+  // The turn row names its model-call span kind (codexTurnSql): codex.sampling, or
+  // run_sampling_request for Codex versions without it.
+  const callSpan = turn.sampling_span || "codex.sampling";
   const spans = ordered.map(({ r, start }) => ({ id: r.span_id, parent: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null,
-    lane: "main", kind: r.span_name === "codex.sampling" ? "llm" : "tool", name: label(r.span_name) ?? "unknown",
+    lane: "main", kind: r.span_name === callSpan ? "llm" : "tool", name: label(r.span_name) ?? "unknown",
     start_ms: start !== null && t0 !== null ? start - t0 : null, duration_ms: count(r.duration_ms),
     attrs: pickAttrs(r, SPAN_ATTRIBUTE_ALLOWLIST.codex), _start: start }));
   // Each linked completion goes to the latest-starting sampling span whose

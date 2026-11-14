@@ -22,8 +22,11 @@ const lineAmount = (line) => line.total === null ? "미산정" : `${formatClient
 export const channelTotalsText = (lines) => lines.map((line) => `${line.label} ${lineAmount(line)}`).join(" · ");
 const csvAmount = (value, row) => value === null ? "" : `${formatClientCost(value)}${row?.cost_partial ? " (부분합)" : ""}`;
 
-function Dot({ color }) {
-  return <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />;
+// ring: an outline for a light channel step on white; onDark: an outline that keeps ink and
+// dark steps visible on the dark tooltip surface.
+function Dot({ color, ring = false, onDark = false }) {
+  const outline = onDark ? "0 0 0 1px var(--chart-tooltip-fg)" : ring ? "inset 0 0 0 1px var(--channel-ring)" : undefined;
+  return <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color, boxShadow: outline }} />;
 }
 
 // Claude detail's UserGroupModelBars vocabulary: the leading dot is the channel,
@@ -35,15 +38,15 @@ function ChannelModelBars({ lines, max }) {
       label={`${line.label} ${lineAmount(line)}${line.segs.length ? ` — ${line.segs.map((seg) => `${modelLabel(seg.model)} ${formatClientCost(seg.value)}`).join(" · ")}` : ""}`}
       tip={<span className="flex flex-col gap-0.5">
         <span className="flex items-center gap-1.5 font-semibold">
-          <Dot color={line.color} />{line.title}
+          <Dot color={line.color} onDark />{line.title}
           <span className="tabular ml-auto pl-4">{lineAmount(line)}</span>
         </span>
         {line.segs.map((seg) => <span key={seg.model} className="flex items-center gap-1.5">
-          <Dot color={modelColorFor(seg.model) ?? "var(--ink-300)"} />{modelLabel(seg.model)}
+          <Dot color={modelColorFor(seg.model, "dark") ?? "var(--ink-300)"} />{modelLabel(seg.model)}
           <span className="tabular ml-auto pl-4">{formatClientCost(seg.value)}</span>
         </span>)}
       </span>}>
-      <Dot color={line.color} />
+      <Dot color={line.color} ring={line.ring} />
       <span className="h-1.5 min-w-0 flex-1">
         {line.segs.length && max > 0
           ? <span className="flex h-full overflow-hidden rounded-full" style={{ width: `${Math.max(1, line.total / max * 100)}%` }}>
@@ -59,7 +62,8 @@ function ChannelModelBars({ lines, max }) {
 function Legend({ lines }) {
   return <span className="inline-flex items-center gap-2">
     {lines.map((line) => <span key={line.key} className="inline-flex items-center gap-1" title={line.title}>
-      <span className="inline-block h-2 w-2 rounded-full" style={{ background: line.color }} />{line.label}
+      <span className="inline-block h-2 w-2 rounded-full"
+        style={{ background: line.color, boxShadow: line.ring ? "inset 0 0 0 1px var(--channel-ring)" : undefined }} />{line.label}
     </span>)}
   </span>;
 }

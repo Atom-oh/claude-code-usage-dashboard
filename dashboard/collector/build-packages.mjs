@@ -35,4 +35,8 @@ for (const platform of ['linux', 'darwin']) {
   await writeFile(resolve(output, `ccdash-collector-${platform}.tar.gz`), archive);
   manifest.packages[`ccdash-collector-${platform}.tar.gz`] = createHash('sha256').update(archive).digest('hex');
 }
+// The browser-enrollment helper is served on its own (pinned by install.sh), not packaged.
+const helper = await readFile(resolve(root, 'enroll.py'));
+await writeFile(resolve(output, 'enroll.py'), helper);
+manifest.enrollHelper = createHash('sha256').update(helper).digest('hex');
 await writeFile(resolve(output, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

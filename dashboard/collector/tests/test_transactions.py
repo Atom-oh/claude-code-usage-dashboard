@@ -215,6 +215,25 @@ class Transactions(unittest.TestCase):
         self.assertEqual(self.codex.read_text(), edited)
         self.assertEqual(self.snapshot(), original)
 
+    def test_browser_default_user_id_applies_only_to_new_installations(self):
+        self.args.user_id = None
+        self.args.default_user_id = "alice@example.com"
+        self.install()
+        state = json.loads((self.root / "state.json").read_text())
+        self.assertEqual(state["userId"], "alice@example.com")
+        # A reinstall keeps the existing attribution; only an explicit --user-id replaces it.
+        self.args.default_user_id = "someone-else@example.com"
+        self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "alice@example.com")
+        self.args.user_id = "replacement"
+        self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "replacement")
+
+    def test_without_any_user_id_a_new_installation_uses_the_login_name(self):
+        self.args.user_id = None
+        self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "fixture")
+
     def test_start_failure_restores_old_service_files_and_client_config(self):
         self.install()
         original = self.snapshot()

@@ -62,12 +62,18 @@ Unsafe requests retain the existing exact-Origin gate. Responses and downloads a
 
 | Method and path | Contract |
 |---|---|
-| `GET /api/collector` | Feature state, public ingestion endpoint, `installScriptUrl`, Collector version, supported platforms and 30-day token lifetime. |
+| `GET /api/collector` | Feature state, public ingestion endpoint, `installScriptUrl`, `browserEnrollment` (helper and package manifest available), Collector version, supported platforms and 30-day token lifetime. |
+| `GET /api/collector/enrollments/:handle` | Read-only view of a terminal's request: `{name, platform, code, status, createdAt, expiresAt, userId}`. `status` is `pending`, `approved` (by this account), `denied`, `expired` or `unavailable` (decided by another account). `userId` is the caller's verified email or null; never the polling credential. 404 for unknown handles. |
+| `POST /api/collector/enrollments/:handle/approve` | Same-origin, empty body. Creates the one device under the caller and returns `{status, device, userId}`; repeating returns the same device. 409 `enrollment_denied`/`enrollment_unavailable`, 410 `enrollment_expired`. 30 decisions per account per hour per replica. |
+| `POST /api/collector/enrollments/:handle/deny` | Same-origin, empty body. Terminal; `{status: "denied"}`, idempotent. 409 when already approved, 410 when expired. |
 | `GET /api/collector/devices` | Owner-scoped `devices` and `nextCursor`; up to 50 records per page. Supply the returned `cursor` unchanged. |
 | `POST /api/collector/devices` | `{name, platform}` where name is 1–64 characters without controls and platform is `linux` or `darwin`; 201 returns `device` and the token once. |
 | `DELETE /api/collector/devices/:id` | Revoke an owned device; 204 for existing/already revoked, 404 for absent. |
 | `GET /api/collector/package/:platform` | Authenticated installer archive for `linux` or `darwin`; no credentials embedded. |
-| `GET /api/ingest/install.sh` | Public, `no-store` POSIX sh bootstrap for `curl -fsSL URL \| sh`; embeds only the ingestion endpoint. GET/HEAD only, no query. It prompts on the terminal for the attribution ID and device token. |
+| `GET /api/ingest/install.sh` | Public, `no-store` POSIX sh bootstrap for `curl -fsSL URL \| sh`; embeds only the ingestion endpoint and the `enroll.py` SHA-256. GET/HEAD only, no query. By default it runs browser enrollment; `sh -s -- --token` prompts for the attribution ID and device token instead, which is also the only mode without a helper. `--user-id ID` overrides attribution in both. |
+| `GET /api/ingest/enroll.py` | Public enrollment helper pinned by `install.sh`; 404 when browser enrollment is unavailable. |
+| `POST /api/ingest/enroll/start` | Public. JSON `{secretHash, name, platform}` (SHA-256 hex of the device's own 43-character base64url secret; at most 1 KiB). 201 `{verificationUrl, code, pollToken, interval: 5, expiresAt}` with a ten-minute deadline. Per replica: 200 per client address and 1,200 in total per ten minutes (429 `enroll_rate_limited`). |
+| `POST /api/ingest/enroll/poll` | `Authorization: Bearer <pollToken>`, empty body; 30 per request per minute (429 `poll_rate_limited`). 200 `{status: "pending", interval}` or `{status: "approved", owner, id, userId, expiresAt, packageSha256}`; the device builds `ccd1.<owner>.<id>.<secret>` locally. 403 `enrollment_denied`, 410 `enrollment_expired`/`device_revoked`, 401 `invalid_enrollment`. Approved results repeat until the deadline. |
 | `GET /api/ingest/package/:platform` | Installer archive for `linux` or `darwin` with exactly one device bearer token; ten per device per hour (429 `package_rate_limited`, `Retry-After: 3600`), charged before the file is read, so a missing archive (503) or HEAD also counts. Token checks share the gateway's eight in-flight slots (429 `ingest_busy`). Does not update `lastSeenAt`. |
 | `POST /api/ingest/v1/{logs,metrics,traces}` | Device bearer token only; OTLP JSON/protobuf, at most 2 MiB, no content compression. |
 | `POST /api/ingest/renew` | Device bearer token; JSON content type, empty body; six per device per hour. 200 `{renewed: false, expiresAt}` while more than seven days remain or for an unused replacement, else `{renewed: true, token, expiresAt}` with a new 30-day token. Device views add `renewedAt` and `reuseDetectedAt` (first use of a superseded token). |
@@ -682,7 +688,8 @@ turn crossing a bucket edge is listed once, by its starting bucket. Turns starti
 the neighbouring 24h are attachment context only: completions they win are neither
 listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
-"observed_span_window"`), `llm_calls` counts `codex.sampling` spans, and `subagents` is
+"observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
+from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
 null (no parent link). Spans carry no usage: tokens and cost come only from unique
 usage-bearing `response.completed` completions of the same conversation whose event
 time falls in `[start, end + 5s]` (latest-starting turn when several; each completion
@@ -713,7 +720,7 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
 the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
-  `completions_without_span` (linked completions matching no `codex.sampling` span).
+  `completions_without_span` (linked completions matching no model-call span).
 - `lanes`: `{id, label, kind, spawned_by, llm_calls, cost_usd, cost_partial}`. Claude has
   `main` plus one lane per `agent_id`; `kind` is `general-purpose`, `Explore`, `fork` or
   `custom`, `label` is the spawning span's `subagent_type` (null when not found) and
@@ -726,8 +733,8 @@ the exact identity the task belongs to:
   tool span lacks; `execution_ms` is its duration, while `duration_ms` stays the whole
   call including permission wait), and children of the execution span point at the tool
   span. An execution span without its `tool` span is returned as the tool span. Codex
-  spans are the turn's spans that carry the task's conversation id or none. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex `codex.sampling`
-  spans carry the linked completion's values and `completion: {model, effort, ttft_ms,
+  spans are the turn's spans that carry the task's conversation id or none. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex model-call
+  spans (`codex.sampling`, or `run_sampling_request` for legacy turns) carry the linked completion's values and `completion: {model, effort, ttft_ms,
   duration_ms, count}`. `attrs` holds only allowlisted keys: LLM `model`, token counts,
   `ttft_ms`, `attempt`, `error_class`, `status_code`, `stop_reason`, `query_source_safe`,
   `effort`, `speed`; tool `tool_name`, `subagent_type`, `skill_name`,

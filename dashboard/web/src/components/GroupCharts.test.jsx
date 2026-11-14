@@ -41,8 +41,8 @@ test("donut legends render structured identity labels while preserving amounts a
 });
 
 test.each([
-  ["light", "#ffffff", ["#B4532E", "#C66136", "#355FC7"]],
-  ["dark", "#171c27", ["#D9855F", "#E5936B", "#7898E8"]],
+  ["light", "#ffffff", ["#244193", "#3E53A8", "#0C5F88"]],
+  ["dark", "#171c27", ["#BFC1FF", "#A7ADFE", "#51BDFF"]],
 ])("model donuts keep separate versions and matching %s slice/legend colors", async (_theme, surface, fills) => {
   document.documentElement.style.setProperty("--surface-card", surface);
   const rows = [

@@ -394,3 +394,22 @@ test("a reused superseded token shows a revocation warning until the device is r
   await screen.findByText(device.name);
   expect(screen.queryByText(/이전 토큰이 다시 사용됐습니다/)).toBeNull();
 });
+
+test("browser enrollment leads with a token-free command and keeps manual tokens as an advanced option", async () => {
+  const writeText = vi.fn().mockResolvedValue();
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  installFetch({ config: { ...config, browserEnrollment: true } });
+  mount();
+  await screen.findByText("등록한 기기가 없습니다.");
+  expect(screen.getByLabelText("설치 명령").textContent).toBe(
+    "sudo loginctl enable-linger \"$USER\" &&\ncurl -fsSL 'https://collector.example/api/ingest/install.sh' | sh");
+  expect(screen.getByText(/로그인한 계정의 이메일로 정해지며/)).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "토큰으로 직접 설치 (고급)" })).toBeTruthy();
+  expect(screen.getByLabelText("토큰 설치 명령").textContent).toContain("| sh -s -- --token");
+  fireEvent.click(screen.getByRole("button", { name: "macOS 선택" }));
+  expect(screen.getByLabelText("설치 명령").textContent).toBe("curl -fsSL 'https://collector.example/api/ingest/install.sh' | sh");
+  fireEvent.click(screen.getByRole("button", { name: "토큰 설치 명령 복사" }));
+  const message = await screen.findByText("설치 명령을 복사했습니다.");
+  expect(writeText).toHaveBeenCalledWith("curl -fsSL 'https://collector.example/api/ingest/install.sh' | sh -s -- --token");
+  expect(message.previousElementSibling.contains(screen.getByLabelText("토큰 설치 명령"))).toBe(true);
+});

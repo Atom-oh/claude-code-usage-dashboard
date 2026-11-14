@@ -2,15 +2,16 @@ import { expect, test } from "vitest";
 import { byModelLegendOrder, groupModelColorFor, modelColorFor, modelFamily, modelLegendRank } from "./colors.js";
 import { modelColorKey, trendColor } from "./modelCostTrend.js";
 
+// HSV hue bounds of each family's light and dark ramps; newest version first.
 const families = [
-  ["opus", ["claude-opus-5", "claude-opus-4-8", "claude-opus-4-5"], [8, 32]],
-  ["sonnet", ["claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5"], [215, 235]],
-  ["haiku", ["claude-haiku-4-5", "claude-haiku-3-5"], [150, 175]],
-  ["fable", ["claude-fable-5-1", "claude-fable-5"], [325, 345]],
-  ["sol", ["openai.gpt-6.1-sol", "openai.gpt-6-sol", "openai.gpt-5.6-sol"], [30, 45]],
-  ["terra", ["openai.gpt-6-terra", "openai.gpt-5.6-terra"], [18, 35]],
-  ["luna", ["openai.gpt-6-luna", "openai.gpt-5.6-luna"], [185, 205]],
-  ["astra", ["openai.gpt-6-astra", "openai.gpt-6.1-astra"], [255, 280]],
+  ["opus", ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-5"], [220, 242]],
+  ["sonnet", ["claude-sonnet-5-5", "claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5"], [195, 210]],
+  ["haiku", ["claude-haiku-5-5", "claude-haiku-4-5", "claude-haiku-3-5"], [133, 153]],
+  ["fable", ["claude-fable-5-2", "claude-fable-5-1", "claude-fable-5"], [325, 344]],
+  ["astra", ["openai.gpt-6.1-astra", "openai.gpt-6-astra"], [303, 314]],
+  ["sol", ["openai.gpt-6.1-sol", "openai.gpt-6-sol", "openai.gpt-5.6-sol"], [38, 50]],
+  ["terra", ["openai.gpt-6-terra", "openai.gpt-5.6-terra"], [80, 90]],
+  ["luna", ["openai.gpt-6-luna", "openai.gpt-5.6-luna"], [180, 190]],
 ];
 
 function rgb(hex) {
@@ -77,10 +78,38 @@ test("other and absent model identities get a visible neutral without guessing t
   }
 });
 
+test("the newest version is darkest on light cards and versions past the fourth share the older step", () => {
+  const opus = ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5"]
+    .map((model) => modelColorFor(model));
+  const luminance = (hex) => rgb(hex).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  for (let i = 1; i < 5; i += 1) expect(luminance(opus[i])).toBeGreaterThan(luminance(opus[i - 1]));
+  expect(opus[5]).toBe(opus[4]);
+  // An unregistered newer version takes the newest step; an unregistered older one, the older step.
+  expect(modelColorFor("claude-opus-9")).toBe(opus[0]);
+  expect(modelColorFor("claude-opus-3")).toBe(opus[4]);
+  expect(modelColorFor("openai.gpt-9-sol")).toBe(modelColorFor("openai.gpt-6.1-sol"));
+});
+
+test("model families avoid the Claude client and channel oranges and Codex ink", () => {
+  const lab = (hex) => {
+    const [r, g, b] = rgb(hex).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    const f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+    const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+    const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  };
+  const reserved = ["#D97757", "#8E4830", "#E69F7F", "#1F1E1D"];
+  for (const [, models] of families) for (const model of models) {
+    const color = lab(modelColorFor(model));
+    for (const hex of reserved) expect(Math.hypot(...color.map((v, i) => v - lab(hex)[i])), `${model} vs ${hex}`).toBeGreaterThan(25);
+  }
+});
+
 test("registered version order follows the family registry and normalizes regional aliases", () => {
   for (const versions of [
     ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8"],
-    ["claude-fable-5-1", "claude-fable-5"],
+    ["claude-fable-5-2", "claude-fable-5-1", "claude-fable-5"],
+    ["openai.gpt-6.1-astra", "openai.gpt-6-astra"],
     ["openai.gpt-6.1-sol", "openai.gpt-6-sol", "openai.gpt-5.6-sol"],
   ]) {
     expect([...versions].reverse().sort(byModelLegendOrder)).toEqual(versions);

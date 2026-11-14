@@ -1,4 +1,5 @@
-export const CLIENT_PAGES = [
+import { localize } from "./i18n/index.js";
+export const CLIENT_PAGES = localize([
   { to: "/", key: "overview", label: "Overview", hint: "핵심 지표 요약", exact: true },
   { to: "/exec", key: "exec", label: "Executive", hint: "활용·비용 요약" },
   { to: "/trends", key: "trends", label: "Trends", hint: "사용량·비용 추이" },
@@ -8,8 +9,8 @@ export const CLIENT_PAGES = [
   { to: "/cost", key: "cost", label: "Cost", hint: "비용·모델별 비교" },
   { to: "/reliability", key: "reliability", label: "Reliability", hint: "오류·응답 시간" },
   { to: "/analytics", key: "analytics", label: "Analytics", hint: "모델·진단 분석" },
-];
-export const COLLECTOR_PAGE = { to: "/collector", key: "collector", label: "수집기 설치", hint: "기기 연결·수집 토큰" };
+]);
+export const COLLECTOR_PAGE = localize({ to: "/collector", key: "collector", label: "수집기 설치", hint: "기기 연결·수집 토큰" });
 export const clientPage = (pathname) => pathname === COLLECTOR_PAGE.to ? COLLECTOR_PAGE
   : CLIENT_PAGES.find((p) => p.to === pathname) || CLIENT_PAGES[0];
 export const isClientPath = (pathname) => CLIENT_PAGES.some((p) => p.to === pathname);
@@ -33,5 +34,8 @@ export function parseTaskPath(pathname) {
   const valid = (v) => /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v));
   return id && valid(from) && valid(to) && Date.parse(from) < Date.parse(to) ? { id, from, to } : null;
 }
+// Browser half of collector enrollment; the handle itself is validated by the page and server.
+export const COLLECTOR_CONNECT_PATH = /^\/collector\/connect\/([^/]+)$/;
 export const isDashboardPath = (pathname) => isClientPath(pathname) || pathname === "/installation" || pathname === "/settings"
-  || pathname === COLLECTOR_PAGE.to || pathname === CHANGELOG_PATH || isTaskPath(pathname);
+  || pathname === COLLECTOR_PAGE.to || COLLECTOR_CONNECT_PATH.test(pathname) || pathname === CHANGELOG_PATH
+  || isTaskPath(pathname);

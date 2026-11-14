@@ -38,8 +38,10 @@ function fixture(run) {
       writeFileSync(path.join(root, "app/collector-packages", name), content);
       packages[name] = hash(content);
     }
+    const helper = "# synthetic enrollment helper\n";
+    writeFileSync(path.join(root, "app/collector-packages/enroll.py"), helper);
     writeFileSync(path.join(root, "app/collector-packages/manifest.json"),
-      JSON.stringify({ collectorVersion: "0.163.1", packages }));
+      JSON.stringify({ collectorVersion: "0.163.1", packages, enrollHelper: hash(helper) }));
     writeFileSync(path.join(root, "lib/apk/db/installed"),
       `P:busybox\nV:synthetic\n\nP:zlib\nV:${REQUIRED_RUNTIME_ZLIB_VERSION}\nA:aarch64\n\n${opensslMetadata}`);
     const options = {
@@ -74,11 +76,13 @@ test("runtime inspection binds actual notices, license, lock and nonroot release
     assert.match(result.noticesTextSha256, /^[a-f0-9]{64}$/);
     assert.equal(result.collectorVersion, "0.163.1");
     assert.equal(Object.keys(result.collectorPackages).length, 2);
+    assert.match(result.collectorEnrollHelper, /^[a-f0-9]{64}$/);
   });
 });
 
 test("runtime inspection rejects missing, altered and unlisted collector packages", () => {
-  for (const change of ["missing", "altered", "unlisted", "invalid-manifest", "symlink"]) {
+  for (const change of ["missing", "altered", "unlisted", "invalid-manifest", "symlink", "helper-missing",
+    "helper-altered"]) {
     fixture(({ root, options }) => {
       const directory = path.join(root, "app/collector-packages");
       const archive = path.join(directory, "ccdash-collector-linux.tar.gz");
@@ -87,7 +91,9 @@ test("runtime inspection rejects missing, altered and unlisted collector package
       if (change === "altered") writeFileSync(archive, "different");
       if (change === "unlisted") writeFileSync(path.join(directory, "unexpected.txt"), "not packaged");
       if (change === "invalid-manifest") writeFileSync(path.join(directory, "manifest.json"), "{}");
-      assert.throws(() => verifyRuntime(options), /collector package/);
+      if (change === "helper-missing") rmSync(path.join(directory, "enroll.py"));
+      if (change === "helper-altered") writeFileSync(path.join(directory, "enroll.py"), "different");
+      assert.throws(() => verifyRuntime(options), /collector (package|enrollment helper)/);
     });
   }
 });

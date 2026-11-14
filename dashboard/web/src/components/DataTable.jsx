@@ -1,3 +1,4 @@
+import { translate, useLocale } from "../i18n/index.js";
 import { useMemo, useState } from "react";
 import { Card } from "./Card.jsx";
 import { colorFor } from "../colors.js";
@@ -20,6 +21,7 @@ function compareValues(a, b, dir) {
 
 // 그룹 색은 점과 틴트로 유지하고, 작은 글자는 충분한 대비를 갖는 잉크색을 사용한다.
 export function GroupChip({ group }) {
+  const _locale = useLocale();
   const c = colorFor(group);
   return (
     <span
@@ -36,6 +38,7 @@ export function GroupChip({ group }) {
 // 대비 비례 미니 바가 붙는다 — 표를 훑을 때 크기 순위가 숫자를 읽기 전에 보인다(dataviz:
 // 크기 비교는 바의 일). 값이 렌더러를 거치면(통화 포맷 등) 텍스트는 그대로 두고 바만 얹는다.
 function CellBar({ value, max, color }) {
+  const _locale = useLocale();
   const n = Number(value);
   if (!Number.isFinite(n) || max <= 0) return null;
   const pct = Math.max(n > 0 ? 2 : 0, (n / max) * 100);
@@ -48,20 +51,21 @@ function CellBar({ value, max, color }) {
 
 // pinLast(row) keeps matching rows (e.g. a "no team" bucket) after every other row in any sort.
 export function DataTable({ columns, rows, groupKey = "group", title, subtitle, help, right, onRowClick, isRowSelected, exportName, stale = false, pinLast }) {
+  const _locale = useLocale();
   const [sort, setSort] = useState(null);
 
   const sortedRows = useMemo(() => {
     if (!sort) return rows;
     const sorted = [...rows].sort((ra, rb) => compareValues(ra[sort.key], rb[sort.key], sort.dir));
     return pinLast ? [...sorted.filter((r) => !pinLast(r)), ...sorted.filter((r) => pinLast(r))] : sorted;
-  }, [rows, sort, pinLast]);
+  }, [rows, sort, pinLast, _locale]);
 
   // bar 컬럼의 스케일 기준(컬럼 최대값) — 정렬과 무관하게 전체 행 기준으로 한 번만 계산.
   const barMax = useMemo(() => {
     const m = {};
     for (const c of columns) if (c.bar) m[c.key] = (rows || []).reduce((mx, r) => Math.max(mx, Number(r[c.key]) || 0), 0);
     return m;
-  }, [columns, rows]);
+  }, [columns, rows, _locale]);
 
   const toggleSort = (key) => setSort((prev) => (prev?.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
 
@@ -81,7 +85,7 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
         disabled={stale || !rows || rows.length === 0}
         onClick={() => downloadCsv(csvFilename(exportName, range?.from, range?.to), toCsv(columns, sortedRows, { piiMask }))}
         className="flex items-center gap-1 rounded-md bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 whitespace-nowrap hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
-        title={stale ? "새 기간의 데이터를 불러오는 중에는 내보낼 수 없습니다" : "현재 표를 CSV로 내려받기"}
+        title={stale ? translate("mf009db88346e") : translate("m7619001ef5e4")}
       >
         <Download size={12} />
         CSV

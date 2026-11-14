@@ -11,16 +11,36 @@ It hides usage filters/chat and shows configuration, per-client receipt and sche
 Non-admin views make no diagnostic request. Refresh failure retains results only with a
 visible previous-result warning; receipt/empty/unavailable never become usage zeros.
 
+`/collector/connect/:handle` is the browser half of collector enrollment, also outside client
+navigation and without filters/chat. It shows the terminal's request (code, device, OS and
+the resulting attribution ID) with a read-only GET and decides it only on an explicit
+**Connect this device** or **Deny** click; approved, denied, expired, unavailable and unknown
+requests render terminal outcomes. Users without `collector:manage` make no request.
+`/collector` leads with the token-free command when `/api/collector` reports
+`browserEnrollment`, keeping token issuance as an advanced manual section.
+
 `/changelog` shows the release notes bundled in `releaseNotes.js` without usage filters
 and requests no page data. Its link sits outside `<nav>` under the navigation and marks a release this
 browser has not opened (`localStorage`, best effort). A user guide link beside it opens the
-public documentation site (`USER_GUIDE_URL`) in a new tab. See [releases and tags](../runbooks/releases.md).
+available language of the public user guide (`USER_GUIDE_URL`) in a new tab.
+Spanish currently opens the English guide until the Spanish pages are added.
+See [releases and tags](../runbooks/releases.md).
 
 The React 18/Vite 8/Tailwind 4 SPA (Node >=22.12) shares the Express image.
 See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions and
 [UI](ui.md) for component and export contracts.
 
 ## Routes and state
+
+The browser stores its validated language choice in `ccdash.locale`; Korean is
+the default. English, Simplified Chinese, Japanese and Spanish catalogs load on
+demand. Failed loads retain the current language, later choices supersede pending
+loads, and denied storage remains usable. The locale store updates subscribed
+components without remounting open user/task views or changing API parameters.
+This stage localizes shared controls and task dialogs; route page migration is
+separate and their authored page bodies currently remain Korean.
+See [ADR-022](../decisions/ADR-022-per-viewer-interface-language.md) and
+[locale ownership](../../dashboard/web/src/i18n/README.md).
 
 Charts use supported Recharts 3 public data-snap scales for pointer-driven zoom rather
 than stale tooltip state. Mouse drags preserve UTC bucket/range clamps and the existing
@@ -244,9 +264,13 @@ partial-preserving stacked areas over the pure helpers in
 detail `/api/cost/by-model-daily` rows and `fromByModelTime` the shared `by_model_time` rows.
 The frame keeps the top six series by known cost plus an Others segment with fixed membership.
 Model colors are stable per name and theme. Model donuts and trends share the
-[family palette](../../dashboard/web/src/colors.js): Claude Opus, Sonnet, Haiku and
-Fable; OpenAI Sol, Terra, Luna and Astra. Versions remain separate and use bounded
-shades within their family's hue; regional aliases keep the same color across
+[family palette](../../dashboard/web/src/colors.js): Claude Fable, Opus, Sonnet and
+Haiku; OpenAI Astra, Sol, Terra and Luna (legend order). Each family has one hue and five
+lightness steps: its newest registered version takes the first (darkest on light cards),
+the next three follow, and older versions share the fifth. An unregistered version newer
+than the registry takes the first step, otherwise the fifth; a new release is added at the
+front of `FAMILY_MODELS`, which moves older versions one step lighter. Family hues avoid the
+Claude client/channel oranges and Codex ink; regional aliases keep the same color across
 backend cards. Unrecognized models use neutral shades, and the aggregate Others
 segment keeps an exclusive neutral. Family names do not identify emitting clients.
 Series are monotone stacked areas; unavailable and no-data buckets are gaps (null,
@@ -273,8 +297,9 @@ combines identical emitted user IDs from `by_user` (known-cost sum, mixed basis 
 beside each amount, draws Claude detail's line-per-channel model bars from `by_user_model`:
 CCB and C4E (the inferred Claude session `channel`, bedrock/enterprise, so Bedrock spend on a
 bare model id with an `unknown` backend stays CCB; an unresolved or absent channel falls back
-to the backend), a Claude unclassified line, and Codex (the client). Dots carry the channel colour,
-segments the model colour; an all-unknown line reads unavailable, never $0. Column structure
+to the backend), a Claude unclassified line, and Codex (the client). Dots carry the channel colour
+(index.css `--channel-*`: CCB deep clay, C4E Claude orange, unclassified light clay with an
+outline, Codex ink), segments the model colour; an all-unknown line reads unavailable, never $0. Column structure
 is identical for every client selection, and help text names only the selected clients.
 Claude detail Cost/Executive add the same user trend from `/api/cost/by-user-daily`
 (`fromByModelDaily(rows, { dimension: "user" })`) on the model trend's bucket; in both sources the
@@ -293,7 +318,7 @@ the series key, never the raw identity.
 
 Sibling rule: the shared Claude and Codex cards come from one response, share its effective
 range and bucket origins, are never summed and keep separate y-scales. Client-colored
-header accents identify the cards independently of model color, including when Codex uses
+(`--client-claude` clay orange, `--client-codex` ink) header accents identify the cards independently of model color, including when Codex uses
 a Claude model. Texture never represents client identity or availability. Bucket defaults: Cost
 uses the global interval; Executive renders 24h up to 30 days, else 168h. Shared charts
 never render below `bucket_hours` and roll up so the first bucket is floored.

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLocaleStore } from "./store.js";
+import koreanCatalog from "./locales/ko.json";
+import englishCatalog from "./locales/en.json";
+import chineseCatalog from "./locales/zh-CN.json";
+import japaneseCatalog from "./locales/ja.json";
+import spanishCatalog from "./locales/es.json";
 
 const ko = { greeting: "안녕하세요 {0}", empty: "미수집" };
 const en = { greeting: "Hello {0}", empty: "Not collected" };
@@ -17,6 +22,16 @@ describe("locale store", () => {
     expect(store.translate("greeting", ["도구"])).toBe("Hello 도구");
     expect(store.translate("empty")).toBe("Not collected");
     expect(store.translate("unknown.key")).toBe("unknown.key");
+    for (const key of ["constructor", "toString", "__proto__"]) expect(store.translate(key)).toBe(key);
+  });
+
+  it.each([["en", englishCatalog], ["zh-CN", chineseCatalog], ["ja", japaneseCatalog], ["es", spanishCatalog]])("loads the complete shipped %s catalog through the real validator", async (locale, catalog) => {
+    const store = createLocaleStore({
+      source: koreanCatalog,
+      loaders: { ko: async () => koreanCatalog, [locale]: async () => catalog },
+    });
+    expect(await store.select(locale)).toBe(true);
+    for (const [key, value] of Object.entries(catalog)) expect(store.translate(key)).toBe(value);
   });
 
   it("persists only supported locales and tolerates blocked storage", async () => {
@@ -65,6 +80,13 @@ describe("locale store", () => {
     finish(en);
     await first;
     expect(store.getState()).toMatchObject({ locale: "ko", requested: "ko", pending: false });
+  });
+
+  it("rejects inherited translations even when an extra key masks the missing own key", async () => {
+    const inherited = Object.assign(Object.create({ greeting: "Hello {0}" }), { empty: "Not collected", extra: "unused" });
+    const store = make({ loaders: { ko: async () => ko, en: async () => inherited } });
+    expect(await store.select("en")).toBe(false);
+    expect(store.getLocale()).toBe("ko");
   });
 
   it("rejects incomplete or malformed catalogs instead of mixing languages", async () => {

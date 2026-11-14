@@ -51,6 +51,7 @@ function CollectorManager() {
   const [issued, setIssued] = useState(null);
   const [tokenMessage, setTokenMessage] = useState("");
   const [commandMessage, setCommandMessage] = useState("");
+  const [manualMessage, setManualMessage] = useState("");
   const [issueError, setIssueError] = useState("");
   const [issuing, setIssuing] = useState(false);
   const [devices, setDevices] = useState({ items: [], nextCursor: null, requestedCursor: null, loading: true, loaded: false, error: false });
@@ -119,7 +120,7 @@ function CollectorManager() {
   };
   const copy = async (value, kind) => {
     const generation = ++copyGeneration.current;
-    const feedback = kind === "token" ? setTokenMessage : setCommandMessage;
+    const feedback = kind === "token" ? setTokenMessage : kind === "manual" ? setManualMessage : setCommandMessage;
     try {
       await navigator.clipboard.writeText(value);
       if (copyGeneration.current !== generation) return;
@@ -192,12 +193,76 @@ function CollectorManager() {
     }
   };
   const activePlatform = PLATFORMS[platform];
+  const browser = !!setup.data?.browserEnrollment;
   const prerequisite = platform === "linux" ? 'sudo loginctl enable-linger "$USER" &&\n' : "";
-  // The served script detects the OS and downloads the package with the device token itself.
+  // The served script detects the OS. By default it pairs the device through browser SSO;
+  // `--token` keeps the manual flow that downloads the package with a pasted device token.
   const command = setup.data?.installScriptUrl
     ? `${prerequisite}curl -fsSL ${quoteShell(setup.data.installScriptUrl)} | sh`
     : "";
+  const manualCommand = setup.data?.installScriptUrl
+    ? `${prerequisite}curl -fsSL ${quoteShell(setup.data.installScriptUrl)} | sh -s -- --token` : "";
   const busy = issuing || devices.loading || revoking !== null;
+  const terminal = (value, label, kind = "command") => <div className="overflow-hidden rounded-lg bg-ink-900 text-ink-50">
+    <div className="flex items-center justify-between border-b border-ink-700 px-4 py-2.5">
+      <span className="flex items-center gap-2 text-xs text-ink-300"><Terminal size={14} aria-hidden="true" />{activePlatform.label} 터미널</span>
+      <button type="button" onClick={() => copy(value, kind)} className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ink-100 hover:bg-ink-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400">
+        <Copy size={13} aria-hidden="true" />{label} 복사</button>
+    </div>
+    <pre aria-label={label} className="overflow-x-auto p-4 font-mono text-xs leading-7 sm:text-sm"><code>{value}</code></pre>
+  </div>;
+  const lingerNote = platform === "linux" && <p className="mb-3 text-sm leading-relaxed text-ink-600">SSH 로그아웃·재부팅 후에도 수집을 유지하려면 첫 명령으로 사용자 서비스의 지속 실행을 설정하세요.
+    이 설정에만 sudo 권한이 필요하며, 수집기 설치 명령은 일반 사용자로 실행하세요.</p>;
+  const osCard = <Card title={<StepTitle number="1">운영체제 선택</StepTitle>} subtitle="수집할 기기의 운영체제를 선택하세요.">
+    <div className="grid grid-cols-2 gap-3">
+      {Object.entries(PLATFORMS).filter(([key]) => setup.data?.platforms?.includes(key)).map(([key, item]) => {
+        const Icon = item.icon;
+        return <button type="button" key={key} aria-label={`${item.label} 선택`} aria-pressed={key === platform}
+          disabled={issuing || !!issued}
+          onClick={() => { setPlatform(key); setCommandMessage(""); setManualMessage(""); }}
+          className={`flex min-w-0 flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${key === platform ? "border-brand-500 bg-brand-50 text-brand-800" : "border-ink-200 hover:border-brand-300"}`}>
+          <Icon size={23} strokeWidth={1.6} aria-hidden="true" />
+          <span className="font-semibold">{item.label}</span>
+          <span className="text-xs text-ink-500">{item.hint}</span>
+        </button>;
+      })}
+    </div>
+    <p className="mt-3 text-xs leading-relaxed text-ink-500">amd64 / arm64 지원 · Python 3.9+ · curl 필요 · Collector {setup.data?.collectorVersion}</p>
+  </Card>;
+  const issueForm = <>
+    <form onSubmit={issue}>
+      <label htmlFor="collector-device-name" className="block text-sm font-medium">기기 이름</label>
+      <input id="collector-device-name" autoComplete="off" maxLength={64} required value={name}
+        disabled={issuing || !!issued} placeholder="예: 작업용 Mac, EC2 개발"
+        onChange={event => setName(event.target.value)}
+        className="mt-2 w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm placeholder:text-ink-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ink-50" />
+      <p className="mt-2 text-xs text-ink-500">{activePlatform.label} 기기로 등록합니다. 이름은 최대 64자입니다.</p>
+      <button type="submit" className={`${PRIMARY} mt-4 w-full`} disabled={busy || !!issued || !name.trim()}>
+        <KeyRound size={16} aria-hidden="true" />{issuing ? "발급 중..." : "기기 등록 및 토큰 발급"}
+      </button>
+    </form>
+    {issueError && <div className="mt-3"><Notice>{issueError}</Notice></div>}
+    {issued && <section aria-label="발급된 기기 토큰" className="mt-4 rounded-lg border border-positive-border bg-positive-surface p-3">
+      <p className="flex items-center gap-2 text-sm font-semibold text-positive-text"><Check size={16} aria-hidden="true" />토큰은 지금 한 번만 표시됩니다.</p>
+      <p className="mt-2 text-xs leading-relaxed text-ink-600">{issued.device.name} · 만료 <DeviceTime value={issued.device.expiresAt} /></p>
+      <textarea readOnly aria-label="기기 수집 토큰" value={issued.token} rows={3} spellCheck={false}
+        className="mt-3 w-full resize-none rounded-md border border-positive-border bg-white p-2.5 font-mono text-xs leading-relaxed text-ink-800" />
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" className={SECONDARY} onClick={() => copy(issued.token, "token")}><Copy size={14} aria-hidden="true" />토큰 복사</button>
+        <button type="button" className={SECONDARY} onClick={clearToken}>화면에서 토큰 지우기</button>
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-ink-600">설치할 때 붙여 넣으세요. 화면을 떠나거나 지우면 다시 볼 수 없습니다. 잃어버리면 이 기기를 해지하고 새로 등록하세요.</p>
+    </section>}
+    {tokenMessage && <p role="status" className="mt-3 text-sm text-ink-600">{tokenMessage}</p>}
+  </>;
+  const manualSteps = <>
+    <li>사용자 ID에는 기존 수집에 사용하던 ID/이메일을 입력하세요. 처음 설치한다면 조직에서 사용할 식별값을 입력하세요. 영문·숫자와 . _ + @ -만 사용할 수 있습니다.</li>
+    {platform === "linux" && <li>사용자 서비스 연결 오류가 나면 다시 로그인한 뒤 수집기 설치 명령을 실행하세요.</li>}
+    <li>명령은 사용자 ID와 기기 토큰을 차례로 묻습니다. 토큰 안내가 나오면 복사한 토큰을 붙여 넣고 Enter를 누르세요. 입력 내용은 화면에 표시되지 않습니다.</li>
+    <li>설치 후 터미널을 새로 열고 Claude Code와 Codex에서 새 세션을 시작하세요.</li>
+  </>;
+  const manualFootnote = <p className="mt-3 text-xs leading-relaxed text-ink-500">토큰을 명령에 직접 넣지 마세요. 실행 중인 기기는 만료 7일 전부터 토큰을 자동으로 갱신합니다.
+    만료·해지된 기기는 새 토큰으로 설치를 다시 실행하세요. 이전 패키지 설치는 README 안내대로 다시 설치해야 갱신이 켜집니다.</p>;
 
   return <div>
     <PageHeader title="수집기 설치" subtitle="내 기기에 Claude Code와 Codex 수집을 연결하고, 기기별로 관리하세요." />
@@ -212,7 +277,45 @@ function CollectorManager() {
           <div><h2 className="font-semibold">기기 수집이 아직 활성화되지 않았습니다.</h2>
             <p className="mt-2 text-sm text-ink-600">조직 관리자에게 수집기 연결 설정을 요청해 주세요.</p></div></div>
       </Card>}
-      {setup.data?.enabled && <>
+      {setup.data?.enabled && browser && <>
+        <div className="flex items-start gap-3 rounded-lg border border-brand-100 bg-brand-50 p-4 sm:p-5">
+          <ShieldCheck size={23} className="mt-0.5 shrink-0 text-brand-600" aria-hidden="true" />
+          <div><p className="font-medium text-brand-900">명령 하나와 브라우저 승인으로 Claude Code와 Codex를 연결하세요.</p>
+            <p className="mt-1 text-sm leading-relaxed text-brand-800">토큰을 복사할 필요가 없습니다. 연결된 기기는 수집 전용 권한만 받으며 대시보드 조회 권한이 없습니다.
+              수집 권한은 {setup.data.tokenLifetimeDays}일마다 만료되지만 수집기가 동작하는 동안 자동으로 갱신됩니다.</p>
+          </div>
+        </div>
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          {osCard}
+          <Card title={<StepTitle number="2">설치 전 확인</StepTitle>}>
+            <CollectorPreparation platform={platform} />
+          </Card>
+        </div>
+        <Card title={<StepTitle number="3">터미널에서 설치하고 브라우저에서 승인</StepTitle>} subtitle="수집할 기기의 터미널에서 실행하세요. 토큰 입력은 필요 없습니다.">
+          {lingerNote}
+          {terminal(command, "설치 명령")}
+          {commandMessage && <p role="status" className="mt-3 text-sm text-ink-600">{commandMessage}</p>}
+          <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">
+            <li>터미널에 확인 코드와 승인 주소가 표시되고, 데스크톱에서는 브라우저가 열립니다. EC2처럼 화면이 없는 서버라면 승인 주소를 내 컴퓨터의 브라우저에서 여세요.</li>
+            <li>조직 계정으로 로그인한 뒤 코드가 터미널과 같은지 확인하고 <strong>이 기기 연결</strong>을 누르세요. 본인이 방금 시작한 설치만 연결하세요.</li>
+            <li>수집 사용자 ID는 로그인한 계정의 이메일로 정해지며, 이미 설치된 기기는 기존 ID를 유지합니다. 다른 ID가 필요하면 <code className="rounded bg-ink-100 px-1">| sh -s -- --user-id ID</code>로 실행하세요.</li>
+            {platform === "linux" && <li>사용자 서비스 연결 오류가 나면 다시 로그인한 뒤 수집기 설치 명령을 실행하세요.</li>}
+            <li>설치 후 터미널을 새로 열고 Claude Code와 Codex에서 새 세션을 시작하세요.</li>
+          </ol>
+          <p className="mt-3 text-xs leading-relaxed text-ink-500">승인은 10분 안에 해야 합니다. 설치가 중간에 실패해도 승인한 기기는 아래 '내 기기'에 남으니, 다시 설치하지 않으면 해지하세요.</p>
+        </Card>
+        <Card title={<StepTitle number="4">수신 확인</StepTitle>}>
+          <CollectorVerification platform={platform} />
+        </Card>
+        <Card title={<h2>토큰으로 직접 설치 (고급)</h2>} subtitle="브라우저 승인을 쓸 수 없을 때만 토큰을 발급해 붙여 넣으세요.">
+          {issueForm}
+          <div className="mt-4">{terminal(manualCommand, "토큰 설치 명령", "manual")}</div>
+          {manualMessage && <p role="status" className="mt-3 text-sm text-ink-600">{manualMessage}</p>}
+          <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">{manualSteps}</ol>
+          {manualFootnote}
+        </Card>
+      </>}
+      {setup.data?.enabled && !browser && <>
         <div className="flex items-start gap-3 rounded-lg border border-brand-100 bg-brand-50 p-4 sm:p-5">
           <ShieldCheck size={23} className="mt-0.5 shrink-0 text-brand-600" aria-hidden="true" />
           <div><p className="font-medium text-brand-900">한 번의 설치로 Claude Code와 Codex를 연결하세요.</p>
@@ -221,76 +324,26 @@ function CollectorManager() {
           </div>
         </div>
         <div className="grid items-start gap-6 lg:grid-cols-2">
-          <Card title={<StepTitle number="1">운영체제 선택</StepTitle>} subtitle="수집할 기기의 운영체제를 선택하세요.">
-            <div className="grid grid-cols-2 gap-3">
-              {Object.entries(PLATFORMS).filter(([key]) => setup.data.platforms?.includes(key)).map(([key, item]) => {
-                const Icon = item.icon;
-                return <button type="button" key={key} aria-label={`${item.label} 선택`} aria-pressed={key === platform}
-                  disabled={issuing || !!issued}
-                  onClick={() => { setPlatform(key); setCommandMessage(""); }}
-                  className={`flex min-w-0 flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 ${key === platform ? "border-brand-500 bg-brand-50 text-brand-800" : "border-ink-200 hover:border-brand-300"}`}>
-                  <Icon size={23} strokeWidth={1.6} aria-hidden="true" />
-                  <span className="font-semibold">{item.label}</span>
-                  <span className="text-xs text-ink-500">{item.hint}</span>
-                </button>;
-              })}
-            </div>
-            <p className="mt-3 text-xs leading-relaxed text-ink-500">amd64 / arm64 지원 · Python 3.9+ · curl 필요 · Collector {setup.data.collectorVersion}</p>
-          </Card>
+          {osCard}
           <Card title={<StepTitle number="2">기기 등록과 토큰 발급</StepTitle>} subtitle="어느 기기인지 알아볼 수 있는 이름을 입력하세요.">
-            <form onSubmit={issue}>
-              <label htmlFor="collector-device-name" className="block text-sm font-medium">기기 이름</label>
-              <input id="collector-device-name" autoComplete="off" maxLength={64} required value={name}
-                disabled={issuing || !!issued} placeholder="예: 작업용 Mac, EC2 개발"
-                onChange={event => setName(event.target.value)}
-                className="mt-2 w-full rounded-md border border-ink-200 bg-white px-3 py-2.5 text-sm placeholder:text-ink-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-ink-50" />
-              <p className="mt-2 text-xs text-ink-500">{activePlatform.label} 기기로 등록합니다. 이름은 최대 64자입니다.</p>
-              <button type="submit" className={`${PRIMARY} mt-4 w-full`} disabled={busy || !!issued || !name.trim()}>
-                <KeyRound size={16} aria-hidden="true" />{issuing ? "발급 중..." : "기기 등록 및 토큰 발급"}
-              </button>
-            </form>
-            {issueError && <div className="mt-3"><Notice>{issueError}</Notice></div>}
-            {issued && <section aria-label="발급된 기기 토큰" className="mt-4 rounded-lg border border-positive-border bg-positive-surface p-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-positive-text"><Check size={16} aria-hidden="true" />토큰은 지금 한 번만 표시됩니다.</p>
-              <p className="mt-2 text-xs leading-relaxed text-ink-600">{issued.device.name} · 만료 <DeviceTime value={issued.device.expiresAt} /></p>
-              <textarea readOnly aria-label="기기 수집 토큰" value={issued.token} rows={3} spellCheck={false}
-                className="mt-3 w-full resize-none rounded-md border border-positive-border bg-white p-2.5 font-mono text-xs leading-relaxed text-ink-800" />
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button type="button" className={SECONDARY} onClick={() => copy(issued.token, "token")}><Copy size={14} aria-hidden="true" />토큰 복사</button>
-                <button type="button" className={SECONDARY} onClick={clearToken}>화면에서 토큰 지우기</button>
-              </div>
-              <p className="mt-3 text-xs leading-relaxed text-ink-600">설치할 때 붙여 넣으세요. 화면을 떠나거나 지우면 다시 볼 수 없습니다. 잃어버리면 이 기기를 해지하고 새로 등록하세요.</p>
-            </section>}
-            {tokenMessage && <p role="status" className="mt-3 text-sm text-ink-600">{tokenMessage}</p>}
+            {issueForm}
           </Card>
         </div>
         <Card title={<StepTitle number="3">설치 전 확인</StepTitle>}>
           <CollectorPreparation platform={platform} />
         </Card>
         <Card title={<StepTitle number="4">터미널에서 설치</StepTitle>} subtitle="수집할 기기의 터미널에서 실행하세요. 패키지를 따로 내려받을 필요가 없습니다.">
-          {platform === "linux" && <p className="mb-3 text-sm leading-relaxed text-ink-600">SSH 로그아웃·재부팅 후에도 수집을 유지하려면 첫 명령으로 사용자 서비스의 지속 실행을 설정하세요.
-            이 설정에만 sudo 권한이 필요하며, 수집기 설치 명령은 일반 사용자로 실행하세요.</p>}
-          <div className="overflow-hidden rounded-lg bg-ink-900 text-ink-50">
-            <div className="flex items-center justify-between border-b border-ink-700 px-4 py-2.5">
-              <span className="flex items-center gap-2 text-xs text-ink-300"><Terminal size={14} aria-hidden="true" />{activePlatform.label} 터미널</span>
-              <button type="button" onClick={() => copy(command, "command")} className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ink-100 hover:bg-ink-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400">
-                <Copy size={13} aria-hidden="true" />설치 명령 복사</button>
-            </div>
-            <pre aria-label="설치 명령" className="overflow-x-auto p-4 font-mono text-xs leading-7 sm:text-sm"><code>{command}</code></pre>
-          </div>
+          {lingerNote}
+          {terminal(command, "설치 명령")}
           {commandMessage && <p role="status" className="mt-3 text-sm text-ink-600">{commandMessage}</p>}
-          <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">
-            <li>사용자 ID에는 기존 수집에 사용하던 ID/이메일을 입력하세요. 처음 설치한다면 조직에서 사용할 식별값을 입력하세요. 영문·숫자와 . _ + @ -만 사용할 수 있습니다.</li>
-            {platform === "linux" && <li>사용자 서비스 연결 오류가 나면 다시 로그인한 뒤 수집기 설치 명령을 실행하세요.</li>}
-            <li>명령은 사용자 ID와 기기 토큰을 차례로 묻습니다. 토큰 안내가 나오면 복사한 토큰을 붙여 넣고 Enter를 누르세요. 입력 내용은 화면에 표시되지 않습니다.</li>
-            <li>설치 후 터미널을 새로 열고 Claude Code와 Codex에서 새 세션을 시작하세요.</li>
-          </ol>
-          <p className="mt-3 text-xs leading-relaxed text-ink-500">토큰을 명령에 직접 넣지 마세요. 실행 중인 기기는 만료 7일 전부터 토큰을 자동으로 갱신합니다.
-            만료·해지된 기기는 새 토큰으로 설치를 다시 실행하세요. 이전 패키지 설치는 README 안내대로 다시 설치해야 갱신이 켜집니다.</p>
+          <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">{manualSteps}</ol>
+          {manualFootnote}
         </Card>
         <Card title={<StepTitle number="5">수신 확인</StepTitle>}>
           <CollectorVerification platform={platform} />
         </Card>
+      </>}
+      {setup.data?.enabled && <>
         <Card title={<h2>내 기기</h2>} subtitle="내가 등록한 기기의 만료일과 최근 수신을 확인하세요."
           right={<button type="button" className={SECONDARY} disabled={busy} onClick={() => loadDevices()}>
             <RefreshCw size={14} aria-hidden="true" /><span>목록 새로고침</span></button>}>

@@ -357,8 +357,15 @@ export function codexTurnSql(from, to, q, { conversationId = null } = {}) {
         formatDateTime(min(Timestamp), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
         min(span_start_ms) AS start_ms,
         max(span_start_ms + span_duration_ms) AS end_ms,
-        countIf(SpanName = 'codex.sampling') AS llm_calls,
-        groupUniqArrayIf(span_model, SpanName = 'codex.sampling' AND span_model != '') AS models
+        -- One model-call span kind per turn: codex.sampling (observed from Codex 0.162.1), else the
+        -- run_sampling_request span that earlier versions emit once per call.
+        countIf(SpanName = 'codex.sampling') AS sampling_calls,
+        countIf(SpanName = 'run_sampling_request') AS legacy_calls,
+        if(sampling_calls > 0, sampling_calls, legacy_calls) AS llm_calls,
+        if(sampling_calls > 0, 'codex.sampling', 'run_sampling_request') AS sampling_span,
+        if(sampling_calls > 0,
+          groupUniqArrayIf(span_model, SpanName = 'codex.sampling' AND span_model != ''),
+          groupUniqArrayIf(span_model, SpanName = 'run_sampling_request' AND span_model != '')) AS models
     FROM (
         SELECT Timestamp, SpanName,
             toUnixTimestamp64Milli(Timestamp) AS span_start_ms,

@@ -194,7 +194,8 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
   function readPrincipal(req) {
     const session = codec.open(cookieValue(req.headers.cookie, SESSION_COOKIE), "session");
     if (!session || !ROLES.includes(session.role) || typeof session.subject !== "string" || !session.subject
-      || session.subject.length > 256 || typeof session.name !== "string" || session.name.length > 160) return null;
+      || session.subject.length > 256 || typeof session.name !== "string" || session.name.length > 160
+      || (session.email !== undefined && (typeof session.email !== "string" || session.email.length > 254))) return null;
     return session;
   }
   function clearSession(res) {
@@ -219,8 +220,11 @@ export function createAuthentication({ env = process.env, now = Date.now, discov
     if (!role || typeof claims?.sub !== "string" || !claims.sub || claims.sub.length > 256
       || (refresh && claims.sub !== refresh.subject) || !Number.isInteger(expires) || expires <= time)
       throw new Error("Invalid identity claims");
+    // Only an IdP-verified email becomes the default collector user ID; it never grants access.
+    const email = typeof claims.email === "string" && claims.email.length <= 254
+      && (claims.email_verified === true || claims.email_verified === "true") ? claims.email : undefined;
     return { subject: claims.sub, role, name: typeof claims.name === "string" ? claims.name.slice(0, 160) : "조직 사용자",
-      exp: expires, ...(refresh ? { refreshExp: refresh.exp } : {}) };
+      ...(email ? { email } : {}), exp: expires, ...(refresh ? { refreshExp: refresh.exp } : {}) };
   }
   function writePrincipal(res, principal) {
     setCookie(res, SESSION_COOKIE, codec.seal(principal, "session"), principal.exp - Math.floor(now() / 1000));

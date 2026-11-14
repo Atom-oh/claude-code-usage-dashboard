@@ -58,7 +58,7 @@ export function CollectorPreparation({ platform }) {
   return <div className="space-y-4 text-sm leading-relaxed text-ink-600">
     <p>수집할 Mac 또는 EC2에서 <code>python3 --version</code>으로 Python 3.9 이상인지 확인하세요.
       Claude Code와 Codex는 별도로 설치되어 있어야 합니다. 설치 명령이 최신 패키지를 대시보드에서 직접 내려받으므로 파일을 옮길 필요가 없습니다.</p>
-    <p>처음 설치한다면 아래 설치 명령으로 진행하세요. 새 패키지로 이미 설치했다면 같은 명령을 다시 실행해 토큰을 교체할 수 있습니다.</p>
+    <p>처음 설치한다면 아래 설치 명령으로 진행하세요. 새 패키지로 이미 설치했다면 같은 명령을 다시 실행해 기기를 새로 연결할 수 있습니다. 이전 기기는 아래 목록에서 해지하세요.</p>
     <div className="rounded-lg border border-ink-200 p-4">
       <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}
         className="w-full text-left font-semibold text-ink-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
@@ -122,7 +122,7 @@ export function CollectorPreparation({ platform }) {
       <p className="mt-3">관리자가 Collector와 클라이언트 설정을 미리 준비한 EC2에서는 참가자가 이 패키지를 추가 설치하거나 기기 토큰을 발급할 필요가 없습니다.
         워크숍 안내에 따라 Claude Code·Codex를 실행하세요. 기존 <code>/etc/otelcol/config.yaml</code>을 사용하는 수집기를 개인용 수집기로 전환하지 마세요.</p>
       <p className="mt-2">현재 워크숍 부팅 템플릿은 SSM SecureString의 ingest 자격증명을 읽어 설치합니다.
-        준비되지 않은 EC2는 주최자가 먼저 구성해야 합니다. 개인 Mac에서 직접 수집하려면 이 페이지의 기기 토큰 방식으로 진행하세요.</p>
+        준비되지 않은 EC2는 주최자가 먼저 구성해야 합니다. 개인 Mac에서 직접 수집하려면 이 페이지의 설치 명령으로 진행하세요.</p>
     </details>
   </div>;
 }
@@ -151,7 +151,7 @@ export function CollectorVerification({ platform }) {
         <li>포트 충돌: 위의 기존 수집기 전환 안내로 돌아가 실행 중인 서비스를 확인하세요.</li>
         <li>Python을 찾을 수 없음 또는 3.9 미만: Python을 설치·업데이트한 뒤 다시 실행하세요.</li>
         <li>파일을 찾을 수 없음: 압축 파일이 있는 폴더에서 명령을 실행하세요. 브라우저가 이미 압축을 풀었다면 <code>tar</code> 단계를 건너뛰세요.</li>
-        <li>토큰 만료·해지 또는 인증 오류: 기기를 새로 등록하고 새 토큰으로 설치를 다시 실행한 뒤 이전 기기를 해지하세요.</li>
+        <li>토큰 만료·해지 또는 인증 오류: 설치 명령을 다시 실행해 기기를 새로 연결(또는 새 토큰으로 설치)한 뒤 이전 기기를 해지하세요.</li>
         <li>다운로드·연결 오류: 기기에서 GitHub와 대시보드로 HTTPS 연결이 가능한지 확인하세요.</li>
         <li>설정 충돌: 기존 모델·로그인 설정 파일 전체를 삭제하지 마세요. 패키지 README의 설정 충돌 절차를 따르세요.</li>
         {platform === "linux" && <li>systemd 사용자 연결 오류: <code>sudo loginctl enable-linger "$USER"</code> 실행 후 SSH에 다시 로그인하세요.</li>}

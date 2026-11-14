@@ -17,14 +17,43 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Add Simplified Chinese, Japanese and Spanish catalogs with Luna translation
+  provenance and verified message placeholders.
+- Add a persistent five-language picker to desktop, mobile and task detail.
+  Localize shared controls, chart labels and feedback while retaining open tasks,
+  filters and time ranges; guide links use available translations with an English fallback.
 - Attribute teams from a Cognito user pool attribute chosen by an admin on `/settings`, with labels,
   hourly sync, change history and device-provided markers; Terraform grants the dashboard read access to
   that pool. `/api/teams` and `/api/users/teams` add `sources`.
+
+### Changed
+
+- Use client brand colors in shared views: Claude Code is Claude clay orange and Codex is
+  ink in client trends, tiles and the user cost table. Claude channel lines are lightness
+  steps of the same orange (CCB darker, C4E the brand hue, unclassified lighter with an
+  outline), so one color no longer means Codex in one chart and a Claude channel in another.
+- Give each model family its own hue and five version steps: Fable, Opus, Sonnet and Haiku;
+  Astra, Sol, Terra and Luna, now listed in that order. The newest version is darkest, the
+  next three follow and older versions share the fifth step; family hues avoid the client
+  and channel colors. The newest Fable 5.2, Sonnet 5.5 and Haiku 5.5 are registered.
+
+### Fixed
+
+- Count LLM calls for Codex tasks from older versions (observed: 0.159.3; 0.162.1 and
+  later emit `codex.sampling`). Those versions emit no `codex.sampling` span, so their
+  tasks showed 0 LLM calls and no call spans in the task detail. A turn without
+  `codex.sampling` now counts its `run_sampling_request` spans (one per model call; the
+  `try_` retry wrapper is not counted), never both kinds in one turn.
 
 ## [1.8.2] - 2026-11-14
 
 ### Added
 
+- Install a device collector without handling a token: the `curl | sh` command now
+  shows a confirmation code and approval link, the user approves the device in the
+  browser after SSO, and the installer finishes on its own. New installations use the
+  approving account's verified email as the attribution ID; reinstalls keep theirs.
+  The token flow remains available with `sh -s -- --token`.
 - Add validated locale preference loading and Korean/English message catalogs
   for the multilingual interface.
 

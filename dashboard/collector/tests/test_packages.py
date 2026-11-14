@@ -42,6 +42,17 @@ class Packages(unittest.TestCase):
                         self.assertEqual(entry.mtime, 0)
                         self.assertNotIn(TOKEN.encode(), bundle.extractfile(entry).read())
 
+    def test_enrollment_helper_is_published_beside_the_archives_with_its_digest(self):
+        with tempfile.TemporaryDirectory() as output:
+            subprocess.run(["node", str(ROOT / "build-packages.mjs"), output], check=True)
+            helper = Path(output, "enroll.py").read_bytes()
+            self.assertEqual(helper, (ROOT / "enroll.py").read_bytes())
+            manifest = json.loads(Path(output, "manifest.json").read_text())
+            self.assertEqual(manifest["enrollHelper"], hashlib.sha256(helper).hexdigest())
+            for platform in ("linux", "darwin"):
+                with tarfile.open(Path(output, "ccdash-collector-" + platform + ".tar.gz")) as bundle:
+                    self.assertNotIn("ccdash-collector/enroll.py", bundle.getnames())
+
     def test_generated_sources_have_no_drift(self):
         subprocess.run([sys.executable, str(ROOT.parents[1] / "scripts/sync-collector-package.py"),
                         "--check"], check=True)
