@@ -21,6 +21,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   English captions and verified MP4/WebM assets. It covers menu, user/task, cost
   and tool workflows with synthetic screenshots; site-player integration follows
   separately. Paid speech generation reuses valid receipts and stops on failure.
+- Migrate the legacy Linux personal Collector during device installation: when the known
+  `otelcol.service` running your own `~/.otelcol/config.yaml` holds the local ports, the
+  installer asks first, keeps the existing Claude user ID, backs up the unit and settings,
+  disables and masks the old service with sudo, and restores it if installation fails.
+  Other services and listeners are never changed.
 - Complete localization across all application menus, token economics, user and
   cost analysis, tool usage, collector setup and installation status. Preserve
   selected decision-chart legend emphasis when changing language. Keep Codex
@@ -30,6 +35,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   language-selection instructions, matching app guide links and localized image-viewer controls.
 - Correct Spanish installation prerequisites and localized credits links; keep token
   composition emphasis across language changes and clarify translated cost help.
+
+### Fixed
+
+- Check local Collector port conflicts before browser approval, so a declined migration or
+  an unrelated service holding the ports no longer leaves an approved, unused device to revoke.
+- Migrate a legacy Collector that can still run during a device reinstall on macOS and
+  Linux. Previously a reinstall skipped it, so the legacy service kept the local ports and
+  the device Collector restarted without ever delivering telemetry.
 
 ## [1.9.0] - 2026-11-14
 
