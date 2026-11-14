@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
   "repository": "Atom-oh/claude-code-usage-dashboard",
-  "commit": "3f07aecf095307fad877994b32377f4178ce7c8b",
+  "commit": "eaa399c1d8582ed6be8fafa6401df48a0797a528",
   "files": [
     {
       "path": "site/assets/diagrams/system.html",
-      "bytes": 712221,
-      "sha256": "3d3b59b4b83fa74656c1ab67c683211b3f289454b8b25632cd94ec81d7c63a10"
+      "bytes": 712183,
+      "sha256": "4a567efa657eb46beb37fbf2034f81de1eb68ca39beae6bde7bd9200a4b75f4f"
     },
     {
       "path": "site/assets/diagrams/system.svg",
-      "bytes": 5297,
-      "sha256": "ad2009f5c80e95b8ef0b45d493876bd0a5a9c05a9f8b9b0a86699c703eee4db2"
+      "bytes": 5360,
+      "sha256": "153d0b8f7e84f358f27b2e715222037defbe2ef04743e936731a4e4bfd2cfd28"
     },
     {
       "path": "site/assets/fonts/PretendardVariable.woff2",

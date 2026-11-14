@@ -905,8 +905,8 @@
   },
   "delivery": {
     "manifest_repository_path": "video/docs-demo/media.lock.json",
-    "snapshot_commit": "3f07aecf095307fad877994b32377f4178ce7c8b",
-    "snapshot_tag": "docs-media-20261114-visual-guide-r3",
+    "snapshot_commit": "eaa399c1d8582ed6be8fafa6401df48a0797a528",
+    "snapshot_tag": "docs-media-20261114-visual-guide-r4",
     "verification": "scripts/fetch-docs-media.py validates file size and SHA256 before Pages upload or local rendering."
   },
   "previous_demo": {
@@ -937,13 +937,13 @@
     "assets": [
       {
         "path": "diagrams/system.html",
-        "bytes": 712221,
-        "sha256": "3d3b59b4b83fa74656c1ab67c683211b3f289454b8b25632cd94ec81d7c63a10"
+        "bytes": 712183,
+        "sha256": "4a567efa657eb46beb37fbf2034f81de1eb68ca39beae6bde7bd9200a4b75f4f"
       },
       {
         "path": "diagrams/system.svg",
-        "bytes": 5297,
-        "sha256": "ad2009f5c80e95b8ef0b45d493876bd0a5a9c05a9f8b9b0a86699c703eee4db2"
+        "bytes": 5360,
+        "sha256": "153d0b8f7e84f358f27b2e715222037defbe2ef04743e936731a4e4bfd2cfd28"
       },
       {
         "path": "fonts/PretendardVariable.woff2",
@@ -969,13 +969,13 @@
       },
       {
         "path": "scripts/docs-capture/system.architecture.json",
-        "bytes": 4233,
-        "sha256": "99e424762a91797e288a36b0b49dea5785a055cf3ccc62e366f4ad1ee16b8193"
+        "bytes": 4214,
+        "sha256": "237f567852f30c25056e0d7be175d89543e875f1633e49637dfa83d32e3aa017"
       },
       {
         "path": "scripts/docs-capture/render-preview.py",
-        "bytes": 3028,
-        "sha256": "6baf93acc2bf1887f9ae7814a486eb51ff7d58fc0342917a7507062152383fcd"
+        "bytes": 3027,
+        "sha256": "67f8df889ee7ba934edb1439415b661ec5112e117adc645db8c9b5cd14816c73"
       },
       {
         "path": "scripts/docs-capture/font.json",
@@ -1011,6 +1011,6 @@
       "license": "fonts/OFL.txt",
       "upstream_commit": "5c41199ea0024a9e0b2cb31735265056e5472d76"
     },
-    "validation": "All 27 PNGs fully decode and are nonblank. Synthetic costs, tokens, exact-user filters, task cost bases and LMDI terms reconcile. Zero capture browser/console errors or unexpected requests. Final guide browser verification is recorded separately in the translation ledger. Guide interactions passed in both themes at desktop and mobile widths, including a 390x844 viewport. The architecture viewer passed node search/focus and zoom; its 9 showcase checks and desktop containment checks passed."
+    "validation": "All 27 PNGs fully decode and are nonblank. Synthetic costs, tokens, exact-user filters, task cost bases and LMDI terms reconcile. Zero capture browser/console errors or unexpected requests. Final guide browser verification is recorded separately in the translation ledger."
   }
 }

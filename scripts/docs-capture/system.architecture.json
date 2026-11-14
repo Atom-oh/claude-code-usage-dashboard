@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "How ccdash collects and explains usage",
-    "subtitle": "Logical device-collection path and authenticated dashboard queries. Ingest and read API are roles of the same Express application.",
+    "subtitle": "Example with OIDC sign-in and device collection. Ingest and read API are roles of the same Express application.",
     "locale": "en",
     "quality_profile": "showcase",
     "visual_preset": "editorial",
