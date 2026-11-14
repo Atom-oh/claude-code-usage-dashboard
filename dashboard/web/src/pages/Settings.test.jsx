@@ -1,0 +1,135 @@
+import { afterEach, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ConfigProvider } from "../ConfigContext.jsx";
+import Settings from "./Settings.jsx";
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+const session = permissions => ({ mode: "oidc", role: "admin", permissions,
+  expiresAt: new Date(Date.now() + 900000).toISOString() });
+const renderPage = (permissions = ["settings:manage"]) => render(
+  <ConfigProvider config={{ session: session(permissions) }}><Settings /></ConfigProvider>);
+const response = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
+const base = {
+  available: true, reason: null, poolId: "ap-northeast-2_Example",
+  status: { available: true, lastSync: Date.parse("2026-11-10T03:00:00Z"), lastError: null, stale: false,
+    users: 42, historyStart: Date.parse("2026-10-01T00:00:00Z"), reason: null },
+  attributes: [{ attribute: "custom:team", from: 0 }], current: "custom:team", labels: { platform: "플랫폼" },
+  options: ["custom:team", "custom:department"], directoryError: null, version: 3,
+};
+const previews = {
+  "custom:team": { attribute: "custom:team", values: [{ value: "platform", users: 5 }, { value: "data", users: 2 }], missing: 3, excluded: 1 },
+  "custom:department": { attribute: "custom:department", values: [{ value: "eng", users: 7 }], missing: 0, excluded: 4 },
+};
+function stubApi(overrides = {}, put) {
+  const fetch = vi.fn((url, options = {}) => {
+    const path = String(url);
+    if (options.method === "PUT") return Promise.resolve(put ? put(options) : response(base));
+    if (path.startsWith("/api/settings/teams/preview")) {
+      const attribute = new URL(path, "http://x").searchParams.get("attribute");
+      return Promise.resolve(response(previews[attribute]));
+    }
+    return Promise.resolve(response({ ...base, ...overrides }));
+  });
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
+const putCalls = fetch => fetch.mock.calls.filter(([, options]) => options?.method === "PUT");
+
+test("users without settings:manage see a denial and make no requests", () => {
+  const fetch = stubApi();
+  renderPage(["telemetry:read"]);
+  expect(screen.getByRole("alert").textContent).toContain("권한");
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("renders directory status, options with the current one marked, and the current preview", async () => {
+  stubApi();
+  renderPage();
+  expect(await screen.findByText("ap-northeast-2_Example")).toBeTruthy();
+  expect(screen.getByText("42")).toBeTruthy();
+  expect(screen.getByRole("radio", { name: /custom:team/ }).checked).toBe(true);
+  expect(screen.getByRole("radio", { name: /custom:department/ }).checked).toBe(false);
+  expect(screen.getByText("현재")).toBeTruthy();
+  expect((await screen.findByLabelText("platform 표시 이름")).value).toBe("플랫폼");
+  expect(screen.getByLabelText("data 표시 이름").value).toBe("");
+  expect(screen.getAllByRole("columnheader").map(h => h.textContent.replace(/[▲▼↕]/g, "").trim())).toEqual(["값", "사용자 수", "표시 이름"]);
+  expect(screen.getByText(/지금부터 적용됩니다. 이전 사용량의 팀은 바뀌지 않습니다/)).toBeTruthy();
+  expect(screen.queryByText(/오래되었습니다/)).toBeNull();
+});
+
+test("selecting an option loads its preview counts without saving", async () => {
+  const fetch = stubApi();
+  renderPage();
+  await screen.findByLabelText("platform 표시 이름");
+  fireEvent.click(screen.getByRole("radio", { name: /custom:department/ }));
+  expect(await screen.findByLabelText("eng 표시 이름")).toBeTruthy();
+  expect(fetch.mock.calls.some(([url]) => String(url) === "/api/settings/teams/preview?attribute=custom%3Adepartment")).toBe(true);
+  expect(screen.getByText("4").closest("p").textContent).toContain("이메일이 없거나");
+  expect(screen.queryByLabelText("platform 표시 이름")).toBeNull();
+  expect(putCalls(fetch)).toHaveLength(0);
+});
+
+test("save sends attribute, non-blank labels and version, then shows success", async () => {
+  const fetch = stubApi({}, () => response({ ...base, version: 4, labels: { platform: "플랫폼", data: "데이터" } }));
+  renderPage();
+  fireEvent.change(await screen.findByLabelText("data 표시 이름"), { target: { value: " 데이터 " } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect((await screen.findByRole("status")).textContent).toContain("저장했습니다");
+  const [[url, options]] = putCalls(fetch);
+  expect(url).toBe("/api/settings/teams");
+  expect(options.credentials).toBe("same-origin");
+  expect(JSON.parse(options.body)).toEqual({ attribute: "custom:team", version: 3,
+    labels: { platform: "플랫폼", data: "데이터" } });
+});
+
+test("switching attribute saves only the new attribute's labels", async () => {
+  const fetch = stubApi();
+  renderPage();
+  await screen.findByLabelText("platform 표시 이름");
+  fireEvent.click(screen.getByRole("radio", { name: /custom:department/ }));
+  fireEvent.change(await screen.findByLabelText("eng 표시 이름"), { target: { value: "엔지니어링" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(putCalls(fetch)).toHaveLength(1));
+  expect(JSON.parse(putCalls(fetch)[0][1].body)).toEqual({ attribute: "custom:department", version: 3,
+    labels: { eng: "엔지니어링" } });
+});
+
+test("a version conflict asks for a reload and reloading refetches the settings", async () => {
+  const fetch = stubApi({}, () => response({ error: "version_conflict" }, 409));
+  renderPage();
+  await screen.findByLabelText("platform 표시 이름");
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  const reload = await screen.findByRole("button", { name: "최신 설정 불러오기" });
+  expect(screen.getByRole("button", { name: "저장" }).disabled).toBe(true);
+  const before = fetch.mock.calls.filter(([url]) => String(url) === "/api/settings/teams?").length;
+  fireEvent.click(reload);
+  await waitFor(() => expect(fetch.mock.calls.filter(([url]) => String(url) === "/api/settings/teams?").length).toBe(before + 1));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "최신 설정 불러오기" })).toBeNull());
+});
+
+test("a duplicate label error is explained", async () => {
+  stubApi({}, () => response({ error: "duplicate_label" }, 400));
+  renderPage();
+  await screen.findByLabelText("platform 표시 이름");
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("같은 표시 이름");
+});
+
+test("an unavailable directory hides the form and explains the reason", async () => {
+  stubApi({ available: false, reason: "basic_auth", status: null, options: [], current: null, version: null });
+  renderPage();
+  expect((await screen.findByRole("status")).textContent).toContain("조직 SSO");
+  expect(screen.queryByRole("radio")).toBeNull();
+  expect(screen.queryByRole("button", { name: "저장" })).toBeNull();
+});
+
+test("stale status warns and a directory outage disables the picker but keeps stored settings", async () => {
+  const fetch = stubApi({ options: null, directoryError: "directory_unavailable", status: { ...base.status, stale: true } });
+  renderPage();
+  expect(await screen.findByText(/동기화가 오래되었습니다/)).toBeTruthy();
+  expect(screen.getByText(/일시적으로 연결할 수 없어/)).toBeTruthy();
+  expect(screen.queryByRole("radio")).toBeNull();
+  expect(screen.getByText(/현재 기준: custom:team/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "저장" })).toBeNull();
+  expect(fetch.mock.calls.some(([url]) => String(url).startsWith("/api/settings/teams/preview"))).toBe(false);
+});

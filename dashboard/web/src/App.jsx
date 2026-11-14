@@ -24,6 +24,7 @@ import { useConfig } from "./ConfigContext.jsx";
 import SessionBoundary from "./SessionBoundary.jsx";
 import Installation from "./pages/Installation.jsx";
 import CollectorSetup from "./pages/CollectorSetup.jsx";
+import Settings from "./pages/Settings.jsx";
 import Changelog from "./pages/Changelog.jsx";
 import SharedTask from "./pages/SharedTask.jsx";
 import { CHANGELOG_PATH, isTaskPath } from "./clientNavigation.js";
@@ -40,6 +41,7 @@ function Dashboard() {
   const { pathname } = useLocation();
   const installation = pathname === "/installation";
   const collector = pathname === "/collector";
+  const settings = pathname === "/settings";
   const changelog = pathname === CHANGELOG_PATH;
   const sharedTask = isTaskPath(pathname);
   return (
@@ -51,7 +53,7 @@ function Dashboard() {
               <MobileNav />
               <Sidebar />
               <main className="min-w-0 flex-1 overflow-y-auto animate-fade-in">
-                {installation ? <Installation /> : collector ? <CollectorSetup /> : changelog ? <Changelog /> : sharedTask ? <SharedTask /> : <TeamsProvider>
+                {installation ? <Installation /> : settings ? <Settings /> : collector ? <CollectorSetup /> : changelog ? <Changelog /> : sharedTask ? <SharedTask /> : <TeamsProvider>
                 <FreshnessBanner className="mx-8 mt-3" />
                 <div className="px-8 py-2.5 bg-chrome border-b border-chrome-border">
                   <FilterBar />
@@ -72,7 +74,7 @@ function Dashboard() {
                 </Routes>}</TeamsProvider>}
               </main>
             </div>
-            {!installation && !collector && canChat && <FloatingChat />}
+            {!installation && !settings && !collector && canChat && <FloatingChat />}
           </FreshnessProvider>
         </FilterProvider>
       </RangeProvider>
