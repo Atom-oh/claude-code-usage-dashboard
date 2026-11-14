@@ -32,9 +32,18 @@ const REASONS = localize([
   ["incomplete_tokens", "일부 완료 응답의 토큰 구성값이 불완전합니다."],
 ]);
 
+// With a completion cohort, the cohort tiles already carry the token ratios (the same responses;
+// the window versions only add a blank when any request lacks usage), so the window panel keeps
+// the metrics whose denominator is HTTP requests or sessions.
+const REQUEST_KEYS = new Set(["tokens_per_request", "cost_per_request", "cost_per_session"]);
+// Reasons that also affect the cohort stay above the tiles; the rest explain the window panel.
+const COHORT_REASONS = new Set(["usage_limited", "incomplete_tokens"]);
+
 function windowHint(key, format, summary, completeness) {
   if (observedNumber(summary[key]) === null) {
     if (completeness.usage_limited) return translate("m91e9e19b79b7");
+    if (format !== formatClientCost && (completeness.missing_usage || completeness.scope_limited
+      || completeness.incomplete_tokens)) return translate("m1bd81e27849a");
     if (key === "cost_per_session") {
       if (completeness.scope_limited) return translate("mc913ce6c6953");
       if (completeness.missing_session) return translate("m31413219905c");
@@ -67,24 +76,25 @@ export default function CodexEfficiency({ summary, completionUsage, completeness
   const tokensPerRequest = summary.tokens_partial === true
     || (Object.hasOwn(summary, "tokens") && observedNumber(summary.tokens) === null)
     ? null : summary.tokens_per_request;
-  const windowTiles = WINDOW_TILES.map(([key, label, format, help]) => <StatTile key={key} label={label}
+  const windowTiles = WINDOW_TILES.filter(([key]) => !cohort || REQUEST_KEYS.has(key)).map(([key, label, format, help]) => <StatTile key={key} label={label}
     value={format(key === "tokens_per_request" ? tokensPerRequest : summary[key])}
     help={help} hint={windowHint(key, format, summary, completeness)}
     className="[&_.truncate]:whitespace-normal" />);
   const reasons = REASONS.filter(([key]) => completeness[key] === true);
+  const note = (list) => list.length > 0 && <div role="note" aria-label={translate("m1660959e71dd")}
+    className="rounded-lg border border-ink-200 bg-card p-4 text-sm text-ink-600">
+    <p className="font-medium text-ink-700">{translate("mcbf6849d9766")}</p>
+    <ul className="mt-2 list-disc space-y-1 pl-5">
+      {list.map(([key, text]) => <li key={key}>{text}</li>)}
+    </ul>
+  </div>;
   return <>
     {cohort && <div>
       <h3 className="text-base font-semibold text-ink-800">{translate("m38755974405f")}</h3>
       <p className="mt-1 text-sm text-ink-600">{richMessage("mde2e20fd8ab9", [formatObserved(cohort.completions), formatObserved(cohort.identified_sessions)])}</p>
       {cohort.unidentified_completions > 0 && <p className="mt-1 text-sm text-ink-600">{richMessage("m46b855a35396", [formatObserved(cohort.unidentified_completions)])}</p>}
     </div>}
-    {reasons.length > 0 && <div role="note" aria-label={translate("m1660959e71dd")}
-      className="rounded-lg border border-ink-200 bg-card p-4 text-sm text-ink-600">
-      <p className="font-medium text-ink-700">{translate("mcbf6849d9766")}</p>
-      <ul className="mt-2 list-disc space-y-1 pl-5">
-        {reasons.map(([key, text]) => <li key={key}>{text}</li>)}
-      </ul>
-    </div>}
+    {note(cohort ? reasons.filter(([key]) => COHORT_REASONS.has(key)) : reasons)}
     <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
       {(Object.hasOwn(summary, "observed_tokens") || Object.hasOwn(summary, "tokens")) &&
         <StatTile label={translate("m187f5b1fe374")} value={formatObserved(observedTokens(summary))}
@@ -96,6 +106,7 @@ export default function CodexEfficiency({ summary, completionUsage, completeness
     {cohort && <details className="rounded-lg border border-ink-200 bg-card p-4">
       <summary className="cursor-pointer text-sm font-medium text-ink-700">{translate("m00665b9fd6af")}</summary>
       <p className="my-3 text-sm text-ink-600">{translate("ma30b44177108")}</p>
+      {note(reasons.filter(([key]) => !COHORT_REASONS.has(key)))}
       <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">{windowTiles}</div>
     </details>}
   </>;

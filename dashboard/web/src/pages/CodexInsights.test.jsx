@@ -323,3 +323,23 @@ test("the selected diagnostic tab remains selected while its label changes", asy
     await localeStore.select("ko");
   }
 });
+test("with a completion cohort the window panel keeps request/session metrics and explains a blank", () => {
+  const data = fixture();
+  data.completion_usage = { basis: "recorded_completions", status: "observed", completions: 4, identified_sessions: 2,
+    unidentified_completions: 0, cache_hit_rate: 0.4, cache_write_share: 0.05, reasoning_share: 0.3,
+    tokens_per_completion: 120, cost_per_completion: 0.01, cost_usd: 0.04, identified_cost_usd: 0.04 };
+  data.completeness = { missing_usage: true, request_count: 5, session_count: 2 };
+  data.summary = { ...data.summary, cache_hit_rate: null, cache_write_share: null, reasoning_share: null,
+    tokens_per_request: null, tokens_partial: true };
+  show(data);
+  const panel = screen.getByText("전체 구간 지표 · HTTP 요청·세션 기준").closest("details");
+  const labels = within(panel).getAllByText(/당 /, { selector: "span.truncate" }).map((node) => node.textContent);
+  expect(labels).toEqual(["요청당 토큰", "요청당 추정 비용", "세션당 추정 비용"]);
+  expect(within(panel).queryByText("입력 캐시 읽기 비율")).toBeNull();
+  expect(within(panel).getByText("요청당 토큰").closest(".shadow-card").textContent).toContain("토큰 사용량 미확인");
+  expect(within(panel).getByRole("note").textContent).toContain("사용량이 확인되지 않은 로그 범위");
+  const cohortTile = screen.getByText("입력 캐시 읽기 비율").closest(".shadow-card");
+  expect(panel.contains(cohortTile)).toBe(false);
+  expect(cohortTile.textContent).toContain("40%");
+  expect(screen.getAllByRole("note")).toHaveLength(1);
+});
