@@ -15,6 +15,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Add validated locale preference loading and Korean/English message catalogs
+  for the multilingual interface.
+
 ### Changed
 
 - Rebuild the visual guide around illustrated user-Trace, cost-efficiency and tool
