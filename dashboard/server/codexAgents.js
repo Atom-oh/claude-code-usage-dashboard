@@ -10,8 +10,12 @@
 // collected (Codex trace export, versions emitting collaboration spans): a missing link is
 // unknown, never "no subagents". Calls are the subagent turns' model-call spans and costs their own
 // completion logs, linked exactly like the task list; traces only establish the lineage.
+// Codex before 0.166 puts no conversation.id or turn id on the collaboration<tool> and run_turn
+// spans. Their tool span is resolved from its call_id: the codex.tool_result log of that call names
+// the calling conversation, and the turn is that conversation's turn running at the call's time
+// (a conversation runs one turn at a time). The child's conversation comes from its own turn spans.
 import { toChDateTime } from "./clickhouse.js";
-import { EXACT_USER, SPAN_SLACK_MS, CODEX_TURN_LIMIT, CODEX_COMPLETION_LIMIT, TURN_ID, count,
+import { EXACT_USER, SPAN_SLACK_MS, CODEX_TURN_LIMIT, CODEX_COMPLETION_LIMIT, TURN_ID, TURN_SPAN, count,
   codexTurnSql, codexCompletionSql, linkCompletions, foldCodexTask } from "./taskTraces.js";
 
 // Subagent levels followed below the task's turn, and subagent turns returned in all.
@@ -25,6 +29,8 @@ export const LINEAGE_SPAN_LIMIT = 50000;
 export const LINEAGE_LEAD_MS = 10 * 60 * 1000;
 // Tool spans that start a subagent turn; their count is the denominator for unlinked calls.
 export const SPAWN_SPANS = ["collaborationspawn_agent", "collaborationfollowup_task"];
+// A legacy call's log time may differ from its turn's span window by clock rounding.
+export const LEGACY_CALL_SLACK_MS = 1000;
 
 // The detail route serves a turn only from a range containing its start, so each link carries
 // the UTC hour of its own target's start.
@@ -38,6 +44,10 @@ export function linkWindow(startMs) {
 const CHAIN = ["session_task.turn", "op.dispatch.inter_agent_communication", "dispatch_tool_call_with_state", "run_turn"];
 const IDENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const TOOL = /^collaboration([a-z][a-z0-9_]{0,63})$/;
+const CALL_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+const lineageWindow = (startMs, endMs) => ({ spanFrom: toChDateTime(new Date(startMs - LINEAGE_LEAD_MS)),
+  spanTo: toChDateTime(new Date(endMs + SPAN_SLACK_MS)) });
 
 // The lineage spans of the task's traces, from just before its turn to a day after it ends
 // (subagents can outlive the turn that started them). Only names, ids and the two identity
@@ -47,6 +57,7 @@ export function codexLineageSql(owner, traceIds, startMs, endMs) {
     sql: `SELECT TraceId AS trace_id, SpanId AS span_id, ParentSpanId AS parent_id, SpanName AS name,
     SpanAttributes['conversation.id'] AS conversation,
     coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn,
+    SpanAttributes['call_id'] AS call_id,
     toString(toUnixTimestamp64Milli(Timestamp)) AS start_ms
 FROM claude_code.otel_traces
 PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
@@ -56,9 +67,96 @@ WHERE ResourceAttributes['client'] = 'codex'
   AND (SpanName IN (${CHAIN.map((n) => `'${n}'`).join(", ")}) OR startsWith(SpanName, 'collaboration'))
 LIMIT 1 BY TraceId, SpanId
 LIMIT ${LINEAGE_SPAN_LIMIT + 1}`,
-    params: { spanFrom: toChDateTime(new Date(startMs - LINEAGE_LEAD_MS)),
-      spanTo: toChDateTime(new Date(endMs + SPAN_SLACK_MS)), userExact: owner, traceIds },
+    params: { ...lineageWindow(startMs, endMs), userExact: owner, traceIds },
   };
+}
+
+// What a lineage read still needs when Codex (before 0.166) left ids off its spans: the call ids of
+// spawn/follow-up spans without a turn, and the subagent turns whose run_turn names no conversation.
+export function legacyNeeds(rows) {
+  const callIds = new Set(), named = new Set(), childTurns = new Set();
+  const byId = new Map(rows.map((r) => [`${r.trace_id}/${r.span_id}`, r]));
+  for (const r of rows) {
+    if (SPAWN_SPANS.includes(r.name) && !r.turn && CALL_ID.test(r.call_id ?? "")) callIds.add(r.call_id);
+    if (r.name === "run_turn" && r.turn && r.conversation) named.add(r.turn);
+  }
+  for (const r of rows) {
+    const p = r.parent_id ? byId.get(`${r.trace_id}/${r.parent_id}`) : null;
+    if (r.name === "session_task.turn" && TURN_ID.test(r.turn ?? "") && !named.has(r.turn)
+      && p?.name === "op.dispatch.inter_agent_communication") childTurns.add(r.turn);
+  }
+  return { callIds: [...callIds].sort(), childTurns: [...childTurns].sort() };
+}
+
+// The calling conversation of each legacy call: its codex.tool_result log. Time is the source
+// event.timestamp, else the collector Timestamp.
+export function codexCallLogSql(owner, callIds, startMs, endMs) {
+  return {
+    sql: `SELECT LogAttributes['call_id'] AS call_id, LogAttributes['conversation.id'] AS conversation,
+    toString(toUnixTimestamp64Milli(coalesce(parseDateTime64BestEffortOrNull(LogAttributes['event.timestamp'], 3),
+      toDateTime64(Timestamp, 3)))) AS at_ms
+FROM claude_code.otel_logs
+PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
+  AND EventName = 'codex.tool_result'
+  AND ${EXACT_USER}
+WHERE ResourceAttributes['client'] = 'codex'
+  AND LogAttributes['event.name'] = 'codex.tool_result'
+  AND LogAttributes['call_id'] IN {callIds:Array(String)}
+  AND LogAttributes['conversation.id'] != ''
+  AND coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') = {userExact:String}
+ORDER BY Timestamp
+LIMIT 1 BY call_id`,
+    params: { ...lineageWindow(startMs, endMs), userExact: owner, callIds },
+  };
+}
+
+// The conversation of each legacy subagent turn, from its own turn spans that carry one.
+export function codexTurnConversationSql(owner, turnIds, startMs, endMs) {
+  return {
+    sql: `SELECT turn_id, any(conversation) AS conversation
+FROM (
+    SELECT coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id,
+        SpanAttributes['conversation.id'] AS conversation
+    FROM claude_code.otel_traces
+    PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
+      AND ${EXACT_USER}
+    WHERE ResourceAttributes['client'] = 'codex'
+      AND ${TURN_SPAN}
+      AND SpanAttributes['conversation.id'] != ''
+)
+WHERE turn_id IN {turnIds:Array(String)}
+GROUP BY turn_id`,
+    params: { ...lineageWindow(startMs, endMs), userExact: owner, turnIds },
+  };
+}
+
+// The turn of `conversation` running at atMs (turn rows as codexTurnSql returns them): the latest
+// one started by then, else (within the slack) the earliest. None is null: the call stays unlinked.
+export function containingTurn(turns, conversation, atMs) {
+  if (!Number.isFinite(atMs)) return null;
+  const within = turns.filter((t) => t.conversation_id === conversation
+    && count(t.start_ms) !== null && count(t.end_ms) !== null
+    && count(t.start_ms) - LEGACY_CALL_SLACK_MS <= atMs && atMs <= count(t.end_ms) + LEGACY_CALL_SLACK_MS);
+  const started = within.filter((t) => count(t.start_ms) <= atMs);
+  const pick = (list, latest) => list.reduce((a, b) => (latest ? count(b.start_ms) > count(a.start_ms)
+    : count(b.start_ms) < count(a.start_ms)) ? b : a);
+  return started.length ? pick(started, true) : within.length ? pick(within, false) : null;
+}
+
+// Lineage rows with each legacy spawn/follow-up span given its calling conversation and turn, plus
+// the legacy subagent turns' conversations. Input rows are not changed.
+export function resolveLegacy(rows, callLogs, turnConversations, turns) {
+  const logs = new Map(callLogs.filter((l) => CALL_ID.test(l.call_id ?? "") && IDENT.test(l.conversation ?? ""))
+    .map((l) => [l.call_id, l]));
+  const resolved = rows.map((r) => {
+    const log = SPAWN_SPANS.includes(r.name) && !r.turn ? logs.get(r.call_id) : null;
+    const owner = log ? containingTurn(turns, log.conversation, count(log.at_ms)) : null;
+    return owner ? { ...r, turn: owner.turn_id, conversation: log.conversation } : r;
+  });
+  const conversations = new Map(turnConversations
+    .filter((t) => TURN_ID.test(t.turn_id ?? "") && IDENT.test(t.conversation ?? ""))
+    .map((t) => [t.turn_id, t.conversation]));
+  return { rows: resolved, conversations };
 }
 
 const toolName = (span) => TOOL.exec(span ?? "")?.[1] ?? null;
@@ -67,8 +165,9 @@ const taskId = (conversation, turn) => IDENT.test(conversation ?? "") && TURN_ID
 
 // Pure walk over lineage rows: the task turn's parent link, and its subagent turns breadth
 // first (AGENT_DEPTH levels, AGENT_LIMIT turns). Links: { parent_turn, parent_conversation,
-// tool_span, tool_span_id, child_turn, child_conversation, child_start_ms, depth }.
-export function walkLineage(rows, turnId) {
+// tool_span, tool_span_id, child_turn, child_conversation, child_start_ms, depth }. `conversations`
+// (turn id -> conversation) names a child turn's conversation when no run_turn span does.
+export function walkLineage(rows, turnId, conversations = new Map()) {
   const key = (trace, span) => `${trace}/${span}`;
   const byId = new Map(rows.map((r) => [key(r.trace_id, r.span_id), r]));
   const parentOf = (r, name) => {
@@ -87,7 +186,7 @@ export function walkLineage(rows, turnId) {
     const g = d && parentOf(d, "collaboration");
     if (!g || g.turn === c.turn) continue;
     edges.push({ parent_turn: g.turn, parent_conversation: g.conversation, tool_span: g.name, tool_span_id: g.span_id,
-      child_turn: c.turn, child_conversation: conversationOf.get(c.turn) ?? "", child_start_ms: count(c.start_ms) });
+      child_turn: c.turn, child_conversation: conversationOf.get(c.turn) ?? conversations.get(c.turn) ?? "", child_start_ms: count(c.start_ms) });
   }
   edges.sort((a, b) => (a.child_start_ms ?? 0) - (b.child_start_ms ?? 0) || a.child_turn.localeCompare(b.child_turn));
   const parent = edges.find((e) => e.child_turn === turnId) ?? null;
