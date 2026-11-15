@@ -381,7 +381,7 @@ export function codexTurnSql(from, to, q, { conversationId = null, conversationI
           groupUniqArrayIf(span_model, SpanName = 'codex.sampling' AND span_model != ''),
           groupUniqArrayIf(span_model, SpanName = 'run_sampling_request' AND span_model != '')) AS models
     FROM (
-        SELECT Timestamp, SpanName,
+        SELECT Timestamp, SpanName, SpanId,
             toUnixTimestamp64Milli(Timestamp) AS span_start_ms,
             intDiv(Duration, 1000000) AS span_duration_ms,
             coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id,
