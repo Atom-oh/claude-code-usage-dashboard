@@ -187,6 +187,16 @@ class MediaTests(unittest.TestCase):
                     self.assertEqual(seen, {f"guide-{locale}-{view}.png"
                                             for view in MEDIA.LOCALIZED_GUIDE_VIEWS})
 
+    def test_localized_capture_source_records_are_unique_and_current(self):
+        metadata = json.loads((ROOT / "site/assets/media.json").read_text())
+        records = metadata["localized_guide_2026_11_15"]["source_files"]
+        paths = [entry["path"] for entry in records]
+        self.assertEqual(len(paths), len(set(paths)), "duplicate capture source record")
+        for entry in records:
+            data = (ROOT / entry["path"]).read_bytes()
+            self.assertEqual(len(data), entry["bytes"], entry["path"])
+            self.assertEqual(hashlib.sha256(data).hexdigest(), entry["sha256"], entry["path"])
+
     def test_delivery_cache_is_ignored_and_absent_from_tracked_tree(self):
         tracked = set(subprocess.check_output(
             ["git", "-C", str(ROOT), "ls-files"], text=True).splitlines())

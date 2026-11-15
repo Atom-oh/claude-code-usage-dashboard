@@ -3618,11 +3618,6 @@
         "path": "scripts/docs-capture/fixtures.test.mjs",
         "bytes": 754,
         "sha256": "f6571eb808c81aeb93ec07f82f0093fbef0d243a4310a6116af3cc696d767a5d"
-      },
-      {
-        "path": "scripts/docs-capture/fixtures.test.mjs",
-        "bytes": 754,
-        "sha256": "f6571eb808c81aeb93ec07f82f0093fbef0d243a4310a6116af3cc696d767a5d"
       }
     ],
     "validation": "120 captures decoded and nonblank with matching UI locale. Settings checked at desktop and mobile widths. No capture errors.",
