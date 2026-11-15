@@ -18,8 +18,9 @@ const INVOCATIONS = new Set(["explicit", "implicit"]);
 // The turn's skill invocations in the detail's span window. Ids are exact, so the window only
 // bounds the scan. Each delivered event counts once: an exporter retry stores the same
 // timestamp and attribute maps again, so rows are deduplicated on that identity (as the
-// completion read is) before grouping.
-export function codexSkillsSql(from, to, q, conversationId, turnId) {
+// completion read is) before grouping. `logFrom`/`logTo` (Dates) replace the window (a rollup
+// detail reads the spans' turn window).
+export function codexSkillsSql(from, to, q, conversationId, turnId, { logFrom = null, logTo = null } = {}) {
   return {
     sql: `SELECT name, invocation, scope, count() AS calls
 FROM (
@@ -38,8 +39,8 @@ FROM (
 GROUP BY name, invocation, scope
 ORDER BY calls DESC, name
 LIMIT ${SKILL_LIMIT + 1}`,
-    params: { logFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
-      logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact, conversationId, turnId },
+    params: { logFrom: toChDateTime(logFrom ?? new Date(from.getTime() - SPAN_SLACK_MS)),
+      logTo: toChDateTime(logTo ?? new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact, conversationId, turnId },
   };
 }
 
