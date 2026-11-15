@@ -630,7 +630,7 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   // Subagent turns linked through the trace's parent-span chain; their own completions price them.
   const spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
-  const agents = await codexAgents(owner, { turnId: task.turnId, startMs: turnStart, endMs: count(entry.turn.end_ms),
+  const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
     traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices });
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
