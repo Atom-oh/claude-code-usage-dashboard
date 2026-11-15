@@ -855,7 +855,9 @@ skills a minute either side, each capped at the list's reads) and equals its lis
   `links_source` is `"trace"` for lineage from the trace's parent-span chain, `"log"` when a shown
   link came from `codex.agent_communication` logs (spawn/follow-up sends, observed on Codex
   0.167.1-0.168.0; read only when the trace links no child of the turn, and a traced parent is
-  kept; a send links only from its conversation's turn running at the send), else null. `known_zero` is true only with positive evidence of no subagent calls:
+  kept; a send links only from its conversation's turn running at the send, and a receiver turn
+  only to the latest send to its conversation within 60 s before it, from any of the owner's
+  conversations, ties in one millisecond going to the greatest sender id), else null. `known_zero` is true only with positive evidence of no subagent calls:
   complete spans that do not reach the clipped span window (`to` + 24h), no spawn, follow-up or
   `send_input` span of the turn, no link, no communication send of the conversation in the turn's
   window, and turn-naming evidence (the rollup row's `names_turn`, else a version that names its
