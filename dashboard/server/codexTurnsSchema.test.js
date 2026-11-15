@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   TURNS_ROLLUP_COLUMNS, TURNS_ROLLUP_TABLE, codexTurnsBackfillSql, codexTurnsSchemaSql,
-  codexTurnSpans, codexTurnsTransform, codexTurnsVerifySql, namesTurnOnToolsSql, turnHourSql, turnIdHour,
+  codexTurnSpans, codexTurnsTransform, codexTurnsVerifySql, namesTurnOnToolsSql, turnHourSql, turnHourMs,
+  TURN_ID_MAX_AGE_MS, TURN_ID_MAX_LEAD_MS,
 } from "./codexTurnsSchema.js";
 import { TURN_SPAN } from "./taskTraces.js";
 import { SPAWN_SPANS } from "./codexAgents.js";
@@ -71,16 +72,43 @@ test("view takes Codex turn spans and keys every count by span id", () => {
   assert.doesNotMatch(codexTurnsSchemaSql(), /\{[a-zA-Z]+:/);
 });
 
-test("turn hour comes from a UUIDv7 id, else from the span", () => {
+test("turn hour comes from a plausible UUIDv7 id, else from the span", () => {
   const sql = turnHourSql("t.id", "t.ts");
   assert.ok(sql.includes("match(t.id, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')"));
   assert.ok(sql.includes("unhex(concat(substring(t.id, 1, 8), substring(t.id, 10, 4)))"));
-  assert.ok(sql.includes("toStartOfHour(toDateTime(t.ts, 'UTC'))"));
-  assert.equal(turnIdHour("01a14f6d-7899-7a83-8000-000000000000")?.toISOString(), "2026-10-18T14:00:00.000Z");
-  assert.equal(turnIdHour("01A14F6D-7899-7A83-8000-000000000000")?.toISOString(), "2026-10-18T14:00:00.000Z");
-  for (const id of ["01a14f6d-7899-4a83-8000-000000000000", "auto-compact-7", "", null, undefined,
-    "01a14f6d-7899-7a83-8000-00000000000", "01a14f6g-7899-7a83-8000-000000000000"])
-    assert.equal(turnIdHour(id), null, String(id));
+  // The id time is used only within [span - 7 days, span + 1 day]; the choice is made on integer
+  // milliseconds and converted once, so no 48-bit id time can wrap a DateTime.
+  assert.ok(sql.includes("toUnixTimestamp64Milli(t.ts)"));
+  assert.ok(sql.includes(`>= toUnixTimestamp64Milli(t.ts) - ${TURN_ID_MAX_AGE_MS}`));
+  assert.ok(sql.includes(`<= toUnixTimestamp64Milli(t.ts) + ${TURN_ID_MAX_LEAD_MS}`));
+  assert.equal(sql.match(/toDateTime\(/g).length, 1);
+  assert.equal(TURN_ID_MAX_AGE_MS, 7 * 24 * 3600000);
+  assert.equal(TURN_ID_MAX_LEAD_MS, 24 * 3600000);
+
+  const id = "01a14f6d-7899-7a83-8000-000000000000", idMs = Date.parse("2026-10-18T14:32:16.793Z");
+  const iso = ms => ms === null ? null : new Date(ms).toISOString();
+  // Without a span time (a detail from its id alone) a v7 id gives its own hour.
+  assert.equal(iso(turnHourMs(id)), "2026-10-18T14:00:00.000Z");
+  assert.equal(iso(turnHourMs(id.toUpperCase())), "2026-10-18T14:00:00.000Z");
+  // Plausible: the span starts up to 1 day before or up to 7 days after the id time.
+  for (const span of [idMs, idMs - 24 * 3600000, idMs + 7 * 24 * 3600000, idMs - 60000])
+    assert.equal(iso(turnHourMs(id, span)), "2026-10-18T14:00:00.000Z", iso(span));
+  // Implausible: the span's own hour.
+  assert.equal(iso(turnHourMs(id, idMs - 24 * 3600000 - 1)), "2026-10-17T14:00:00.000Z");
+  assert.equal(iso(turnHourMs(id, idMs + 7 * 24 * 3600000 + 1)), "2026-10-25T14:00:00.000Z");
+  const span = Date.parse("2026-10-21T09:15:00.123Z");
+  for (const garbage of ["ffffffff-ffff-7fff-bfff-ffffffffffff", "00000000-0001-7000-8000-000000000000",
+    "7fffffff-ffff-7000-8000-000000000000"]) {
+    assert.equal(iso(turnHourMs(garbage, span)), "2026-10-21T09:00:00.000Z", garbage);
+  }
+  // Without a span time nothing bounds the id: a read keyed by the id alone must bound it itself.
+  assert.equal(iso(turnHourMs("00000000-0001-7000-8000-000000000000")), "1970-01-01T00:00:00.000Z");
+  // Not a UUIDv7: the span hour, or null without a span.
+  for (const other of ["01a14f6d-7899-4a83-8000-000000000000", "auto-compact-7", "", null, undefined,
+    "01a14f6d-7899-7a83-8000-00000000000", "01a14f6g-7899-7a83-8000-000000000000"]) {
+    assert.equal(turnHourMs(other), null, String(other));
+    assert.equal(iso(turnHourMs(other, span)), "2026-10-21T09:00:00.000Z", String(other));
+  }
 });
 
 test("version rule parses major.minor numerically and ignores pre-release suffixes", () => {

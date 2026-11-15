@@ -20,9 +20,10 @@ SELECT TurnHour, UserIdentity, TurnId,
   max(span_names_turn) AS NamesTurnOnTools,
   maxIf(span_version, span_version != '') AS AppVersion
 FROM (
-  SELECT if(match(turn_id_raw, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
-      toStartOfHour(toDateTime(intDiv(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4))))), 1000), 'UTC')),
-      toStartOfHour(toDateTime(Timestamp, 'UTC'))) AS TurnHour,
+  SELECT toStartOfHour(toDateTime(intDiv(if(match(turn_id_raw, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+        AND toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4)))))) >= toUnixTimestamp64Milli(Timestamp) - 604800000
+        AND toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4)))))) <= toUnixTimestamp64Milli(Timestamp) + 86400000,
+      toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4)))))), toUnixTimestamp64Milli(Timestamp)), 1000), 'UTC')) AS TurnHour,
     coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') AS UserIdentity,
     coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id_raw,
     turn_id_raw AS TurnId,

@@ -1111,9 +1111,10 @@ SELECT TurnHour, UserIdentity, TurnId,
   max(span_names_turn) AS NamesTurnOnTools,
   maxIf(span_version, span_version != '') AS AppVersion
 FROM (
-  SELECT if(match(turn_id_raw, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
-      toStartOfHour(toDateTime(intDiv(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4))))), 1000), 'UTC')),
-      toStartOfHour(toDateTime(Timestamp, 'UTC'))) AS TurnHour,
+  SELECT toStartOfHour(toDateTime(intDiv(if(match(turn_id_raw, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+        AND toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4)))))) >= toUnixTimestamp64Milli(Timestamp) - 604800000
+        AND toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4)))))) <= toUnixTimestamp64Milli(Timestamp) + 86400000,
+      toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4)))))), toUnixTimestamp64Milli(Timestamp)), 1000), 'UTC')) AS TurnHour,
     coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') AS UserIdentity,
     coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id_raw,
     turn_id_raw AS TurnId,
@@ -1153,7 +1154,7 @@ SELECT throwIf(
     ('codex_turns_v1','AppVersion','SimpleAggregateFunction(max, String)'))) != 15,
   'Codex turns schema columns differ; repair before recording migration 012');
 
-INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 12, '012-codex-turns', 'e2eda01aa737622ce7eb2869daf253cdbe4ae356dd4dd1c27544a61a2ba0023b'
+INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 12, '012-codex-turns', '35a7425f5f78e05d349e14e4b427b19e77d4012a2a95c474c7ef2d65811b2124'
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
 AND (SELECT count() FROM claude_code.schema_migrations WHERE version=12) = 0;
 -- END GENERATED CODEX TURNS V1

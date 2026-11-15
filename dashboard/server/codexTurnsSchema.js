@@ -31,20 +31,36 @@ const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$
 const UUID_V7_SQL = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 const HOUR_MS = 3600000;
 
-// UTC hour of a UUIDv7 turn id (the row's TurnHour), else null: such a turn's rows carry their
-// spans' hours instead.
-export function turnIdHour(turnId) {
-  if (typeof turnId !== "string" || !UUID_V7.test(turnId)) return null;
-  const ms = Number.parseInt(turnId.slice(0, 8) + turnId.slice(9, 13), 16);
-  return new Date(ms - (ms % HOUR_MS));
+// A span's TurnHour uses its v7 id time only when that time is plausible for the span: at most
+// 7 days before it (a turn's spans start after its id) and at most 1 day after it (clock skew).
+// Any other id time, such as a garbage or wrapped clock, uses the span's hour like a non-v7 id,
+// so one insert block cannot spread across far-off partitions and fail the otel_traces insert.
+export const TURN_ID_MAX_AGE_MS = 7 * 24 * HOUR_MS;
+export const TURN_ID_MAX_LEAD_MS = 24 * HOUR_MS;
+const floorHour = ms => Math.floor(ms / HOUR_MS) * HOUR_MS;
+
+// UTC hour (epoch ms) of a turn's row for a span starting at spanMs: the UUIDv7 id's hour when
+// plausible, else the span's hour. Without spanMs, the id's hour for a v7 id, else null; nothing
+// then bounds the id time, so a read keyed by the id alone must bound it and fall back to raw
+// when no row is found.
+export function turnHourMs(turnId, spanMs) {
+  const hasSpan = typeof spanMs === "number" && Number.isFinite(spanMs);
+  if (typeof turnId === "string" && UUID_V7.test(turnId)) {
+    const ms = Number.parseInt(turnId.slice(0, 8) + turnId.slice(9, 13), 16);
+    if (!hasSpan || (ms >= spanMs - TURN_ID_MAX_AGE_MS && ms <= spanMs + TURN_ID_MAX_LEAD_MS)) return floorHour(ms);
+  }
+  return hasSpan ? floorHour(spanMs) : null;
 }
 
-// SQL of turnIdHour, with the span's UTC hour for any other id.
+// SQL of turnHourMs for a DateTime64 span start. The id time (at most 48 bits) and the span
+// time are chosen as integer milliseconds and converted once, so no id time can wrap.
 export function turnHourSql(turnIdExpr, tsExpr) {
-  const ms = `reinterpretAsUInt64(reverse(unhex(concat(substring(${turnIdExpr}, 1, 8), substring(${turnIdExpr}, 10, 4)))))`;
-  return `if(match(${turnIdExpr}, '${UUID_V7_SQL}'),
-      toStartOfHour(toDateTime(intDiv(${ms}, 1000), 'UTC')),
-      toStartOfHour(toDateTime(${tsExpr}, 'UTC')))`;
+  const idMs = `toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(${turnIdExpr}, 1, 8), substring(${turnIdExpr}, 10, 4))))))`;
+  const spanMs = `toUnixTimestamp64Milli(${tsExpr})`;
+  return `toStartOfHour(toDateTime(intDiv(if(match(${turnIdExpr}, '${UUID_V7_SQL}')
+        AND ${idMs} >= ${spanMs} - ${TURN_ID_MAX_AGE_MS}
+        AND ${idMs} <= ${spanMs} + ${TURN_ID_MAX_LEAD_MS},
+      ${idMs}, ${spanMs}), 1000), 'UTC'))`;
 }
 
 // namesTurnOnTools() (taskTraces.js) in SQL: Codex 0.166 and later name the turn on tool spans.
