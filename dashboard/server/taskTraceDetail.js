@@ -11,7 +11,7 @@ import { SPAWN_SPANS, agentCount, codexAgents } from "./codexAgents.js";
 import { codexSkillsSql, foldCodexSkills, foldCodexTools } from "./codexActivity.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
-  foldCodexTask, codexRetries, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
+  foldCodexTask, codexRetries, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions, namesTurnOnTools } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
   llm: ["model", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens", "ttft_ms",
@@ -631,7 +631,7 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, startMs: turnStart, endMs: count(entry.turn.end_ms),
-    traceIds, tracesPartial: detail.truncated }, detail.task, spawnSpanIds, { from, to, run, prices });
+    traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices });
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
   return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, activity, environment: null, owner };

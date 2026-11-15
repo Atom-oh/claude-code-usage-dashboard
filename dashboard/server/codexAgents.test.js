@@ -403,3 +403,29 @@ test("legacy multi_agent_v1 calls are resolved by call id like collaboration cal
   assert.deepEqual(walkLineage(resolved.rows, P, resolved.conversations).links.map(l => [l.child_turn, l.child_conversation]),
     [[C1, "sub1"]]);
 });
+
+test("a 0.166 turn without spawn calls has a known zero", async () => {
+  const known = foldAgents({ task: rootTask, spawnSpanIds: [], namesTurn: true });
+  assert.equal(known.known_zero, true);
+  assert.equal(agentCount(known), 0);
+  const run = async () => [];
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"], namesTurn: true };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([out.known_zero, agentCount(out)], [true, 0]);
+});
+
+test("a legacy or truncated turn without links stays unknown", async () => {
+  for (const args of [
+    { spawnSpanIds: [], namesTurn: false },
+    { spawnSpanIds: null, namesTurn: true },
+    { spawnSpanIds: [], namesTurn: true, limited: true },
+    { spawnSpanIds: ["s1"], namesTurn: true },
+    { spawnSpanIds: [] }]) {
+    const out = foldAgents({ task: rootTask, ...args });
+    assert.deepEqual([out.known_zero, agentCount(out)], [false, null], JSON.stringify(args));
+  }
+  const run = async () => [];
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"], tracesPartial: true, namesTurn: true };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([out.known_zero, agentCount(out)], [false, null]);
+});
