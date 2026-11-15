@@ -15,6 +15,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Codex task details list the turn's subagent turns (spawn_agent, followup_task; nested up
+  to three levels) with each one's LLM calls and linked cost estimate, the turn's total
+  including them, and, on a subagent turn, a link to the turn that started it. Codex names
+  no parent in any attribute, so the link follows the trace's parent-span chain; spawn calls
+  whose subagent trace was not collected are counted separately instead of implying none.
+
 ### Changed
 
 - License the repository under FSL-1.1-ALv2 instead of all rights reserved: internal

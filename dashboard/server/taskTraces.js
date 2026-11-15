@@ -350,12 +350,16 @@ export const TURN_SPAN = "(SpanAttributes['turn_id'] != '' OR SpanAttributes['tu
 // outside [from, to) come back with in_bucket = 0 as attachment context only: a completion
 // they win belongs to that neighbouring bucket and is neither listed nor counted as
 // unattached here. Bucket turns sort first so a capped result keeps them. `conversationId`
-// (task detail) keeps only that conversation's turns: the complete competitor set for linking.
-export function codexTurnSql(from, to, q, { conversationId = null } = {}) {
+// (task detail) keeps only that conversation's turns: the complete competitor set for linking;
+// `conversationIds` does the same for several (a detail's subagent conversations).
+export function codexTurnSql(from, to, q, { conversationId = null, conversationIds = null } = {}) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
     spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact };
   if (conversationId !== null) params.conversationId = conversationId;
+  if (conversationIds !== null) params.conversationIds = conversationIds;
+  const having = conversationId !== null ? "\n    HAVING conversation_id = {conversationId:String}"
+    : conversationIds !== null ? "\n    HAVING conversation_id IN {conversationIds:Array(String)}" : "";
   return {
     sql: `SELECT turn_id,
         toUInt8(min(Timestamp) >= {from:DateTime} AND min(Timestamp) < {to:DateTime}) AS in_bucket,
@@ -387,7 +391,7 @@ export function codexTurnSql(from, to, q, { conversationId = null } = {}) {
         LIMIT 1 BY TraceId, SpanId
     )
     WHERE turn_id != ''
-    GROUP BY turn_id${conversationId === null ? "" : "\n    HAVING conversation_id = {conversationId:String}"}
+    GROUP BY turn_id${having}
     ORDER BY in_bucket DESC, start_ms ASC, turn_id ASC
     LIMIT ${CODEX_TURN_LIMIT + 1}`,
     params,
@@ -399,11 +403,15 @@ export function codexTurnSql(from, to, q, { conversationId = null } = {}) {
 // per row without stringifying the maps; LIMIT 1 BY that hash keeps one delivery and
 // `identity` names it so the fold attaches it at most once. PREWHERE reads only promoted
 // columns (event, time, exact user); the map-derived checks repeat in WHERE. Only
-// allowlisted attributes leave the database. `conversationId` (task detail) keeps one conversation.
-export function codexCompletionSql(from, to, q, { conversationId = null } = {}) {
+// allowlisted attributes leave the database. `conversationId` (task detail) keeps one conversation,
+// `conversationIds` several.
+export function codexCompletionSql(from, to, q, { conversationId = null, conversationIds = null } = {}) {
   const params = { logFrom: toChDateTime(from), logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)),
     userExact: q.userExact };
   if (conversationId !== null) params.conversationId = conversationId;
+  if (conversationIds !== null) params.conversationIds = conversationIds;
+  const conversation = conversationId !== null ? "\n      AND LogAttributes['conversation.id'] = {conversationId:String}"
+    : conversationIds !== null ? "\n      AND LogAttributes['conversation.id'] IN {conversationIds:Array(String)}" : "";
   const tokens = COMPLETION_TOKEN_KEYS.map(k => `LogAttributes['${k}'] AS ${k}`).join(",\n        ");
   return {
     sql: `SELECT toString(identity_hash) AS identity,
@@ -422,8 +430,7 @@ export function codexCompletionSql(from, to, q, { conversationId = null } = {}) 
       AND EventName IN ${CODEX_STREAM_EVENTS}
       AND ${EXACT_USER}
     WHERE LogAttributes['event.name'] IN ${CODEX_STREAM_EVENTS}
-      AND LogAttributes['event.kind'] = 'response.completed'${conversationId === null ? ""
-        : "\n      AND LogAttributes['conversation.id'] = {conversationId:String}"}
+      AND LogAttributes['event.kind'] = 'response.completed'${conversation}
       AND arrayExists(k -> mapContains(LogAttributes, k), [${COMPLETION_TOKEN_KEYS.map(k => `'${k}'`).join(", ")}])
       AND coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') = {userExact:String}
     ORDER BY timestamp_ms
@@ -475,7 +482,8 @@ export function foldCodexTask(turn, linked) {
     duration_ms: start !== null && end !== null && end >= start ? end - start : null,
     duration_basis: "observed_span_window",
     models: [...models].sort(), llm_calls: count(turn.llm_calls) ?? 0,
-    // No Codex attribute links a child thread to its parent turn: unknown, not zero.
+    // No Codex attribute links a child thread to its parent turn; the task detail follows the
+    // trace's parent-span chain instead (codexAgents.js). The list: unknown, not zero.
     subagents: null,
     tokens: { ...sums, ...finishObservedTokens(observed, { partial: tokensPartial }) },
     cost_usd: Number.isFinite(cost) ? cost : null,

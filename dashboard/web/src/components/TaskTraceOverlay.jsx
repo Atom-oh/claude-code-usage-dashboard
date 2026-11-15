@@ -2,8 +2,8 @@ import { richMessage, translate, translateSource, useLocale } from "../i18n/inde
 // Full-screen detail of one task (/api/users/tasks/detail): KPI row, agent lane timeline
 // (TaskTimeline), cumulative cost band by lane (TaskCostBand), context size by lane
 // (TaskContextChart), clicked-span side panel
-// (TaskSpanPanel), the "왜 많이 썼나" rules and the per-model call table (모델별 호출), whose
-// rows highlight that model's LLM bars. Task ids and raw identities are never shown.
+// (TaskSpanPanel), the "왜 많이 썼나" rules, Codex subagent calls (TaskAgents) and the
+// per-model call table (모델별 호출), whose rows highlight that model's LLM bars. Task ids and raw identities are never shown.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBox, Loading } from "./Card.jsx";
 import { Badge } from "./Badge.jsx";
@@ -13,6 +13,7 @@ import { TaskTimeline } from "./TaskTimeline.jsx";
 import { TaskCostBand } from "./TaskCostBand.jsx";
 import { TaskContextChart } from "./TaskContextChart.jsx";
 import { TaskSpanPanel } from "./TaskSpanPanel.jsx";
+import { TaskAgents } from "./TaskAgents.jsx";
 import { LanguagePicker } from "./LanguagePicker.jsx";
 import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
@@ -62,7 +63,7 @@ function Kpis({ task }) {
       hint={[basis, task.cost_partial ? translate("md15c830a6f1c") : null].filter(Boolean).join(" · ") || undefined} />
     <StatTile label={translate("m5570150cd696")} value={orMissing(task.llm_calls)} />
     <StatTile label={translate("m7d688dae8673")} value={orMissing(task.subagents)}
-      hint={task.client === "codex" ? translate("m54b53da3d83f") : undefined} />
+      hint={task.client === "codex" ? translate(observedNumber(task.subagents) === null ? "m54b53da3d83f" : "m0bd87b5900b9") : undefined} />
     <StatTile label={translate("mce075704a738")} value={formatTaskDuration(task.duration_ms)} />
   </div>;
 }
@@ -194,7 +195,7 @@ function ModelCalls({ rows, lanes, truncated, activeKey, onToggle }) {
   </section>;
 }
 
-function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
+function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight }) {
   const _locale = useLocale();
   const { task, truncated } = data;
   const spans = useMemo(() => data.spans || [], [data.spans, _locale]);
@@ -252,6 +253,7 @@ function Body({ data, selectedId, onSelect, highlightKey, onHighlight }) {
         <SessionEnvironment environment={data.environment ?? null} client={task.client} context={data.context} />
       </div>
     </div>
+    {task.client === "codex" && <TaskAgents agents={data.agents ?? null} from={from} to={to} />}
     {models.length > 0 && <ModelCalls rows={models} lanes={lanes} truncated={truncated} activeKey={activeKey}
       onToggle={(key) => onHighlight((k) => (k === key ? null : key))} />}
   </>;
@@ -295,7 +297,7 @@ export function TaskTraceOverlay({ taskId, user, from, to, onClose }) {
         </div>
       </div>
       {api.error ? <ErrorBox error={api.error} /> : pending || !api.data ? <Loading />
-        : <Body data={api.data} selectedId={selectedId} onSelect={setSelectedId}
+        : <Body data={api.data} from={from} to={to} selectedId={selectedId} onSelect={setSelectedId}
           highlightKey={highlightKey} onHighlight={setHighlightKey} />}
     </div>
   </div>;
