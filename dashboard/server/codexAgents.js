@@ -159,9 +159,11 @@ GROUP BY turn_id`,
 
 // The turn of `conversation` running at atMs (turn rows as codexTurnSql returns them): the latest
 // one started by then, else (within the slack) the earliest. None is null: the call stays unlinked.
+// Only UUID-shaped turn ids compete: a synthetic id (`auto-compact-N`) groups spans of several
+// conversations into one window that identifies no turn (taskTraces.js TURN_ID).
 export function containingTurn(turns, conversation, atMs) {
   if (!Number.isFinite(atMs)) return null;
-  const within = turns.filter((t) => t.conversation_id === conversation
+  const within = turns.filter((t) => t.conversation_id === conversation && TURN_ID.test(t.turn_id ?? "")
     && count(t.start_ms) !== null && count(t.end_ms) !== null
     && count(t.start_ms) - LEGACY_CALL_SLACK_MS <= atMs && atMs <= count(t.end_ms) + LEGACY_CALL_SLACK_MS);
   const started = within.filter((t) => count(t.start_ms) <= atMs);
@@ -298,7 +300,7 @@ export function communicationLinks(sends, turns, { conversationId, turnId, start
     if (turns.some((t) => t.conversation_id === conversationId && t.turn_id !== turnId && starts(t) !== null
       && starts(t) >= x.t && starts(t) <= startMs)) continue;
     const owner = containingTurn(turns, x.sender, x.t);
-    if (!owner || !TURN_ID.test(owner.turn_id ?? "")) continue;
+    if (!owner) continue;
     parent = { parent_turn: owner.turn_id, parent_conversation: x.sender, tool_span: `communication:${x.kind}`, tool_span_id: null,
       child_turn: turnId, child_conversation: conversationId, child_start_ms: startMs, depth: 1 };
     break;
@@ -315,14 +317,23 @@ function knownSum(values) {
 // Pure fold. links: walkLineage links; entries: linkCompletions entries of the subagent
 // conversations; task: the detail's own folded task; spawnSpanIds: the task's own SPAWN_SPANS
 // span ids (null when the detail's spans were truncated); toolSpanIds: the turn's own lineage spans
-// of any tool that may start a subagent turn (spawn, follow-up, send_input).
-export function foldAgents({ task, parent = null, links = [], entries = [], limited = false, spawnSpanIds = null, namesTurn = false, linksSource = null, sendsSeen = false, toolSpanIds = [] }) {
+// of any tool that may start a subagent turn (spawn, follow-up, send_input). readToMs: the end of
+// the subagent turn and completion reads; a subagent turn ending within SPAN_SLACK_MS of it may
+// continue past it (its later spans and completions unread), so its calls and cost are partial and
+// the result limited.
+export function foldAgents({ task, parent = null, links = [], entries = [], limited = false, spawnSpanIds = null, namesTurn = false, linksSource = null, sendsSeen = false, toolSpanIds = [], readToMs = null }) {
   const parentId = parent ? taskId(parent.parent_conversation, parent.parent_turn) : null;
   const byTurn = new Map(entries.map((e) => [e.turn.turn_id, e]));
   const idOfTurn = new Map(links.map((l) => [l.child_turn, taskId(l.child_conversation, l.child_turn)]));
+  const own = (l) => { const e = byTurn.get(l.child_turn); return e && e.turn.conversation_id === l.child_conversation ? e : null; };
+  const clipped = new Set(readToMs === null ? [] : links.filter((l) => {
+    const end = own(l) ? count(own(l).turn.end_ms) : null;
+    return end !== null && end >= readToMs - SPAN_SLACK_MS;
+  }).map((l) => l.child_turn));
+  if (clipped.size) limited = true;
   const children = links.map((l) => {
-    const entry = byTurn.get(l.child_turn);
-    const folded = entry && entry.turn.conversation_id === l.child_conversation ? foldCodexTask(entry.turn, entry.linked) : null;
+    const entry = own(l);
+    const folded = entry ? foldCodexTask(entry.turn, entry.linked) : null;
     const start = folded ? count(entry.turn.start_ms) : l.child_start_ms;
     return {
       id: idOfTurn.get(l.child_turn) ?? null,
@@ -333,6 +344,7 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
       duration_ms: folded?.duration_ms ?? null,
       models: folded?.models ?? [],
       llm_calls: folded ? folded.llm_calls : null,
+      llm_calls_partial: folded ? limited : true,
       cost_usd: folded ? folded.cost_usd : null,
       cost_partial: folded ? folded.cost_partial || limited : true,
       link: linkWindow(start),
@@ -514,7 +526,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds,
   }
   const toolSpanIds = rows.filter((r) => LINK_TOOLS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id);
   return foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds, namesTurn: turn.namesTurn,
-    linksSource, sendsSeen, toolSpanIds });
+    linksSource, sendsSeen, toolSpanIds, readToMs: lineageTo.getTime() + SPAN_SLACK_MS });
 }
 
 // A linked count, or a zero only with positive evidence (`known_zero`); otherwise unknown (no

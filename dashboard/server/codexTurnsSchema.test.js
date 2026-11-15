@@ -131,13 +131,21 @@ test("backfill is bounded to one day and repeats the view's transform", () => {
 test("verify compares merged rows with raw spans and keeps clipped turns out of differs", () => {
   const sql = codexTurnsVerifySql();
   assert.doesNotMatch(sql, /INSERT|ALTER|CREATE|DELETE/);
+  // Raw spans of a turn keyed in the window start at most the id lead before it and, on its id
+  // hour, at most the id age after it: [verifyFrom - 1 day, verifyTo + 7 days).
+  const lead = TURN_ID_MAX_LEAD_MS / 3600000, age = TURN_ID_MAX_AGE_MS / 3600000;
+  const raw = `Timestamp >= ${VFROM} - INTERVAL ${lead} HOUR AND Timestamp < ${VTO} + INTERVAL ${age} HOUR`;
+  assert.equal(raw, `Timestamp >= ${VFROM} - INTERVAL 24 HOUR AND Timestamp < ${VTO} + INTERVAL 168 HOUR`);
   for (const part of [
     `toStartOfHour(${VFROM}) != ${VFROM}`, `toStartOfHour(${VTO}) != ${VTO}`,
     "'Codex turns verification requires a positive hour-aligned UTC window'",
-    `Timestamp >= ${VFROM} - INTERVAL 1 HOUR AND Timestamp < ${VTO} + INTERVAL 24 HOUR`,
-    `TurnHour >= ${VFROM} - INTERVAL 1 HOUR AND TurnHour < ${VTO} + INTERVAL 24 HOUR`,
+    raw,
+    // Rollup rows on the same lower bound, and up to one id lead past the raw end, so any row
+    // holding a span the raw side reads is merged, and one holding later spans ends past it.
+    `TurnHour >= ${VFROM} - INTERVAL ${lead} HOUR AND TurnHour < ${VTO} + INTERVAL ${age + lead} HOUR`,
     `HAVING min(TurnHour) >= ${VFROM} AND min(TurnHour) < ${VTO}`,
-    `r.end_ts >= ${VTO} + INTERVAL 23 HOUR`,
+    // Clipped from the rollup's end, which reaches past the raw end only when spans do.
+    `toUInt8(t_present AND t.end_ts >= ${VTO} + INTERVAL ${age} HOUR) AS clipped`,
     "groupUniqArrayMerge(Conversations)", "uniqExactMerge(SamplingSpans)", "uniqExactMerge(SpawnCalls)",
     "length(t.conversations) > 1", "FULL OUTER JOIN", "USING (UserIdentity, TurnId)",
     // The version is the largest non-empty one on both sides: deterministic, and empty never wins.
@@ -149,5 +157,6 @@ test("verify compares merged rows with raw spans and keeps clipped turns out of 
   assert.match(sql, /NOT \(t_present AND r_present\) OR \(NOT clipped AND /);
   // The raw side reads the same span records as the view.
   assert.ok(codexTurnsTransform().includes(codexTurnSpans("1")));
-  assert.ok(sql.includes(codexTurnSpans(`Timestamp >= ${VFROM} - INTERVAL 1 HOUR AND Timestamp < ${VTO} + INTERVAL 24 HOUR`)));
+  assert.ok(sql.includes(codexTurnSpans(raw)));
+  assert.doesNotMatch(sql, /INTERVAL 1 HOUR|INTERVAL 23 HOUR|r\.end_ts >=/);
 });

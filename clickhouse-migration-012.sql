@@ -2,6 +2,8 @@
 -- Additive schema only. Verify replicas and bounded backfill before setting CODEX_TURNS_READ_FROM.
 SELECT throwIf((SELECT count() FROM claude_code.schema_migrations WHERE version=4)=0,
   'Migration 012 requires migration ledger 004');
+SELECT throwIf((SELECT count() FROM system.tables WHERE database='claude_code' AND name='otel_traces')=0,
+  'Migration 012 requires otel_traces from migration 002');
 
 CREATE TABLE IF NOT EXISTS claude_code.codex_turns_v1 ON CLUSTER 'replicated'
 (
@@ -88,6 +90,6 @@ SELECT throwIf(
     ('codex_turns_v1','AppVersion','SimpleAggregateFunction(max, String)'))) != 15,
   'Codex turns schema columns differ; repair before recording migration 012');
 
-INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 12, '012-codex-turns', '35a7425f5f78e05d349e14e4b427b19e77d4012a2a95c474c7ef2d65811b2124'
+INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 12, '012-codex-turns', 'b573ec9e7e6d4c75af352b0209ea612e8c4a4ebccb67527464bc1d4a66e927e4'
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
 AND (SELECT count() FROM claude_code.schema_migrations WHERE version=12) = 0;

@@ -36,8 +36,16 @@ const generated = name => readFileSync(root + name, "utf8");
 let assertions = 0;
 const check = (actual, expected, label) => { assert.deepEqual(actual, expected, label); assertions++; };
 
+// Migration 012 requires ledger 004 and otel_traces, as migration 011 does.
+const migrationGuards = generated("clickhouse-migration-012.sql").split("CREATE TABLE")[0];
 execute(`CREATE DATABASE claude_code;
-CREATE TABLE claude_code.otel_traces (
+CREATE TABLE claude_code.schema_migrations (version UInt32, name String, checksum String)
+ENGINE = MergeTree ORDER BY version;
+INSERT INTO claude_code.schema_migrations VALUES (4, '004-schema-migrations', 'synthetic');`);
+assert.throws(() => execute(migrationGuards), /Migration 012 requires otel_traces from migration 002/,
+  "migration 012 without otel_traces");
+assertions++;
+execute(`CREATE TABLE claude_code.otel_traces (
   Timestamp DateTime64(9), TraceId String, SpanId String, ParentSpanId String, SpanName LowCardinality(String),
   ResourceAttributes Map(LowCardinality(String), String), SpanAttributes Map(LowCardinality(String), String),
   Duration Int64,
@@ -51,6 +59,7 @@ CREATE TABLE claude_code.otel_logs (
   EndUserId LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
   EventName LowCardinality(String) MATERIALIZED LogAttributes['event.name']
 ) ENGINE = MergeTree ORDER BY (EventName, Timestamp);`);
+execute(migrationGuards);
 execute(codexTurnsSchemaSql());
 execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} REMOVE TTL`);
 // Background merges would fold the fixture's separate inserts nondeterministically (the T5 and
@@ -181,6 +190,21 @@ const t8Spans = [
   span("codex.sampling", t8, "2026-10-18T10:10:00.000Z", { model: sol, conversation: "conv-h" }),
   span("codex.sampling", t8, "2026-10-18T11:20:00.000Z", { model: sol, conversation: "conv-h" }),
 ];
+// Verify boundaries (user E, outside the codexTurnSql parity reads, which clip at to + 24h).
+// T9: a v7 id whose spans all start 3.5 hours before its id time, inside the 1 day lead.
+// T10: a v7 id with a gap: its later span 3 days on still has the id hour (7 day age).
+// T11: a non-v7 id whose later span hour starts at verifyTo + 7 days: past the raw scan.
+const userE = "turns-e@example.test";
+const t9 = v7("2026-10-18T20:30:00.000Z", 9), t10 = v7("2026-10-18T12:20:00.000Z", 10);
+const t11 = "6c2d3e4f-5061-4a72-8c83-1d2e3f4a5b6c";
+const boundarySpans = [
+  span("codex.sampling", t9, "2026-10-18T17:00:00.000Z", { user: userE, model: sol, conversation: "conv-i" }),
+  span("shell", t9, "2026-10-18T17:10:00.000Z", { user: userE, conversation: "conv-i" }),
+  span("codex.sampling", t10, "2026-10-18T12:20:00.000Z", { user: userE, model: sol, conversation: "conv-j" }),
+  span("codex.sampling", t10, "2026-10-21T09:00:00.000Z", { user: userE, model: sol, conversation: "conv-j" }),
+  span("codex.sampling", t11, "2026-10-18T21:10:00.000Z", { user: userE, model: sol, conversation: "conv-k" }),
+  span("codex.sampling", t11, "2026-10-25T22:30:00.000Z", { user: userE, model: sol, conversation: "conv-k" }),
+];
 // One insert block of garbage-time v7 ids spread over 120 months (2050-2059, inside the DateTime
 // range, so nothing saturates). With id hours it would exceed max_partitions_per_insert_block and
 // fail the otel_traces insert (ClickHouse code 252, checked against the unbounded rule).
@@ -193,11 +217,12 @@ const garbageSpans = garbage.map((turn, i) => span("codex.sampling", turn, `2026
   { user: userD, model: sol, conversation: `conv-garbage-${i}` }));
 // List context turns (user E, outside the other reads): the list reads turns that start before
 // to + 24h and end (plus the 5 s completion slack) at or after from, whatever their start.
-const userE = "turns-e@example.test";
+// User G, not the verify boundary user E: the list reads must not see T9-T11.
+const userG = "turns-g@example.test";
 const ctx = (name, at, extra = []) => {
   const turn = v7(at, name);
-  return { turn, spans: [span("codex.sampling", turn, at, { user: userE, model: sol, conversation: `conv-ctx-${name}` }),
-    ...extra.map(later => span("codex.sampling", turn, later, { user: userE, model: sol, conversation: `conv-ctx-${name}` }))] };
+  return { turn, spans: [span("codex.sampling", turn, at, { user: userG, model: sol, conversation: `conv-ctx-${name}` }),
+    ...extra.map(later => span("codex.sampling", turn, later, { user: userG, model: sol, conversation: `conv-ctx-${name}` }))] };
 };
 const ctxEarly = ctx(11, "2026-10-17T10:00:00.000Z");            // ends long before from - 5 s: excluded
 const ctxJustOut = ctx(12, "2026-10-17T23:59:54.000Z");          // ends 23:59:54.001: +5 s < from, excluded
@@ -216,6 +241,7 @@ insert([duplicate, ...t2Spans.slice(3), ...t3Spans, ...t4Spans]);
 insert([...t5Spans, ...t6Spans, ...t7Spans, ...t8Spans, ...excluded, t1Spans[3]]);
 insert(garbageSpans);
 insert(ctxTurns.flatMap(c => c.spans));
+insert(boundarySpans);
 // A version-less span of T5 in its own insert: its row's empty version must never win a merge.
 insert([span("shell", t5, "2026-10-18T18:05:02.000Z", { version: "", conversation: "conv-d" })]);
 
@@ -276,7 +302,7 @@ function filters() {
 }
 // The list read (no turnId, startFrom or startTo) applies the context rule and does not clip.
 function listContext() {
-  const list = asRows(rollupTurnSql(from, to, { userExact: userE }));
+  const list = asRows(rollupTurnSql(from, to, { userExact: userG }));
   check(list.map(r => r.turn_id), [ctxLong, ctxJustIn, ctxLate].map(c => c.turn), "list context rule: early, just-out and beyond turns are excluded");
   check(list.map(r => Number(r.in_bucket)), [0, 0, 0], "context turns are not bucket turns");
   const long = list.find(r => r.turn_id === ctxLong.turn);
@@ -401,11 +427,11 @@ function detailWindow() {
   check(turnRow(d, "conv-other"), [], "another conversation finds no turn row");
   // Agents: subagent/parent turns by conversation from the lineage start minus 7 days, unclipped.
   const lineageFrom = new Date("2026-10-18T00:00:00Z"), lineageTo = new Date("2026-10-19T00:00:00Z");
-  const agentRead = asRows(rollupTurnSql(lineageFrom, lineageTo, { userExact: userE },
+  const agentRead = asRows(rollupTurnSql(lineageFrom, lineageTo, { userExact: userG },
     { conversationIds: ["conv-ctx-14", "none"], hourFrom: new Date(+lineageFrom - TURN_LOOKBACK_MS) }));
   check(agentRead.map(r => [r.turn_id, r.conversation_id, Number(r.start_ms)]),
     [[ctxLong.turn, "conv-ctx-14", Date.parse("2026-10-15T12:00:00Z")]], "agents: a parent turn started 3 days before keeps its start");
-  check(asRows(codexTurnSql(lineageFrom, lineageTo, { userExact: userE }, { conversationIds: ["conv-ctx-14"] }))
+  check(asRows(codexTurnSql(lineageFrom, lineageTo, { userExact: userG }, { conversationIds: ["conv-ctx-14"] }))
     .map(r => Number(r.start_ms)), [Date.parse("2026-10-18T00:00:20Z")], "agents: the raw read clips that start");
 }
 const live = parity("live view");
@@ -449,16 +475,17 @@ for (const [params, label] of [[{ backfillFrom: "2026-10-18 00:00:00", backfillT
     /Codex turns backfill requires a positive interval of at most one day/, label);
   assertions++;
 }
-execute(`SYSTEM STOP MERGES claude_code.${TURNS_ROLLUP_TABLE}`);
+// Every day holding a fixture span, so the backfill alone rebuilds each turn.
+const days = ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-21", "2026-10-25"];
 for (let round = 0; round < 2; round++)
-  for (const date of ["2026-10-17", "2026-10-18", "2026-10-19"]) execute(backfill, day(date), ["--insert_deduplicate=0"]);
+  for (const date of days) execute(backfill, day(date), ["--insert_deduplicate=0"]);
 execute(backfill, { backfillFrom: "2026-10-18 14:00:00", backfillTo: "2026-10-19 14:00:00" }, ["--insert_deduplicate=0"]);
 const parts = rows(`SELECT count() AS n FROM system.parts WHERE active AND database = 'claude_code' AND table = '${TURNS_ROLLUP_TABLE}'`)[0];
 assert.ok(Number(parts.n) > 3, "repeated backfills must leave several unmerged parts");
 check(parity("repeated backfill"), live, "repeated backfill leaves every rollup read unchanged");
 // The backfill alone rebuilds what the view wrote.
 execute(`TRUNCATE TABLE claude_code.${TURNS_ROLLUP_TABLE}`);
-for (const date of ["2026-10-17", "2026-10-18", "2026-10-19"]) execute(backfill, day(date), ["--insert_deduplicate=0"]);
+for (const date of days) execute(backfill, day(date), ["--insert_deduplicate=0"]);
 check(parity("backfill only"), live, "backfill alone equals the live view");
 execute(`SYSTEM START MERGES claude_code.${TURNS_ROLLUP_TABLE}; OPTIMIZE TABLE claude_code.${TURNS_ROLLUP_TABLE} FINAL`);
 check(parity("merged"), live, "merged parts leave every rollup read unchanged");
@@ -480,7 +507,11 @@ const expected = [
   { hour: 9, turn_id: t3, differs: 0, clipped: 0 }, { hour: 9, turn_id: t3, differs: 0, clipped: 0 },
   { hour: 11, turn_id: t7, differs: 0, clipped: 0 },
   { hour: 13, turn_id: t2, differs: 0, clipped: 0 },
-  { hour: 14, turn_id: t4, differs: 0, clipped: 1 }, { hour: 14, turn_id: t1, differs: 0, clipped: 0 },
+  // T4's next-day spans are inside the 7 day raw scan, so it is compared.
+  { hour: 14, turn_id: t4, differs: 0, clipped: 0 }, { hour: 14, turn_id: t1, differs: 0, clipped: 0 },
+  { hour: 20, turn_id: t9, differs: 0, clipped: 0 },
+  { hour: 12, turn_id: t10, differs: 0, clipped: 0 },
+  { hour: 21, turn_id: t11, differs: 0, clipped: 1 },
   { hour: 16, turn_id: t6, differs: 1, clipped: 0 },
   { hour: 18, turn_id: t5, differs: 0, clipped: 0 },
   { hour: 10, turn_id: t8, differs: 0, clipped: 0 },
@@ -488,11 +519,14 @@ const expected = [
 ];
 const order = list => [...list].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 check(order(verified), order(expected), "verify: each turn once; only the two-conversation turn differs; the clipped turn is excluded");
-// A lost rollup row differs until a backfill restores it; a misaligned window is rejected.
-execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} DELETE WHERE TurnId = '${t1}'`, {}, ["--mutations_sync=2"]);
+// A lost rollup row differs until a backfill restores it, including a turn whose spans all lead
+// its id hour; a misaligned window is rejected.
+execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} DELETE WHERE TurnId IN ('${t1}', '${t9}')`, {}, ["--mutations_sync=2"]);
 check(verifyHour(14).find(r => r.turn_id === t1), { turn_id: t1, differs: 1, clipped: 0 }, "verify: missing rollup row differs");
+check(verifyHour(20).find(r => r.turn_id === t9), { turn_id: t9, differs: 1, clipped: 0 },
+  "verify: missing rollup row of a turn whose spans lead its id hour differs");
 execute(backfill, day("2026-10-18"), ["--insert_deduplicate=0"]);
-check(verifyHour(14).filter(r => r.differs === 1), [], "verify: backfill restores the row");
+check([14, 20].flatMap(hour => verifyHour(hour)).filter(r => r.differs === 1), [], "verify: backfill restores the rows");
 assert.throws(() => execute(verify, { verifyFrom: "2026-10-18 14:30:00", verifyTo: "2026-10-18 15:00:00" }),
   /hour-aligned/, "misaligned verify window");
 assertions++;
