@@ -1892,7 +1892,6 @@
   "m50163f785d1b": "Run this in the terminal on the device to collect from. No token entry is needed.",
   "m6c5abc34db51": "The terminal shows a verification code and approval address, and a browser opens on desktop systems. On a headless server such as EC2, open the approval address in a browser on your computer.",
   "m11eec338e074": "Sign in with your organization account, confirm the code matches the terminal, then select Connect this device. Only approve an installation that you just started yourself.",
-  "m0047e1001a35": "The collection user ID is set to the signed-in account email; devices with an existing installation keep their current ID. To use a different ID, run {0}.",
   "mab9e4b521ceb": "Approve within 10 minutes. If installation fails partway through, the approved device will still appear under My devices; revoke it if you do not reinstall.",
   "m9f4bf4d7cf55": "Install with a token (advanced)",
   "m6d844cb41d37": "Issue and paste a token only when browser approval is unavailable.",
@@ -2037,5 +2036,6 @@
   "m77f9e6084937": "Previous month",
   "m4c33c6a0b753": "Next month",
   "m83e222c2fb52": "Select date",
-  "m49e86c3288d4": "Unavailable"
+  "m49e86c3288d4": "Unavailable",
+  "m051986e644b8": "The collection user ID is set to the email address of the signed-in account that approved the device. Reinstalling over an existing collector also changes it to this email address. You can specify a different ID with {0} only if the signed-in account has no verified email address."
 }

@@ -1892,7 +1892,6 @@
   "m50163f785d1b": "Ejecútalo en la terminal del dispositivo del que se recopilarán datos. No es necesario introducir un token.",
   "m6c5abc34db51": "La terminal muestra un código de verificación y una dirección de aprobación, y en equipos de escritorio se abre un navegador. En un servidor sin pantalla, como EC2, abre la dirección de aprobación en el navegador de tu equipo.",
   "m11eec338e074": "Inicia sesión con tu cuenta de la organización, comprueba que el código coincida con el de la terminal y selecciona «Conectar este dispositivo». Aprueba únicamente una instalación que tú acabas de iniciar.",
-  "m0047e1001a35": "El ID de usuario de recopilación será el correo de la cuenta con la que iniciaste sesión; los dispositivos ya instalados conservan su ID actual. Para usar otro ID, ejecuta {0}.",
   "mab9e4b521ceb": "Aprueba en un plazo de 10 minutos. Si la instalación falla a mitad del proceso, el dispositivo aprobado seguirá apareciendo en «Mis dispositivos»; revócalo si no vas a volver a instalarlo.",
   "m9f4bf4d7cf55": "Instalar directamente con un token (avanzado)",
   "m6d844cb41d37": "Emite y pega un token solo si no puedes usar la aprobación del navegador.",
@@ -2037,5 +2036,6 @@
   "m77f9e6084937": "Mes anterior",
   "m4c33c6a0b753": "Mes siguiente",
   "m83e222c2fb52": "Seleccionar fecha",
-  "m49e86c3288d4": "No disponible"
+  "m49e86c3288d4": "No disponible",
+  "m051986e644b8": "El ID de usuario de recopilación se establece en la dirección de correo electrónico de la cuenta con sesión iniciada que aprobó el dispositivo. Si se vuelve a instalar sobre un recopilador existente, también cambiará a esta dirección de correo electrónico. Solo se puede especificar otro ID con {0} si la cuenta con sesión iniciada no tiene una dirección de correo electrónico verificada."
 }

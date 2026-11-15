@@ -33,6 +33,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed
 
+- Browser-enrolled (SSO) device collectors attribute telemetry to the approving login's
+  verified email, also on a reinstall or a migration from an older collector whose
+  recorded, migrated or typed ID differs (`--user-id` applies only without a verified
+  email). The device Collector sets every Claude and Codex resource `user.email` to the
+  installed ID, so locally edited shell, settings or Codex values no longer split one
+  person across IDs. Existing rows keep their original ID.
 - Device and local setup configure Codex to export over loopback OTLP/gRPC on
   127.0.0.1:4317, like Claude, instead of OTLP/HTTP JSON on 4318; rerunning setup moves an
   existing copy of the previous default. Both launchers pass overrides of the configured

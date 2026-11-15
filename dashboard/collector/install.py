@@ -786,8 +786,13 @@ def install(args, home, user, uid, root, unit):
         if legacy.get("platform") == "linux":
             # Ask for the sudo password now, before any download or file change.
             run(["sudo", "-v"])
-    # A reinstall keeps its recorded attribution even while migrating a legacy Collector.
-    user_id = args.user_id or installed_user_id(root) or (
+    # An SSO-approved installation uses the approving login's verified email, replacing a
+    # recorded, migrated or typed ID. Otherwise a reinstall keeps its recorded attribution,
+    # even while migrating a legacy Collector.
+    sso_user_id = getattr(args, "sso_user_id", None)
+    if sso_user_id and args.user_id and args.user_id != sso_user_id:
+        print("Using the approving SSO account's email as the telemetry user ID; --user-id is ignored.")
+    user_id = sso_user_id or args.user_id or installed_user_id(root) or (
         migration_user_id(args, home) if legacy else getattr(args, "default_user_id", None) or user)
     replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
     changes, notes = client_plan(home, user_id, replace_claude_telemetry)
@@ -1038,8 +1043,9 @@ def main():
     parser.add_argument("--endpoint", help="dashboard HTTPS /api/ingest URL")
     parser.add_argument("--token-file", type=Path, help="private mode 0600 file; token values are never CLI arguments")
     parser.add_argument("--user-id", help="nonsecret telemetry attribution ID; replaces an existing installation's ID")
-    parser.add_argument("--default-user-id", help="attribution ID for a new installation (browser enrollment passes "
-                                                  "the approving account's verified email); defaults to local login")
+    parser.add_argument("--default-user-id", help="attribution ID for a new installation; defaults to local login")
+    parser.add_argument("--sso-user-id", help="the approving SSO account's verified email (browser enrollment); "
+                                              "replaces any recorded, migrated or --user-id value")
     parser.add_argument("--migrate-legacy", action="store_true",
                         help="approve verified legacy personal Collector migration (macOS LaunchAgent or Linux "
                              "otelcol.service), including Claude telemetry replacement, without a prompt")

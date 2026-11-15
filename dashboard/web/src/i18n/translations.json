@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T07:54:02.643659+00:00",
+  "updated_at": "2026-11-15T08:34:24.722694+00:00",
   "source_messages": 2039,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
       "messages": 2039,
-      "bytes": 156509,
-      "sha256": "e83ae568172d836a7f5b5b2dfca38fd15ee68f3e75b41b67053a42f67ebfd2e6"
+      "bytes": 156636,
+      "sha256": "776ad86ae0c31e79413afc5f59e8de3a684926823613d77d5aa478e863826fc9"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
       "messages": 2039,
-      "bytes": 184892,
-      "sha256": "6d14654eabdc288b2528ab3afa0e26fc72937a5bfaa13cafe1bb25c70dff63e8"
+      "bytes": 185113,
+      "sha256": "89bae303067adae0030e8d8c983fd4fb395221d6c29b86eca9cd5157aeed0d26"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
       "messages": 2039,
-      "bytes": 193860,
-      "sha256": "92b50b539c5233e49b0228271d207ee723aae31d1d68e4a12d5af9fb21356622"
+      "bytes": 193991,
+      "sha256": "e44fcf4165a989bb0ce5c24b34f5a806b38720f9b0580ce560818a75f773c176"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
       "messages": 2039,
-      "bytes": 166346,
-      "sha256": "35d934ff8c4629cf95c0083beec4258a96fdcc0f1de858a5c6ef9c8bb173137e"
+      "bytes": 166426,
+      "sha256": "ef1dce9a39061d523e11e61057c0010af53c5910c94ccae8a8be3c859bae75eb"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
       "messages": 2039,
-      "bytes": 147993,
-      "sha256": "53ffbea9ab4045d751d839c798fb047b373040e76c82dd475c611f494342dfa6"
+      "bytes": 148114,
+      "sha256": "35037d48b00cc6fa1fda245b747ebf9a490dbde4938408d24c6aab6ce495e617"
     }
   ],
   "catalog_calls": [
@@ -1247,5 +1247,37 @@
     ],
     "messages": 9,
     "verification": "All five catalogs retain nonempty messages and matching positional placeholders."
+  },
+  "sso_identity_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-15T08:34:24.722629+00:00",
+    "added_message_count": 1,
+    "added_keys": [
+      "m051986e644b8"
+    ],
+    "superseded": {
+      "m0047e1001a35": "collector ID note replaced: the SSO email now replaces an existing installation's ID"
+    },
+    "source_sha256": "ad57f006daa020dd37074c743ea931573c73172b6a8db3e7db79e2a49dfe9d92",
+    "calls": [
+      {
+        "request_sha256": "823dd4dde5836159d2ac44689e6ffe9b3f7bbb4cd778bd6f916b4b90f4ca0030",
+        "usage": {
+          "inputTokens": 233,
+          "outputTokens": 852,
+          "totalTokens": 1085,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "851004f95942b524921e98c3948abbf0a739e2588f4571dfd6113e68acfe9add"
+      }
+    ],
+    "host_corrections": {
+      "m051986e644b8": "zh-CN keeps the catalog's existing term 采集 (collection/collector)"
+    }
   }
 }

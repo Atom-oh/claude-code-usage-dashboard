@@ -301,7 +301,7 @@ function CollectorManager() {
           <ol className="mt-4 space-y-2 text-sm leading-relaxed text-ink-600">
             <li>{translate("m6c5abc34db51")}</li>
             <li>{translate("m11eec338e074")}</li>
-            <li>{richMessage("m0047e1001a35", [<code className="rounded bg-ink-100 px-1">| sh -s -- --user-id ID</code>])}</li>
+            <li>{richMessage("m051986e644b8", [<code className="rounded bg-ink-100 px-1">| sh -s -- --user-id ID</code>])}</li>
             {platform === "linux" && <li>{translate("me464149bea91")}</li>}
             <li>{translate("m579c2c702a6e")}</li>
           </ol>

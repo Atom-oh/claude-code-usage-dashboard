@@ -54,9 +54,12 @@ browser on a desktop; on EC2 or another headless host, open the link on your own
 Sign in, confirm the code matches and select **Connect this device** within ten minutes. The helper
 keeps the device secret in memory, builds the token from the approval, downloads the
 package with it and checks the package hash, then runs `install.py install` with a mode
-0600 token file in a private temporary directory that is removed afterwards. A new
-installation uses the approving account's verified email as its attribution ID
-(`--default-user-id`); a reinstall keeps its existing ID. To choose another ID:
+0600 token file in a private temporary directory that is removed afterwards. The
+approving account's verified email is the attribution ID (`--sso-user-id`), also on a
+reinstall or a migration from an older collector: a recorded, migrated or typed ID is
+replaced. The Collector sets every Claude and Codex resource `user.email` to it, so values
+edited in shell, Claude settings or Codex do not change attribution. `--user-id` applies
+only when the approving login has no verified email:
 
 ```bash
 curl -fsSL 'https://YOUR-DASHBOARD/api/ingest/install.sh' | sh -s -- --user-id 'YOUR-ID'
@@ -113,8 +116,8 @@ directory instead of deleting its backups.
 The known personal macOS Collector has an interactive migration path described below.
 Other unmanaged telemetry and service conflicts require manual migration.
 Custom `CODEX_HOME` or `CLAUDE_CONFIG_DIR` layouts require manual configuration.
-The default attribution ID for a fresh installation is your login name; `--user-id`
-accepts a chosen nonsecret ID. Legacy macOS migration reuses `user.email` from Claude
+Without browser enrollment the default attribution ID for a fresh installation is your
+login name; `--user-id` accepts a chosen nonsecret ID. Legacy macOS migration reuses `user.email` from Claude
 settings or the current shell when available; otherwise it asks for the existing ID.
 Restart clients after setup.
 
@@ -239,7 +242,8 @@ The installer migrates the known personal unit itself: a root-owned
 `/etc/systemd/system/otelcol.service` that runs your own `~/.otelcol/config.yaml` as you,
 with listeners owned by that service. The `curl | sh` helper asks before any device is
 registered; `install.py install` asks again unless `--migrate-legacy` is given. It keeps
-the existing Claude `user.email` as the attribution ID, backs up the unit, drop-ins and
+the existing Claude `user.email` as the attribution ID (browser enrollment uses the
+approving login's verified email instead), backs up the unit, drop-ins and
 `~/.otelcol` settings privately, then runs the commands below with `sudo` (which may ask for
 your password) and starts the device Collector. A failed installation unmasks and restores
 the unit and returns the old service to its previous enabled and running state. Any other

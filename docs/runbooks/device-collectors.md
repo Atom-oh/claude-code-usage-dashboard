@@ -29,11 +29,14 @@ navigation nor management/download API access. Group names remain configurable t
 Existing model/provider/login settings are preserved. Conflicting unmanaged OTel
 settings/services are rejected; migrate their owner explicitly. Codex's
 `analytics.enabled=false` disables its custom metrics export too; the installer does
-not silently override this privacy choice. Browser enrollment sets a new installation's
-attribution ID to the approving account's IdP-verified email (otherwise the local login
-name); a reinstall keeps its existing ID, and `| sh -s -- --user-id ID` overrides it.
-This attribution is still client-configured telemetry, not verified per-event identity:
-a device owner can edit it locally.
+not silently override this privacy choice. Browser enrollment sets the
+attribution ID to the approving account's IdP-verified email, including on a reinstall or a
+migration from an older collector whose recorded, migrated or typed ID differs; `| sh -s --
+--user-id ID` applies only when that login has no verified email. The device Collector then
+sets every Claude and Codex resource `user.email` to the installed ID, so shell, settings or
+Codex values edited locally do not change it. Token-flow installs keep the typed or recorded
+ID. This is still device-configured attribution, not server-verified per-event identity: a
+device owner can edit the Collector configuration itself.
 
 The approval request lasts ten minutes and is decided once (approve or deny); a later
 approval by another account fails. Opening the link or returning from SSO never decides

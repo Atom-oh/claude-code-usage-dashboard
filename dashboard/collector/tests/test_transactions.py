@@ -231,6 +231,20 @@ class Transactions(unittest.TestCase):
         self.install()
         self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "replacement")
 
+    def test_an_sso_approved_reinstall_moves_to_the_login_email(self):
+        # An older installation recorded another ID; Claude settings carry it too.
+        self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "old")
+        self.args.sso_user_id = "alice@example.com"
+        self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "alice@example.com")
+        env = json.loads(self.claude.read_text())["env"]
+        self.assertIn("user.email=alice@example.com", env["OTEL_RESOURCE_ATTRIBUTES"])
+        # The device collector stamps that identity on every client signal.
+        config = (self.root / "config.yaml").read_text()
+        self.assertEqual(config.count('set(attributes["user.email"], "alice@example.com") where "alice@example.com" != ""\n'), 3)
+        self.assertEqual(config.count("transform/device_user, batch]"), 6)
+
     def test_without_any_user_id_a_new_installation_uses_the_login_name(self):
         self.args.user_id = None
         self.install()

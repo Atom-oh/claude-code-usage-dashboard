@@ -63,12 +63,32 @@ receivers:
       storage: file_storage
 """
     local_service = re.sub(r"exporters: \[clickhouse(?:/codex)?\]", "exporters: [otlp_http]", service)
+    # The device's installed user ID (the SSO login's email after browser enrollment) is
+    # the identity of every client signal at this hop: shell, settings or Codex values the
+    # user set locally do not replace it. The central hop keeps the received identity.
+    local_service = local_service.replace("batch]", "transform/device_user, batch]")
     local_service = local_service.replace("extensions: [file_storage]",
                                           "extensions: [file_storage, bearertokenauth, health_check]")
     local_processors = processors.replace('value: ${env:EXPERIMENT_GROUP:-unknown}\n        action: insert',
                                           'value: ${env:EXPERIMENT_GROUP:-unknown}\n        action: insert\n'
                                           '      - key: user.email\n'
                                           '        value: "${env:CODEX_DEFAULT_USER_EMAIL:-}"\n        action: insert')
+    local_processors += """
+  transform/device_user:
+    error_mode: ignore
+    metric_statements:
+      - context: resource
+        statements:
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+    trace_statements:
+      - context: resource
+        statements:
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+"""
     local = header + local_extensions + "processors:\n" + local_processors + "\n" + local_exporters
     local += "service:\n" + local_service
     central_extensions = """extensions:
