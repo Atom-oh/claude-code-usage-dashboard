@@ -140,10 +140,10 @@ test("verify compares merged rows with raw spans and keeps clipped turns out of 
     `toStartOfHour(${VFROM}) != ${VFROM}`, `toStartOfHour(${VTO}) != ${VTO}`,
     "'Codex turns verification requires a positive hour-aligned UTC window'",
     raw,
-    // Rollup rows on the same lower bound, and up to one id lead past the raw end, so any row
-    // holding a span the raw side reads is merged, and one holding later spans ends past it.
-    `TurnHour >= ${VFROM} - INTERVAL ${lead} HOUR AND TurnHour < ${VTO} + INTERVAL ${age + lead} HOUR`,
-    `HAVING min(TurnHour) >= ${VFROM} AND min(TurnHour) < ${VTO}`,
+    // A turn has a row in the window; both sides merge its rows from verifyFrom to one id lead
+    // past the raw end, so any row holding a span the raw side reads is merged, and one holding
+    // later spans ends past it.
+    `HAVING min(TurnHour) < ${VTO}`,
     // Clipped from the rollup's end, which reaches past the raw end only when spans do.
     `toUInt8(t_present AND t.end_ts >= ${VTO} + INTERVAL ${age} HOUR) AS clipped`,
     "groupUniqArrayMerge(Conversations)", "uniqExactMerge(SamplingSpans)", "uniqExactMerge(SpawnCalls)",
@@ -159,4 +159,10 @@ test("verify compares merged rows with raw spans and keeps clipped turns out of 
   assert.ok(codexTurnsTransform().includes(codexTurnSpans("1")));
   assert.ok(sql.includes(codexTurnSpans(raw)));
   assert.doesNotMatch(sql, /INTERVAL 1 HOUR|INTERVAL 23 HOUR|r\.end_ts >=/);
+  // Both sides group the same turn hours, so a span on the id hour of an earlier turn row never
+  // joins a later fragment's row: one predicate, on the rollup rows and on the raw spans' hours.
+  const rows = `TurnHour >= ${VFROM} AND TurnHour < ${VTO} + INTERVAL ${age + lead} HOUR`;
+  assert.equal(sql.split(`WHERE ${rows}`).length, 2, "rollup rows");
+  assert.equal(sql.split(`WHERE TurnId != '' AND ${rows}`).length, 2, "raw spans");
+  assert.doesNotMatch(sql, /TurnHour >= \{verifyFrom:DateTime\('UTC'\)\} - /);
 });

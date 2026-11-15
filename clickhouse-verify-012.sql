@@ -35,9 +35,9 @@ FROM (
       uniqExactMerge(SpawnCalls) AS spawns, max(NamesTurnOnTools) AS names_turn,
       max(AppVersion) AS version
     FROM claude_code.codex_turns_v1
-    WHERE TurnHour >= {verifyFrom:DateTime('UTC')} - INTERVAL 24 HOUR AND TurnHour < {verifyTo:DateTime('UTC')} + INTERVAL 192 HOUR
+    WHERE TurnHour >= {verifyFrom:DateTime('UTC')} AND TurnHour < {verifyTo:DateTime('UTC')} + INTERVAL 192 HOUR
     GROUP BY UserIdentity, TurnId
-    HAVING min(TurnHour) >= {verifyFrom:DateTime('UTC')} AND min(TurnHour) < {verifyTo:DateTime('UTC')}
+    HAVING min(TurnHour) < {verifyTo:DateTime('UTC')}
   ) AS t
   FULL OUTER JOIN (
     SELECT UserIdentity, TurnId, toUInt8(1) AS present,
@@ -74,9 +74,9 @@ FROM (
     AND (SpanAttributes['turn_id'] != '' OR SpanAttributes['turn.id'] != '')
     AND (Timestamp >= {verifyFrom:DateTime('UTC')} - INTERVAL 24 HOUR AND Timestamp < {verifyTo:DateTime('UTC')} + INTERVAL 168 HOUR)
     )
-    WHERE TurnId != ''
+    WHERE TurnId != '' AND TurnHour >= {verifyFrom:DateTime('UTC')} AND TurnHour < {verifyTo:DateTime('UTC')} + INTERVAL 192 HOUR
     GROUP BY UserIdentity, TurnId
-    HAVING min(TurnHour) >= {verifyFrom:DateTime('UTC')} AND min(TurnHour) < {verifyTo:DateTime('UTC')}
+    HAVING min(TurnHour) < {verifyTo:DateTime('UTC')}
   ) AS r USING (UserIdentity, TurnId)
 )
 ORDER BY differs DESC, clipped DESC, turn_id;
