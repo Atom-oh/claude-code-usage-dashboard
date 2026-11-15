@@ -70,8 +70,8 @@ variable "ch_ingest_hostname" {
 }
 
 variable "clickhouse_node_instance_type" {
-  description = "ClickHouse node type. c9g.2xlarge: 8 vCPU/16GiB; ClickBench (../aws-ec2-benchmark, CH 24.8) c9g.xlarge was ~17% faster than c8g.xlarge at equal memory, and the workload is CPU-bound on small data."
-  default     = "c9g.2xlarge"
+  description = "ClickHouse node type. m8g.2xlarge: 8 vCPU/32GiB. c9g.2xlarge (8 vCPU/16GiB) was ~17% faster per core in ClickBench (../aws-ec2-benchmark, CH 24.8), but 30-day dashboard queries hit the 3.73GiB per-query memory limit (2026-11-15 audit), so memory now outranks per-core speed. Changing it replaces every node in the claude-code NodePool."
+  default     = "m8g.2xlarge"
 }
 
 variable "dashboard_basic_auth_user" {
