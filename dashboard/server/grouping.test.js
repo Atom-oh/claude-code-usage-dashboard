@@ -116,4 +116,7 @@ test("Claude backend: a login row in a Bedrock-channel session stays Anthropic",
   assert.equal(resolveClaudeBackend("claude-opus-5-5", "bedrock", true, true), "anthropic");
   // It never reclassifies a prefixed Bedrock id.
   assert.equal(resolveClaudeBackend("global.anthropic.claude-opus-5-5", "bedrock", false, true), "bedrock-runtime");
+  const noProvider = claudeBackendSql("m[1]", "''", "m[2] = '1'", { provider: false });
+  assert.doesNotMatch(noProvider, /provider_bedrock/);
+  assert.match(noProvider, /\(m\[2\] = '1'\) AND startsWith\(m\[1\], 'claude-'\), 'anthropic'/);
 });

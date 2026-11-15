@@ -38,9 +38,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   its own coverage reasons inside the panel. Strict ratio rules are unchanged.
 - Claude cost no longer shows `backend unknown` for the Claude-login part of a resumed
   session that started on Bedrock. A bare `claude-*` row whose record carried
-  `organization.id` resolves to `anthropic` per row (counters, request logs, task traces);
-  the session channel is unchanged. With provider mode on, a bare `claude-*` row in a
-  session that reported `bedrock` resolves to `bedrock-runtime`.
+  `organization.id` resolves to `anthropic` per row (counters, request logs, and task
+  traces whose spans keep the attribute; device collectors drop it from spans); the session
+  channel is unchanged. With provider mode on, a bare `claude-*` counter or log row in a
+  session that reported `bedrock` resolves to `bedrock-runtime`; task traces do not use
+  that rule.
 
 ## [1.10.0] - 2026-11-14
 

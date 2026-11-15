@@ -94,7 +94,7 @@ export function claudeDetailSql(from, to, traceId, q) {
     header: {
       sql: `${GROUP_CTE}
 SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.start_ms AS start_ms,
-    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, ug.provider_bedrock AS session_provider_bedrock, t.owner AS owner,
+    t.duration_ms AS duration_ms, ${GROUP_EXPR} AS session_grp, t.owner AS owner,
     -- Internal: keys the session-environment read; never returned.
     t.SessionId AS session_id,
     -- The list's workflow pairs over every span of the trace, unaffected by SPAN_BOUND.
@@ -439,7 +439,7 @@ function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
     }
     if (kind === "llm") {
       const raw = [r.request_id ?? "", r[column("model")] ?? "", ...CLAUDE_TOKEN_ATTRS.map(k => r[column(k)]), r.org ?? ""];
-      const priced = priceClaudeCall(raw, head.session_grp, costs, Number(head.session_provider_bedrock) === 1);
+      const priced = priceClaudeCall(raw, head.session_grp, costs);
       Object.assign(span, { tokens: priced.tokens, cost_usd: priced.cost_usd, cost_basis: priced.basis });
       rawCalls.push(raw);
       const tk = priced.tokens;
@@ -455,8 +455,7 @@ function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
   // Retries are known only when every call carries `attempt`; partial evidence is unavailable.
   const retries = rawCalls.length && attempts !== null ? attempts : null;
   let task = foldTask({ trace_id: head.trace_id, started_at: head.started_at, duration_ms: head.duration_ms,
-    session_grp: head.session_grp, session_provider_bedrock: head.session_provider_bedrock,
-    llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls,
+    session_grp: head.session_grp, llm_calls: rawCalls.length, subagents: agents.size, calls: rawCalls,
     workflows: head.workflows }, costs);
   // Lanes: main first, then agents by first span. A subagent lane is spawned by the parent of
   // its first llm_request (the tool.execution span), reported as the drawn tool bar; its type

@@ -132,9 +132,11 @@ export const GROUP_EXPR = "if(ug.grp = '' OR ug.grp IS NULL, 'unknown', ug.grp)"
 // anthropic.provider = 'bedrock' (provider mode only; the legacy CTE always yields 0) serves
 // bare claude-* ids from Bedrock runtime, since Bedrock Mantle serves only non-Anthropic
 // models; otherwise the model id decides (backend.js), and a bare id stays unknown.
-export function claudeBackendSql(modelExpr, tagExpr = "''", orgExpr = "") {
+// Callers whose per-row organization evidence can be scrubbed (task traces from device
+// collectors) pass `provider: false`, so an ambiguous bare id stays unknown.
+export function claudeBackendSql(modelExpr, tagExpr = "''", orgExpr = "", { provider = true } = {}) {
   return `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic',
     ${orgExpr ? `(${orgExpr}) AND startsWith(${modelExpr}, 'claude-'), 'anthropic',
-    ` : ""}ug.provider_bedrock = 1 AND startsWith(${modelExpr}, 'claude-'), 'bedrock-runtime',
-    ${backendSql(modelExpr, tagExpr)})`;
+    ` : ""}${provider ? `ug.provider_bedrock = 1 AND startsWith(${modelExpr}, 'claude-'), 'bedrock-runtime',
+    ` : ""}${backendSql(modelExpr, tagExpr)})`;
 }

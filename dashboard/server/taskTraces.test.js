@@ -287,6 +287,15 @@ test("claudeTaskListSql keeps the call org flag out of returned columns", () => 
   assert.match(sql, /startsWith\(m\[1\], 'claude-'\)/);
   assert.match(sql, /if\(SpanAttributes\['organization\.id'\] != '', '1', ''\) AS org/);
   assert.doesNotMatch(sql, /SpanAttributes\['organization\.id'\] AS/);
+  // The trace backend filter never applies the session provider rule.
+  assert.doesNotMatch(sql, /ug\.provider_bedrock = 1/);
+});
+
+test("a scrubbed login call in a provider-reported Bedrock session is not priced as Bedrock runtime", () => {
+  const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 };
+  const [t] = foldClaudeTasks([task({ session_grp: "bedrock", session_provider_bedrock: "1", calls: [call("r1")] })], []);
+  assert.equal(t.cost_usd, computeCost("claude-opus-5", "unknown", usage));
+  assert.equal(t.cost_partial, false);
 });
 
 test("all-unknown tokens stay null", () => {

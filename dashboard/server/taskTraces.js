@@ -117,7 +117,7 @@ export function claudeTaskListSql(from, to, q) {
     // Backend evidence comes from the task's calls ([model, org flag]); a task without
     // models is unknown.
     conds.push(`if(empty(s.raw_models), 'unknown' = {backend:String},
-      arrayExists(m -> ${claudeBackendSql("m[1]", "''", "m[2] = '1'")} = {backend:String}, s.raw_models))`);
+      arrayExists(m -> ${claudeBackendSql("m[1]", "''", "m[2] = '1'", { provider: false })} = {backend:String}, s.raw_models))`);
     params.backend = q.backend;
   }
   const order = q.sort === "duration" ? "t.duration_ms DESC, s.sort_tokens DESC, t.TraceId"
@@ -162,7 +162,7 @@ export function claudeTaskListSql(from, to, q) {
     GROUP BY TraceId
 )
 SELECT t.TraceId AS trace_id, t.started_at AS started_at, t.duration_ms AS duration_ms,
-    ${GROUP_EXPR} AS session_grp, ug.provider_bedrock AS session_provider_bedrock, s.llm_calls AS llm_calls, s.subagents AS subagents, s.calls AS calls,
+    ${GROUP_EXPR} AS session_grp, s.llm_calls AS llm_calls, s.subagents AS subagents, s.calls AS calls,
     s.workflows AS workflows
 FROM interactions t
 LEFT JOIN task_spans s ON t.TraceId = s.TraceId
@@ -256,11 +256,13 @@ export const CALL_ORG_SQL = "if(SpanAttributes['organization.id'] != '', '1', ''
 
 // One Claude llm_request call: [request_id, model, input, cache_read, cache_write, output,
 // org] values as the SQL returns them, priced by claudeCallCost with the call's backend.
-export function priceClaudeCall(raw, sessionGroup, costs, providerBedrock = false) {
+// Spans keep organization.id only when the collector does not scrub it (device collectors
+// drop it), so the provider rule is not applied to calls.
+export function priceClaudeCall(raw, sessionGroup, costs) {
   const [requestId, model = "", ...values] = raw;
   const tokens = Object.fromEntries(TOKEN_FIELDS.map((k, i) => [k, count(values[i])]));
   const hasOrg = values[TOKEN_FIELDS.length] === "1";
-  const backend = resolveClaudeBackend(model, sessionGroup, providerBedrock, hasOrg);
+  const backend = resolveClaudeBackend(model, sessionGroup, false, hasOrg);
   const { cost_usd, basis } = claudeCallCost({ model, backend, tokens,
     reported: requestId && costs.has(requestId) ? costs.get(requestId) : null });
   return { model, tokens, cost_usd, basis };
@@ -272,7 +274,7 @@ export function foldTask(row, costs) {
   let tokensPartial = false, cost = null, unknownCost = 0;
   const bases = new Set(), knownBases = new Set(), models = new Set();
   for (const raw of Array.isArray(row.calls) ? row.calls : []) {
-    const { model, tokens, cost_usd, basis } = priceClaudeCall(raw, row.session_grp, costs, Number(row.session_provider_bedrock) === 1);
+    const { model, tokens, cost_usd, basis } = priceClaudeCall(raw, row.session_grp, costs);
     if (model) models.add(normalizeModelId(model));
     for (const k of TOKEN_FIELDS) {
       if (tokens[k] === null) { tokensPartial = true; continue; }

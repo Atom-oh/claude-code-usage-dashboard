@@ -225,9 +225,12 @@ Channel and `backend` are separate. Claude `backend` is resolved per row
    the session channel stays `bedrock`, but that part's cost no longer becomes `unknown`.
    Metric rows read the flag per series from the hourly rollup's `has_org`. `SeriesKey`
    hashes the attributes, so the flag is constant per series. Request logs and trace spans
-   read the attribute from their own record. The organization id never leaves SQL.
+   read the attribute from their own record. Device collectors drop `organization.id` from
+   trace spans, so their task-trace login calls stay `unknown` while the session's counters
+   resolve to `anthropic`. The organization id never leaves SQL.
 3. In provider mode, a bare `claude-*` row in a session that reported `bedrock` is
-   `bedrock-runtime`.
+   `bedrock-runtime`. It does not apply to task traces, whose per-call organization
+   evidence can be scrubbed.
 4. Otherwise the model id prefix decides, as for Codex ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)).
    A bare, unrecognized model is `unknown`.
 
