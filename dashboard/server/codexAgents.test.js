@@ -990,7 +990,8 @@ test("on the rollup the communication fallback reads the turns of many long conv
   const sends = receivers.map((r, i) => ({ kind: "spawn", sender: "root", receiver: r, at_ms: String(T0 + i * 5) }));
   const last = receivers.at(-1);
   const seen = [];
-  const run = commRun(seen, { sends, turns: [turn(last, C1, new Date(T0 + 999 * 5 + 50).toISOString())],
+  // The task's own turn row lets each send resolve to its sender turn (PR #314 rule).
+  const run = commRun(seen, { sends, turns: [ownTurn, turn(last, C1, new Date(T0 + 999 * 5 + 50).toISOString())],
     completions: [completion(last, new Date(T0 + 999 * 5 + 100).toISOString())] });
   const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING,
     turnsBoundary: boundary });
