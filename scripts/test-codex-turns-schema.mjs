@@ -31,14 +31,23 @@ const generated = name => readFileSync(root + name, "utf8");
 let assertions = 0;
 const check = (actual, expected, label) => { assert.deepEqual(actual, expected, label); assertions++; };
 
+// Migration 012 requires ledger 004 and otel_traces, as migration 011 does.
+const migrationGuards = generated("clickhouse-migration-012.sql").split("CREATE TABLE")[0];
 execute(`CREATE DATABASE claude_code;
-CREATE TABLE claude_code.otel_traces (
+CREATE TABLE claude_code.schema_migrations (version UInt32, name String, checksum String)
+ENGINE = MergeTree ORDER BY version;
+INSERT INTO claude_code.schema_migrations VALUES (4, '004-schema-migrations', 'synthetic');`);
+assert.throws(() => execute(migrationGuards), /Migration 012 requires otel_traces from migration 002/,
+  "migration 012 without otel_traces");
+assertions++;
+execute(`CREATE TABLE claude_code.otel_traces (
   Timestamp DateTime64(9), TraceId String, SpanId String, SpanName LowCardinality(String),
   ResourceAttributes Map(LowCardinality(String), String), SpanAttributes Map(LowCardinality(String), String),
   Duration Int64,
   UserEmail LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
   EndUserId LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id']
 ) ENGINE = MergeTree ORDER BY (SpanName, Timestamp);`);
+execute(migrationGuards);
 execute(codexTurnsSchemaSql());
 execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} REMOVE TTL`);
 
