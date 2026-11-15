@@ -15,6 +15,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundle the five interface languages with the application so switching languages
+  does not depend on separate catalog requests or files removed during a rollout.
+
 ### Added
 
 - Mask team names on shared screens and CSV exports, as emails are: two characters plus a
