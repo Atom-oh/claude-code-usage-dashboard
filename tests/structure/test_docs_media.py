@@ -165,7 +165,8 @@ class MediaTests(unittest.TestCase):
 
         metadata = json.loads((ROOT / "site/assets/media.json").read_text())
         records = {item["name"]: item for item in metadata["images"]}
-        for locale, directory in (("en", ""), ("ko", "ko")):
+        for locale, directory in (("en", ""), ("ko", "ko"), ("ja", "ja"),
+                                  ("zh-CN", "zh"), ("es", "es")):
             for page in ("index", "user-guide"):
                 parser = Screens()
                 parser.feed((ROOT / "site" / directory / f"{page}.html").read_text())

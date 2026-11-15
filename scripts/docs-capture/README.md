@@ -24,6 +24,11 @@ outside the loopback origin are blocked. Generated images belong to
 `site/assets/img/guide-<locale>-*.png`. The original Korean capture and its
 historical `evidence.json` remain available without `--locale`.
 
+To verify the hydrated site, serve `site/` on loopback port 48760 and run
+`node scripts/docs-capture/verify-localized-guides.mjs`. It checks all guide
+pages at desktop and mobile widths, image enlargement and focus, and tour
+playback and captions. Results are recorded in `localized-browser-evidence.json`.
+
 `system.architecture.json` defines the logical device path and authenticated read
 path. Archify 2.16 validated source evidence and delivered the interactive HTML
 with nine showcase checks, no errors and no warnings. `render-preview.py` renders

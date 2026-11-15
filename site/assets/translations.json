@@ -50,10 +50,9 @@
       "path": "ja/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 23045,
-      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
-      "output_sha256": "030b31b2a2fdf70843653d8b8bb8881157945b0ee5718e417269223ddb61b91c",
-      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
+      "bytes": 23244,
+      "source_sha256": "c1dec140a163c94086fcbe5d5c6add0df16bd02266f86fec6b1c5a5840e7948a",
+      "output_sha256": "bb2ea500c7409bd2dd7e327b935551dba3b04ec828d101d671216e633c857e1d"
     },
     {
       "locale": "ja",
@@ -199,10 +198,9 @@
       "path": "zh/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 18217,
-      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
-      "output_sha256": "fe0c43bbb9a1fc45b4badfd4e9b9b661f95d5ba8de2278491967f056c5e5a398",
-      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
+      "bytes": 18336,
+      "source_sha256": "c1dec140a163c94086fcbe5d5c6add0df16bd02266f86fec6b1c5a5840e7948a",
+      "output_sha256": "7b820f9428fb7e72fed328f7a9d3d3f4e3a38ffef2d7b36e7bda70c381884410"
     },
     {
       "locale": "zh-CN",
@@ -246,10 +244,9 @@
       "path": "ja/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 97087,
-      "output_sha256": "0bbf37e2f46c8aa8b93ac6a7ab755cbff468db151bb74fc52dc548881b28559e",
-      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2",
-      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
+      "bytes": 97794,
+      "output_sha256": "337fc64dcd790df471a7ab9790df6024947ff173fe3903341247bf3e9cd014bb",
+      "source_sha256": "dff71dac70db47cc2002c9c135327d3980c1350ee0170842e5d04f6de777a862"
     },
     {
       "locale": "zh-CN",
@@ -257,10 +254,9 @@
       "path": "zh/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 70591,
-      "output_sha256": "2cf809b7559b16ec73fb34f1a9b31b370a702a2415a090b52c36c7ab396a3165",
-      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2",
-      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
+      "bytes": 71078,
+      "output_sha256": "cd3d6094988ea9a3696fc3a18a3a4ad2f41eb7ce3a81883646c94c9e9cb54869",
+      "source_sha256": "dff71dac70db47cc2002c9c135327d3980c1350ee0170842e5d04f6de777a862"
     },
     {
       "locale": "es",
@@ -268,10 +264,9 @@
       "path": "es/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 20666,
-      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
-      "output_sha256": "6f4411bf45149d01df934710a6d1f16de5d0049e7421e6a4619fdfe5265f3c93",
-      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
+      "bytes": 20810,
+      "source_sha256": "c1dec140a163c94086fcbe5d5c6add0df16bd02266f86fec6b1c5a5840e7948a",
+      "output_sha256": "9ee22b310ad70607f600e114e2a1a6c8e5af9d33f2a5801a6faa4bfb4ef26e2c"
     },
     {
       "locale": "es",
@@ -279,10 +274,9 @@
       "path": "es/user-guide.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 83809,
-      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2",
-      "output_sha256": "7c4154a1e059e7c1c2d1ebbd5c595d256b86f9651cdd4e170e129e72359d8f79",
-      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
+      "bytes": 84305,
+      "source_sha256": "dff71dac70db47cc2002c9c135327d3980c1350ee0170842e5d04f6de777a862",
+      "output_sha256": "0db99001a86dab19cfc40a782d06d13e0836676c4d27c42c02c66396bd0edfb6"
     },
     {
       "locale": "es",
@@ -1035,7 +1029,8 @@
       "Used the existing dashboard catalogs for exact on-screen control names, including parameterized labels.",
       "Used formal Spanish phrasing for the screenshot caption and time-picker description.",
       "Replaced language-specific screenshot paths and intrinsic dimensions.",
-      "The first review unit links the English and Korean guides; remaining locales follow separately."
+      "Aligned Japanese, Simplified Chinese and Spanish menu headings and literal control labels with the shipped UI catalogs.",
+      "Removed duplicate label glosses and aligned Spanish Cost and Executive menu references with the UI."
     ]
   },
   "calendar_guide_instruction_2026_11_15": {
@@ -1056,7 +1051,7 @@
     },
     "stop_reason": "end_turn",
     "host_corrections": [
-      "The first review unit applies English and Korean instructions; remaining locales follow separately."
+      "Used formal Spanish phrasing consistent with the guide."
     ]
   }
 }

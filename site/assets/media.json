@@ -3556,7 +3556,7 @@
     ],
     "views_per_locale": 24,
     "screenshots": 120,
-    "scope": "Five-locale native React captures; English and Korean guide links are updated in this change, with other guide links following.",
+    "scope": "Native React UI captures in the guide language, including settings and exact time selection.",
     "privacy": "Loopback-only synthetic responses, reserved example.test identities and fictional costs; no production telemetry.",
     "source_files": [
       {
@@ -3618,9 +3618,19 @@
         "path": "scripts/docs-capture/fixtures.test.mjs",
         "bytes": 754,
         "sha256": "f6571eb808c81aeb93ec07f82f0093fbef0d243a4310a6116af3cc696d767a5d"
+      },
+      {
+        "path": "scripts/docs-capture/verify-localized-guides.mjs",
+        "bytes": 5486,
+        "sha256": "37fb5cda7809fed9449f990498dc2e1a332f1e2927e7bfbfc9152ee16a249a2b"
+      },
+      {
+        "path": "scripts/docs-capture/localized-browser-evidence.json",
+        "bytes": 278,
+        "sha256": "1cdd5ad2d5fc901f80fa5720a8a9fd6d0a8639341fd681aaf8125677b906aeb3"
       }
     ],
-    "validation": "120 captures decoded and nonblank with matching UI locale. Settings checked at desktop and mobile widths. No capture errors.",
+    "validation": "120 captures decoded and nonblank with matching UI locale. Settings checked at desktop and mobile widths. Browser verification covered 35 guide pages at two widths, 10 image-viewer interactions and 10 video playback/caption checks; no capture or browser errors.",
     "previous_candidate_snapshot_commit": "23d91519f7b036a51e04bec66388666196ccbc4d"
   }
 }
