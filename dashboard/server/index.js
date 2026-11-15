@@ -2,6 +2,7 @@ import express from "express";
 import { codexInsights, validateInsightsExactFilters, validateInsightsProfile } from "./codexInsights.js";
 import { claudeEffort, validateClaudeEffort } from "./claudeEffort.js";
 import { clientProductivity } from "./clientProductivity.js";
+import { clientSkills } from "./clientSkills.js";
 import { clientTokenEconomics, tokenEconomicsWindow } from "./clientTokenEconomics.js";
 import path from "node:path";
 import os from "node:os";
@@ -433,6 +434,11 @@ route("/api/clients/overview",
 // Shared Productivity rows; users/sessions/tokens/costs stay in the overview response.
 route("/api/clients/productivity",
   (from, to, raw) => clientProductivity(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: false, validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
+
+// Shared skill usage per client (Claude skill_activated, Codex codex.skill_invocation).
+route("/api/clients/skills",
+  (from, to, raw) => clientSkills(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: false, validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
 
 // Token economics (cost chain, decomposition, unit/model/outcome economics, exemplars) over

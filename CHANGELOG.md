@@ -17,6 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex
+  `codex.skill_invocation`): calls split into explicit, automatic and nested (Claude only)
+  invocations, with users and sessions, under the shared user, model, backend and team
+  filters. Exact duplicate deliveries count once; no events read as none recorded.
 - Codex task details list the turn's subagent turns (spawn_agent, followup_task; nested up
   to three levels) with each one's LLM calls and linked cost estimate, the turn's total
   including them, and, on a subagent turn, a link to the turn that started it. Codex names

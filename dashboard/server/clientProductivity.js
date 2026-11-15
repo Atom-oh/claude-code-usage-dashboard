@@ -36,11 +36,10 @@ const list = (values) => values.map((v) => `'${v}'`).join(", ");
 
 // Codex filters follow the overview's event-level semantics: user/userExact on the resource
 // identity, model on the event model with session evidence for model-less events, backend from
-// model/resource tag, team from the session's resolved team.
-// One scan: kinds prompt (codex.user_prompt), result (codex.tool_result: success 'true' /
-// 'false'), decision (codex.tool_decision: approved/denied sets; source as in /api/codex/insights
-// approvals) and ttft (codex.turn_ttft duration_ms). Totals are the sums of each kind's rows.
-export function buildCodexProductivityQuery(from, to, filters = {}) {
+// model/resource tag, team from the session's resolved team. Returns the WITH clause through a
+// `selected` CTE of (event, a, session, user) for the given event names; exact duplicate
+// deliveries (same Timestamp and both maps) count once.
+export function codexScopedEventsSql(from, to, filters, events) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
     clientUser: filters.user || "", clientUserExact: filters.userExact || "",
     clientModel: filters.model || "", clientModelExact: filters.modelExact || "",
@@ -61,16 +60,25 @@ export function buildCodexProductivityQuery(from, to, filters = {}) {
       ${backendSql("LogAttributes['model']", "ResourceAttributes['backend']")} AS backend,
       ResourceAttributes['project.name'] AS project
     FROM claude_code.otel_logs
-    WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND EventName IN (${list(PRODUCTIVITY_EVENTS)})
+    WHERE Timestamp >= {from:DateTime} AND Timestamp < {to:DateTime} AND EventName IN (${list(events)})
   ), selected AS (
-    SELECT event, a
+    SELECT event, a, session, user
     FROM codex_events
     WHERE ({clientUser:String} = '' OR positionCaseInsensitive(user, {clientUser:String}) > 0)
       AND ({clientUserExact:String} = '' OR user = {clientUserExact:String})
       ${modelFiltered ? `AND (${modelMatch("model")} OR (model = '' AND (session, user, project) IN (SELECT * FROM model_sessions)))` : ""}
       AND ({clientBackend:String} = '' OR backend = {clientBackend:String})
       ${filters.team ? `AND session IN (SELECT session FROM (${sessionTeamsSql(["codex"])}) WHERE team = {clientTeam:String})` : ""}
-  ), tool_events AS (
+  )`;
+  return { sql, params };
+}
+
+// One scan: kinds prompt (codex.user_prompt), result (codex.tool_result: success 'true' /
+// 'false'), decision (codex.tool_decision: approved/denied sets; source as in /api/codex/insights
+// approvals) and ttft (codex.turn_ttft duration_ms). Totals are the sums of each kind's rows.
+export function buildCodexProductivityQuery(from, to, filters = {}) {
+  const scoped = codexScopedEventsSql(from, to, filters, PRODUCTIVITY_EVENTS);
+  const sql = `${scoped.sql}, tool_events AS (
     SELECT multiIf(event = 'codex.tool_result', 'result', event = 'codex.tool_decision', 'decision',
         event = 'codex.turn_ttft', 'ttft', 'prompt') AS kind,
       if(kind IN ('result', 'decision'), a['tool_name'], '') AS tool,
@@ -82,7 +90,7 @@ export function buildCodexProductivityQuery(from, to, filters = {}) {
       if(kind IN ('result', 'ttft'), ${validMs("a['duration_ms']")}, -1) AS duration
     FROM selected
   )${toolBreakdownSql("tool_events")}`;
-  return { sql, params };
+  return { sql, params: scoped.params };
 }
 
 function count(value) {

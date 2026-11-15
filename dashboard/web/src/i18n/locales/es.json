@@ -2016,5 +2016,16 @@
   "m4d74eb05b9b5": "Se ocultaron {0} span de operaciones internas de Codex.",
   "m0cf412ff8552": "Mostrar todo",
   "m88fe8ae661ed": "Ocultar span de operaciones internas",
-  "m07cdad7a7167": "Tiempo total de span"
+  "m07cdad7a7167": "Tiempo total de span",
+  "m6eeea76a76fc": "Uso de skills",
+  "m1b8f9875345c": "Explícito",
+  "mca7eb2ef0a71": "Automático",
+  "m8aa7e241cf79": "Anidado",
+  "m06eb37c1299f": "Hay muchos skills, por lo que solo se muestran los {0} más invocados por cliente.",
+  "m1dc80ccab047": "No se registraron eventos de skills durante este período.",
+  "ma9cb5e800b76": "Los skills de Claude se cuentan mediante el evento skill_activated.",
+  "mdc7506793fcd": "Los skills de Codex se cuentan mediante el evento codex.skill_invocation.",
+  "mfeee7328687a": "Explícito = invocado directamente por el usuario, Automático = seleccionado por el agente, Anidado = invocado por otro skill (solo Claude).",
+  "m3e6ef8517161": "Explícito = invocado directamente por el usuario, Automático = seleccionado por el agente.",
+  "m67438422c844": "Si no hay ningún evento, no se registró; no se cuenta como 0."
 }

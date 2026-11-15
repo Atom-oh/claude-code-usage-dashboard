@@ -2016,5 +2016,16 @@
   "m4d74eb05b9b5": "{0} Codex internal operation spans hidden.",
   "m0cf412ff8552": "Show all",
   "m88fe8ae661ed": "Hide internal operation spans",
-  "m07cdad7a7167": "Total span time"
+  "m07cdad7a7167": "Total span time",
+  "m6eeea76a76fc": "Skill usage",
+  "m1b8f9875345c": "Explicit",
+  "mca7eb2ef0a71": "Automatic",
+  "m8aa7e241cf79": "Nested",
+  "m06eb37c1299f": "There are many skills, so only the {0} most-called skills are shown per client.",
+  "m1dc80ccab047": "No skill events were recorded during this period.",
+  "ma9cb5e800b76": "Claude skills are counted using the skill_activated event.",
+  "mdc7506793fcd": "Codex skills are counted using the codex.skill_invocation event.",
+  "mfeee7328687a": "Explicit = called directly by the user, Automatic = selected by the agent, Nested = called by another skill (Claude only).",
+  "m3e6ef8517161": "Explicit = called directly by the user, Automatic = selected by the agent.",
+  "m67438422c844": "No events means none were recorded, not zero."
 }
