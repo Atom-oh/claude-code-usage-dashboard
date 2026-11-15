@@ -1758,10 +1758,13 @@ test("the rollup detail equals its rollup list row", async () => {
     // turn (beyond the list's context) would take it away.
     completion("2026-11-07T00:45:00Z", { timestamp_ms: String(ms("2026-11-06T23:59:59Z")) }),
     completion("2026-11-07T01:00:00Z")], b,
-  ({ row, seen }) => {
+  ({ row, detail, seen }) => {
     assert.equal(row.duration_ms, ms("2026-11-07T02:00:00Z") - ms("2026-11-05T20:00:00Z"));
     assert.equal(row.llm_calls, 2);
     assert.equal(row.subagent_calls, 2);
+    // Spans stop at to + 24h, so their spawn calls are partial: never a known zero beside 2 calls.
+    assert.deepEqual([detail.task.subagent_calls, detail.agents.spawn_calls, detail.agents.known_zero, detail.task.subagents],
+      [2, null, false, null]);
     const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
     assert.equal(competitors.params.startTo, +to + DAY_MS);
     const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
@@ -1794,4 +1797,33 @@ test("the rollup detail equals its rollup list row", async () => {
     const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
     assert.equal(completions.params.logFrom, "2026-11-05 05:00:00");
   });
+});
+
+test("a rollup detail whose spans hold fewer spawn calls than its turn row has no spawn evidence", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const spawn = codexSpan("g1", "2026-11-05T05:00:02Z", { span_name: "collaborationspawn_agent", a_tool_name: "collaborationspawn_agent",
+    total_spans: "2" });
+  const spans = [codexSpan("s1", "2026-11-05T05:00:01Z", { total_spans: "2" }), spawn];
+  const detailFor = async (spawnCalls) => userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z", { spawn_calls: spawnCalls })], spans }),
+    DEFAULT_CODEX_PRICING, BOUNDARY);
+  // Not clipped, but the turn row counts 2 spawn calls and the spans show 1: unknown.
+  const short = await detailFor("2");
+  assert.deepEqual([short.task.subagent_calls, short.agents.spawn_calls, short.agents.unlinked_calls, short.agents.known_zero,
+    short.task.subagents], [2, null, null, false, null]);
+  // The spans account for every call: the spawn call stays known (here unlinked).
+  const whole = await detailFor("1");
+  assert.deepEqual([whole.task.subagent_calls, whole.agents.spawn_calls, whole.agents.unlinked_calls, whole.agents.known_zero],
+    [1, 1, 1, false]);
+  // A known zero needs the turn row's zero too.
+  const zero = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z")], spans: [{ ...spans[0], total_spans: "1" }] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.deepEqual([zero.task.subagent_calls, zero.agents.spawn_calls, zero.agents.known_zero, zero.task.subagents], [0, 0, true, 0]);
+  // A turn whose spans run past to + 24h (span window clipped): unknown even with a zero row count.
+  const longId = v7("2026-11-05T20:00:00Z", 2);
+  const clipped = await userTaskDetail(from, to, { id: `codex:c1:${longId}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(longId, "2026-11-05T20:00:00Z", "2026-11-06T23:59:30Z")],
+      spans: [codexSpan("s1", "2026-11-05T20:00:01Z")] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.deepEqual([clipped.task.subagent_calls, clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents],
+    [0, null, false, null]);
 });

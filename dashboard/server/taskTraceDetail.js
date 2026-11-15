@@ -705,11 +705,13 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const detail = foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
   // Subagent turns linked through the trace's parent-span chain; their own completions price them.
   let spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
-  // The spans stop at to + 24h: a turn still running within a minute of that bound may have later
-  // spawn calls (partial evidence: unknown, never a known zero).
+  // The spans stop at to + 24h on both paths: a turn still running within a minute of that bound
+  // may have later spawn calls (partial evidence: unknown, never a known zero). On the rollup the
+  // turn row is unclipped, so spans holding fewer spawn calls than the row counts are partial too.
   if (spawnSpanIds !== null) {
-    const end = count(entry.turn.end_ms);
-    if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS) spawnSpanIds = null;
+    const rowCalls = rollup ? count(entry.turn.spawn_calls) : null, end = count(entry.turn.end_ms);
+    if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS || (rowCalls !== null && rowCalls > spawnSpanIds.length))
+      spawnSpanIds = null;
   }
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
