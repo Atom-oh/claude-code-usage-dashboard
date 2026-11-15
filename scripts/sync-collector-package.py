@@ -66,20 +66,42 @@ receivers:
     # The device's installed user ID (the SSO login's email after browser enrollment) is
     # the identity of every client signal at this hop: shell, settings or Codex values the
     # user set locally do not replace it. The central hop keeps the received identity.
-    local_service = local_service.replace("batch]", "transform/device_user, batch]")
+    # A cumulative metric series must keep one identity for its whole life (the server
+    # differences samples per series and identity), so metrics are re-attributed only for
+    # series that started after this configuration took effect: those data points are
+    # marked, split into their own resource, and only that resource gets the installed ID.
+    local_service = re.sub(r"(processors: \[memory_limiter, filter/metrics[^\]]*?), batch\]",
+                           r"\1, transform/device_user_mark, groupbyattrs/device_user, transform/device_user, batch]",
+                           local_service)
+    local_service = re.sub(r"(processors: \[memory_limiter, filter/(?:logs|traces)[^\]]*?), batch\]",
+                           r"\1, transform/device_user, batch]", local_service)
     local_service = local_service.replace("extensions: [file_storage]",
                                           "extensions: [file_storage, bearertokenauth, health_check]")
+    # Inserted defaults (signals without an identity) use the identity the replaced Collector
+    # inserted; transform/device_user then applies the installed one where allowed.
     local_processors = processors.replace('value: ${env:EXPERIMENT_GROUP:-unknown}\n        action: insert',
                                           'value: ${env:EXPERIMENT_GROUP:-unknown}\n        action: insert\n'
                                           '      - key: user.email\n'
-                                          '        value: "${env:CODEX_DEFAULT_USER_EMAIL:-}"\n        action: insert')
+                                          '        value: "${env:CCDASH_PREVIOUS_USER_ID:-}"\n        action: insert')
+    local_processors = local_processors.replace(
+        'set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != "" and',
+        'set(attributes["user.email"], "${env:CCDASH_PREVIOUS_USER_ID:-}") where "${env:CCDASH_PREVIOUS_USER_ID:-}" != "" and')
     local_processors += """
+  transform/device_user_mark:
+    error_mode: ignore
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(attributes["ccdash.device_user"], "1") where start_time_unix_nano >= ${env:CCDASH_IDENTITY_SINCE_NS:-0}
+  groupbyattrs/device_user:
+    keys: [ccdash.device_user]
   transform/device_user:
     error_mode: ignore
     metric_statements:
       - context: resource
         statements:
-          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where attributes["ccdash.device_user"] == "1" and "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+          - delete_key(attributes, "ccdash.device_user")
     log_statements:
       - context: resource
         statements:

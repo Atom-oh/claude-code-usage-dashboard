@@ -127,7 +127,7 @@ function ConnectRequest({ handle, account }) {
           <div><dt className="text-ink-500">{translate("me7bcfd8c0da5")}</dt><dd className="mt-1 break-all font-medium">{data.userId
             || translate("m4cc5d017e93f")}</dd></div>
         </dl>
-        <p className="mt-3 text-xs leading-relaxed text-ink-500">{translate("m4aedc6c8a845")}
+        <p className="mt-3 text-xs leading-relaxed text-ink-500">{translate("me7f6707f549f")}
           {data.createdAt && <> {translate("mb086ba78e90e")} <time dateTime={data.createdAt}>{time.format(new Date(data.createdAt))}</time> ·</>}
           {" "}{translate("m27163bc7d640")} <time dateTime={data.expiresAt}>{time.format(new Date(data.expiresAt))}</time>.{" "}
           {translate("m3ecfd87791c6")}</p>

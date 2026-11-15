@@ -172,7 +172,10 @@ storage remains private. Never extend enrollment after its absolute deadline.
   Preserve existing prerequisite and service-persistence guidance.
 - Preserve current telemetry attribution on a recognized migration/reinstall.
   New installations default to the approving account's IdP-verified email, falling
-  back to the local login, with an optional `--user-id` override. The approving SSO
+  back to the local login, with an optional `--user-id` override.
+  *Superseded (2026-11-15, PR #309):* the approving login's verified email now replaces a
+  recorded, migrated or typed ID on every browser enrollment; `--user-id` applies only
+  without a verified email. See the device-collector runbook. The approving SSO
   account owns the device; the attribution remains client-configured and editable on
   the device, not verified per-event identity.
 - An aborted or failed installation after approval leaves a revocable device

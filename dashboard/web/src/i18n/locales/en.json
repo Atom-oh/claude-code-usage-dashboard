@@ -1873,7 +1873,6 @@
   "m8143161f55aa": "Operating system",
   "m6db0ca070b91": "Account to connect",
   "m4cc5d017e93f": "Login name on the device",
-  "m4aedc6c8a845": "Devices with an existing collector keep their current collection user ID.",
   "mb086ba78e90e": "Request time",
   "m27163bc7d640": "Approval deadline",
   "m3ecfd87791c6": "Deny the request if you did not just start it yourself.",
@@ -2037,5 +2036,6 @@
   "m4c33c6a0b753": "Next month",
   "m83e222c2fb52": "Select date",
   "m49e86c3288d4": "Unavailable",
-  "m051986e644b8": "The collection user ID is set to the email address of the signed-in account that approved the device. Reinstalling over an existing collector also changes it to this email address. You can specify a different ID with {0} only if the signed-in account has no verified email address."
+  "m051986e644b8": "The collection user ID is set to the email address of the signed-in account that approved the device. Reinstalling over an existing collector also changes it to this email address. You can specify a different ID with {0} only if the signed-in account has no verified email address.",
+  "me7f6707f549f": "When you approve, the collection user ID is set to this account's email; devices that already have a collector installed also change to this email."
 }

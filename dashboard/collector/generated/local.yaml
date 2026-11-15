@@ -23,7 +23,7 @@ processors:
         value: ${env:EXPERIMENT_GROUP:-unknown}
         action: insert
       - key: user.email
-        value: "${env:CODEX_DEFAULT_USER_EMAIL:-}"
+        value: "${env:CCDASH_PREVIOUS_USER_ID:-}"
         action: insert
 
   filter/metrics:
@@ -85,7 +85,7 @@ processors:
           - delete_key(attributes, "ccdash.transport.backend")
           - delete_key(attributes, "backend") where attributes["backend"] != "bedrock-mantle" and attributes["backend"] != "bedrock-runtime"
           - set(attributes["client"], "codex")
-          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
+          - set(attributes["user.email"], "${env:CCDASH_PREVIOUS_USER_ID:-}") where "${env:CCDASH_PREVIOUS_USER_ID:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
           - delete_key(attributes, "experiment.group")
     metric_statements:
       - context: resource
@@ -271,12 +271,21 @@ processors:
           - set(cache["mcp"]["mcp_tool_name"], cache["tool_parameters"]["mcp_tool_name"]) where IsMap(cache["tool_parameters"]) and IsString(cache["tool_parameters"]["mcp_tool_name"])
           - set(attributes["tool_parameters"], String(cache["mcp"])) where Len(cache["mcp"]) > 0
 
+  transform/device_user_mark:
+    error_mode: ignore
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(attributes["ccdash.device_user"], "1") where start_time_unix_nano >= ${env:CCDASH_IDENTITY_SINCE_NS:-0}
+  groupbyattrs/device_user:
+    keys: [ccdash.device_user]
   transform/device_user:
     error_mode: ignore
     metric_statements:
       - context: resource
         statements:
-          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where attributes["ccdash.device_user"] == "1" and "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+          - delete_key(attributes, "ccdash.device_user")
     log_statements:
       - context: resource
         statements:
@@ -308,11 +317,11 @@ service:
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, filter/metrics, resource, transform/device_user, batch]
+      processors: [memory_limiter, filter/metrics, resource, transform/device_user_mark, groupbyattrs/device_user, transform/device_user, batch]
       exporters: [otlp_http]
     metrics/codex:
       receivers: [otlp]
-      processors: [memory_limiter, filter/metrics_codex, resource/codex_transport, transform/codex_resource, transform/codex_metrics, transform/device_user, batch]
+      processors: [memory_limiter, filter/metrics_codex, resource/codex_transport, transform/codex_resource, transform/codex_metrics, transform/device_user_mark, groupbyattrs/device_user, transform/device_user, batch]
       exporters: [otlp_http]
     logs/claude:
       receivers: [otlp]

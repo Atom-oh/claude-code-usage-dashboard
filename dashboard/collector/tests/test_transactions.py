@@ -234,16 +234,30 @@ class Transactions(unittest.TestCase):
     def test_an_sso_approved_reinstall_moves_to_the_login_email(self):
         # An older installation recorded another ID; Claude settings carry it too.
         self.install()
-        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "old")
+        first = json.loads((self.root / "state.json").read_text())
+        self.assertEqual(first["userId"], "old")
+        self.assertIsInstance(first["identitySince"], int)
         self.args.sso_user_id = "alice@example.com"
         self.install()
-        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "alice@example.com")
+        state = json.loads((self.root / "state.json").read_text())
+        self.assertEqual(state["userId"], "alice@example.com")
+        self.assertGreaterEqual(state["identitySince"], first["identitySince"])
         env = json.loads(self.claude.read_text())["env"]
         self.assertIn("user.email=alice@example.com", env["OTEL_RESOURCE_ATTRIBUTES"])
-        # The device collector stamps that identity on every client signal.
         config = (self.root / "config.yaml").read_text()
-        self.assertEqual(config.count('set(attributes["user.email"], "alice@example.com") where "alice@example.com" != ""\n'), 3)
+        # Logs and traces carry the installed ID; metrics only for series started after the
+        # identity changed, and unattributed earlier series keep the replaced Collector's ID.
+        self.assertEqual(config.count('set(attributes["user.email"], "alice@example.com") where "alice@example.com" != ""\n'), 2)
+        self.assertIn('where start_time_unix_nano >= %d\n' % state["identitySince"], config)
+        self.assertIn('set(attributes["user.email"], "alice@example.com") where attributes["ccdash.device_user"] == "1"', config)
+        self.assertIn('value: "old"', config)
         self.assertEqual(config.count("transform/device_user, batch]"), 6)
+        self.assertEqual(config.count("groupbyattrs/device_user, transform/device_user, batch]"), 2)
+        # Reinstalling with the same identity keeps its start, so no series changes identity.
+        self.install()
+        again = json.loads((self.root / "state.json").read_text())
+        self.assertEqual(again["identitySince"], state["identitySince"])
+        self.assertIn('value: "alice@example.com"', (self.root / "config.yaml").read_text())
 
     def test_without_any_user_id_a_new_installation_uses_the_login_name(self):
         self.args.user_id = None

@@ -1873,7 +1873,6 @@
   "m8143161f55aa": "Sistema operativo",
   "m6db0ca070b91": "Cuenta que se conectará",
   "m4cc5d017e93f": "Nombre de inicio de sesión del dispositivo",
-  "m4aedc6c8a845": "Los dispositivos que ya tienen instalado el recolector conservan su ID de usuario de recopilación actual.",
   "mb086ba78e90e": "Hora de la solicitud",
   "m27163bc7d640": "Plazo de aprobación",
   "m3ecfd87791c6": "Rechaza la solicitud si no la acabas de iniciar tú.",
@@ -2037,5 +2036,6 @@
   "m4c33c6a0b753": "Mes siguiente",
   "m83e222c2fb52": "Seleccionar fecha",
   "m49e86c3288d4": "No disponible",
-  "m051986e644b8": "El ID de usuario de recopilación se establece en la dirección de correo electrónico de la cuenta con sesión iniciada que aprobó el dispositivo. Si se vuelve a instalar sobre un recopilador existente, también cambiará a esta dirección de correo electrónico. Solo se puede especificar otro ID con {0} si la cuenta con sesión iniciada no tiene una dirección de correo electrónico verificada."
+  "m051986e644b8": "El ID de usuario de recopilación se establece en la dirección de correo electrónico de la cuenta con sesión iniciada que aprobó el dispositivo. Si se vuelve a instalar sobre un recopilador existente, también cambiará a esta dirección de correo electrónico. Solo se puede especificar otro ID con {0} si la cuenta con sesión iniciada no tiene una dirección de correo electrónico verificada.",
+  "me7f6707f549f": "Al aprobar, el ID de usuario de recopilación se establece como el correo electrónico de esta cuenta, y los dispositivos que ya tienen un recopilador instalado también cambian a este correo electrónico."
 }

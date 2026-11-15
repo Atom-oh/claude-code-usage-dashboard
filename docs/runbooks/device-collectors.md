@@ -35,8 +35,13 @@ migration from an older collector whose recorded, migrated or typed ID differs; 
 --user-id ID` applies only when that login has no verified email. The device Collector then
 sets every Claude and Codex resource `user.email` to the installed ID, so shell, settings or
 Codex values edited locally do not change it. Token-flow installs keep the typed or recorded
-ID. This is still device-configured attribution, not server-verified per-event identity: a
-device owner can edit the Collector configuration itself.
+ID. A cumulative metric series keeps one identity for its whole life: series that started
+before the identity changed keep their own or the previous inserted ID until the client
+restarts (`identitySince` in `state.json`); logs and traces switch immediately. Restart
+Claude Code and Codex after reinstalling. Earlier rows stay under the previous ID (no
+merge), and collectors installed before this change keep insert-only attribution until
+reinstalled. This is still device-configured attribution, not server-verified per-event
+identity: a device owner can edit the Collector configuration itself.
 
 The approval request lasts ten minutes and is decided once (approve or deny); a later
 approval by another account fails. Opening the link or returning from SSO never decides

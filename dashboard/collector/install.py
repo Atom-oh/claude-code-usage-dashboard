@@ -582,6 +582,30 @@ def installed_user_id(root):
     return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._+@-]+", value) else None
 
 
+def installed_identity_since(root):
+    """The recorded start of the installed identity (ns), or None."""
+    try:
+        value = json.loads((root / "state.json").read_text()).get("identitySince")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return value if isinstance(value, int) and value >= 0 else None
+
+
+def settings_user_id(home):
+    """The user.email the existing Claude settings (or shell) carry, without prompting."""
+    try:
+        data = json.loads((home / ".claude/settings.json").read_text())
+        env = data.get("env", {}) if isinstance(data, dict) else {}
+        attributes = env.get("OTEL_RESOURCE_ATTRIBUTES", os.environ.get("OTEL_RESOURCE_ATTRIBUTES", ""))
+    except (OSError, ValueError):
+        attributes = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
+    for part in attributes.split(",") if isinstance(attributes, str) else []:
+        key, separator, value = part.partition("=")
+        if separator and key.strip() == "user.email" and re.fullmatch(r"[A-Za-z0-9._+@-]+", value.strip()):
+            return value.strip()
+    return None
+
+
 def migration_user_id(args, home):
     if args.user_id:
         return args.user_id
@@ -729,15 +753,21 @@ def wait_for_local_collector(unit, uid):
     raise ValueError("new Collector did not become locally healthy; restoring the previous service")
 
 
-def render_config(root, ingest_endpoint, user_id):
+def render_config(root, ingest_endpoint, user_id, previous_user_id=None, identity_since_ns=0):
+    """The device config. user_id is the installed identity; metric series that started
+    before identity_since_ns keep previous_user_id as their inserted default, so a
+    cumulative series never changes identity mid-life (see transform/device_user)."""
     text = (HERE / "generated/local.yaml").read_text()
     replacements = {"OTELCOL_QUEUE_DIR": str(root / "queue"), "CCDASH_TOKEN_FILE": str(root / "token"),
                     "CCDASH_INGEST_ENDPOINT": ingest_endpoint, "CODEX_DEFAULT_USER_EMAIL": user_id,
+                    "CCDASH_PREVIOUS_USER_ID": user_id if previous_user_id is None else previous_user_id,
+                    "CCDASH_IDENTITY_SINCE_NS": str(int(identity_since_ns)),
                     "CLAUDE_ENABLED": "true", "CODEX_ENABLED": "true", "EXPERIMENT_GROUP": "unknown"}
     def replace(match):
         value = replacements[match.group(1)]
         # OTTL strings already quote their placeholders; these values are validated identifiers.
-        if match.group(1) in ("CLAUDE_ENABLED", "CODEX_ENABLED", "CODEX_DEFAULT_USER_EMAIL"):
+        if match.group(1) in ("CLAUDE_ENABLED", "CODEX_ENABLED", "CODEX_DEFAULT_USER_EMAIL", "CCDASH_PREVIOUS_USER_ID",
+                              "CCDASH_IDENTITY_SINCE_NS"):
             return value
         return json.dumps(value.replace("$", "$$"))
     return re.sub(r"\$\{env:([A-Z_]+)(?::-[^}]*)?\}", replace, text)
@@ -792,8 +822,13 @@ def install(args, home, user, uid, root, unit):
     sso_user_id = getattr(args, "sso_user_id", None)
     if sso_user_id and args.user_id and args.user_id != sso_user_id:
         print("Using the approving SSO account's email as the telemetry user ID; --user-id is ignored.")
-    user_id = sso_user_id or args.user_id or installed_user_id(root) or (
+    recorded = installed_user_id(root)
+    user_id = sso_user_id or args.user_id or recorded or (
         migration_user_id(args, home) if legacy else getattr(args, "default_user_id", None) or user)
+    # The identity the replaced Collector inserted for signals without one: running
+    # cumulative series keep it until they restart. An unchanged identity keeps its start.
+    previous_user_id = recorded or (settings_user_id(home) if legacy else None) or user_id
+    previous_since = installed_identity_since(root) if previous_user_id == user_id else None
     replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
     changes, notes = client_plan(home, user_id, replace_claude_telemetry)
     for note in notes:
@@ -826,17 +861,20 @@ def install(args, home, user, uid, root, unit):
             print("Downloading and verifying OpenTelemetry Collector " + release["version"])
             download_binary(stage, release)
             atomic(stage / "token", token + "\n")
-            atomic(stage / "config.yaml", render_config(stage, ingest_endpoint, user_id))
+            since = previous_since if previous_since is not None else time.time_ns()
+            atomic(stage / "config.yaml", render_config(stage, ingest_endpoint, user_id, previous_user_id, since))
             if not run([str(stage / "otelcol-contrib"), "validate", "--config", str(stage / "config.yaml")],
                        required=False):
                 raise ValueError("Collector rejected its configuration; client settings were not changed")
             # Prepare every runtime file before stopping the current service.
-            atomic(stage / "config.yaml", render_config(root, ingest_endpoint, user_id))
+            def stage_identity(since):
+                atomic(stage / "config.yaml", render_config(root, ingest_endpoint, user_id, previous_user_id, since))
+                atomic(stage / "state.json", json.dumps({"managedBy": MARKER, "endpoint": ingest_endpoint,
+                                                         "version": release["version"], "unit": str(unit),
+                                                         "userId": user_id, "identitySince": since}) + "\n")
+            stage_identity(since)
             for relative in MAINTENANCE_FILES:
                 copy_atomic(HERE / relative, stage / relative)
-            atomic(stage / "state.json", json.dumps({"managedBy": MARKER, "endpoint": ingest_endpoint,
-                                                     "version": release["version"], "unit": str(unit),
-                                                     "userId": user_id}) + "\n")
             atomic(stage / "service", systemd_service(root) if sys.platform == "linux" else launchd_service(root))
             services = {unit: "service"}
             for path, content in zip(renewal, systemd_renewal(root) if sys.platform == "linux"
@@ -875,6 +913,12 @@ def install(args, home, user, uid, root, unit):
                 if any(path.exists() for path in renewal):
                     stop_service(renewal[-1], uid, RENEW_LABEL)
                 assert_unchanged(clients_before)
+                if previous_since is None:
+                    # A new identity starts once every replaced Collector has stopped: no series
+                    # exported by it can count as started under the new identity.
+                    stage_identity(time.time_ns())
+                    for path in (root / "config.yaml", root / "state.json"):
+                        prepared_states[path] = file_state(prepared[path])
                 for path, source in prepared.items():
                     written.append(path)
                     copy_atomic(source, path, prepared_states[path][0])
