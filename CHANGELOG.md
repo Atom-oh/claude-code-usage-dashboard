@@ -51,6 +51,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Device collectors keep their identity history across uninstall and reinstall, and
+  schedule renewal before the Collector starts so a failed install rolls back before any
+  telemetry is exported under a new identity.
 - Show dashboard screenshots in the selected language throughout the public
   guides, with matching control names and synthetic capture provenance.
 - Use a localized React calendar with an explicit completion control for each
