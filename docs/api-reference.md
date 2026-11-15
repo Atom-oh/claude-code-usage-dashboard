@@ -732,7 +732,17 @@ listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
 "observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
 from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
-null (no attribute links a subagent conversation; the detail's `agents` follows the trace). Spans carry no usage: tokens and cost come only from unique
+null (no attribute links a subagent conversation; the detail's `agents` follows the trace).
+`subagent_calls` counts the turn's spawn and follow-up calls (`spawn_agent`, `followup_task`,
+`multi_agent_v1` `spawn_agent`), not subagent conversations; it is null unless the rollup read
+is active (`CODEX_TURNS_READ_FROM` set and the list's start minus 7 days not before it) and the
+turn's Codex version is 0.166 or later, so a null is not collected, never zero, and `0` means no
+call. With the rollup active the list reads the migration 012 turn rollup instead of raw spans;
+its rows equal the raw rows except that a turn running past `to + 24h` shows its true end and a
+context turn its true start (a UUIDv7 turn running more than 7 days past its id also merges its
+id-hour row, so it is listed once, in the bucket of its start, never as a later fragment);
+unset or an earlier range keeps raw reads
+([schema runbook](runbooks/schema-migrations.md#codex-turns-migration-012)). Spans carry no usage: tokens and cost come only from unique
 usage-bearing `response.completed` completions of the same conversation whose event
 time falls in `[start, end + 5s]` (latest-starting turn when several; each completion
 once), priced per completion with the Codex AWS list estimate (`cost_basis:
@@ -759,7 +769,13 @@ either way. Without `userExact` (a shared task link) the owner is resolved: the 
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
 access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`
-(Codex adds `agents` and `activity`), `owner` being the exact identity the task belongs to:
+(Codex adds `agents` and `activity`); `owner` is the exact identity the task belongs to. With
+`CODEX_TURNS_READ_FROM` set, a Codex detail reads the rollup only when its list would (`from`
+minus 7 days at or after the boundary) and its turn id is UUIDv7 with a time at or after the
+boundary and within [`from` - 7 days, `to` + 1 day]. It then reads the turn's own window (later
+same-conversation turns until its end plus 5 s, completions from an hour before it to the list's
+own bound (`to` + 24h, since collector time can lag the event time that links them), spans and
+skills a minute either side, each capped at the list's reads) and equals its list row. Any other detail, and a turn missing from the rollup, reads raw. Fields:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no model-call span).
@@ -792,7 +808,9 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
 - `why`: `{rule, value}` for `cache_read_share` (share of complete canonical tokens),
   `context_growth` (`{first, last, calls}` main-lane input context), `top_lane_share`
   (`{lane, share}`, two or more lanes, all costs known), `most_expensive_call`
-  (`{span, cost_usd}`, all costs known), `retries` (calls with `attempt > 1`; omitted unless every call carries `attempt`) and
+  (`{span, cost_usd}`, all costs known), `retries` (Claude: calls with `attempt > 1`, omitted unless every call carries `attempt`;
+  Codex: `try_run_sampling_request` spans minus `run_sampling_request` spans, omitted unless the
+  turn has run spans and at least as many tries) and
   `permission_wait` (Claude wait-span milliseconds). A rule whose inputs are unavailable is
   omitted, never zero-filled. Data rules: [data reference](reference/data.md#user-task-traces).
 - `environment`: what the Claude task's session carried, from its `mcp_server_connection` and
@@ -803,38 +821,65 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   events are absent; `environment` is null when both are, and always null for Codex, which
   emits neither. OTel carries no tool-definition count or schema size, so neither is
   reported. The session id that keys the lookup is never returned.
-- `context`: `{points, missing, partial, compactions, limits}`. `points` are
+- `context`: `{points, missing, partial, compactions, limits}` (Codex adds `compactions_total`
+  and, when compactions are known, `compactions_partial`). `points` are
   `{span, lane, start_ms, tokens}` per LLM call in time order: Claude input + cache read +
   cache write, Codex the completion's input including cache (`span` null when no sampling
   span matched). `tokens` is null when any part is unknown and counted in `missing`;
   `partial` marks a truncated Claude detail or a limited Codex turn set. `compactions`
   (Claude) are `{start_ms, pre_tokens, post_tokens, trigger, success}` of compaction events
   whose `prompt.id` is a prompt of the task's calls, at most 100; null when no call has a
-  prompt id, and always null for Codex. `limits` (Codex) is the latest
+  prompt id. For Codex it is the list of the turn's `codex.compaction` spans in the returned
+  span list `{start_ms, pre_tokens, post_tokens, trigger, success}` (the three last null: the
+  spans carry no sizes), known when the turn has `run_sampling_request` spans on Codex 0.161 or
+  later (earlier versions emit no turn-tagged compaction spans) and otherwise null.
+  `compactions_total` is the turn row's count (null when unknown), and `compactions_partial` is
+  true when the bounded span list holds fewer events than that count. `limits` (Codex) is the latest
   `codex.conversation_starts` of the conversation stored up to the turn's end (a start can
   be stored with the collector's later observed time), looking back 7 days:
   `{context_window, auto_compact_token_limit}`, null when none is reported; always null for
   Claude, which reports no context window.
 - `agents` (Codex only): subagent turns linked through the trace's parent-span chain (a
   subagent turn's `session_task.turn` ← `op.dispatch.inter_agent_communication` ←
-  `dispatch_tool_call_with_state` ← the parent turn's `collaboration<tool>` span), read from
-  the traces of the task's spans between 10 minutes before the turn and 24h after it ends.
+  `dispatch_tool_call_with_state` ← the parent turn's `collaboration<tool>` span; on the CLI,
+  `session_task.turn` ← `codex.turn_input` ← `op.dispatch.turn_input` ←
+  `dispatch_tool_call_with_state` ← `multi_agent_v1<tool>`), read from the traces of the task's
+  spans between 10 minutes before the turn and 24h after it ends. Before Codex 0.166 the tool
+  span names no turn and is resolved by its `call_id`
+  ([Codex observability](reference/codex-observability.md)).
   `parent` is `{id, tool, started_at, link}` of the turn that started this one, else null
   (`started_at`/`link` null when the parent's turn row is absent). `children` are up to
   50 subagent turns, three levels deep, in tree order: `{id, parent_id, depth, tool, started_at,
-  duration_ms, models, llm_calls, cost_usd, cost_partial, link}`: `llm_calls` is the subagent
+  duration_ms, models, llm_calls, llm_calls_partial, cost_usd, cost_partial, link}`: `llm_calls` is the subagent
   turn's model-call span count and `cost_usd` its completion-log estimate, folded like a list row
   (null when its turn row is absent). Each child's `link` `{from, to}` is the UTC hour containing
   that turn's start (from its turn row, else its lineage span), for opening its own detail; the
-  parent's `link` is the same for the parent turn. Subagent turns and completions are read in the
-  detail's window (`from - 24h` .. `to + 24h`): a linked subagent outside it is listed with
-  unknown calls and cost and a partial total. `subagents` counts
-  their distinct conversations; `task.subagents` is that count when positive, else null (a turn
-  without links may lack traces or run a Codex version without collaboration spans).
-  `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans and those
-  with no linked turn (null when spans are truncated). `total` is `{llm_calls,
-  llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
-  depth, count, trace or row bound. Traces only establish lineage: calls remain model-call span
+  parent's `link` is the same for the parent turn. Subagent turns and completions are read over
+  the lineage window, not the page range (completions from 10 minutes before the turn to 48h
+  after it ends, turn spans a day before that too): a linked subagent outside it is listed with
+  unknown calls and cost and a partial total, and one whose turn ends within 24h of that 48h
+  bound may continue past it, so its `llm_calls_partial` and `cost_partial` are set and the
+  result is `limited`. `subagents` counts
+  their distinct conversations; `task.subagents` is that count when positive, `0` with
+  `known_zero`, else null (a turn without links may lack traces or run a Codex version without
+  collaboration spans).
+  `known_zero` is true only with positive evidence of no subagent calls:
+  complete spans that do not reach the clipped span window (`to` + 24h), no spawn, follow-up or
+  `send_input` span of the turn, no link, and turn-naming evidence (the rollup row's `names_turn`,
+  else a version that names its turn on tool spans, 0.166+).
+  `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans (CLI: `multi_agent_v1` `spawn_agent`) and those
+  with no linked turn (null when spans are truncated, the turn's end is unknown or within a
+  minute of the clipped span window, or the rollup row counts more spawn calls than the spans
+  hold). `total` is `{llm_calls,
+  llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks
+  withheld spawn evidence (any of those cases), a
+  depth, count, trace, row, read-window or id bound (over 2,000 legacy call, child turn or conversation ids of
+  one kind; bound id arrays, rollup and raw turn reads alike, are read in chunks below the HTTP
+  form-field limit), or a spent read
+  budget: past 12 s from the detail's start no
+  read beyond the lineage span read starts (legacy resolution, the subagent turn and completion
+  reads), and the links already found are returned without costs,
+  never as a known zero. Traces only establish lineage: calls remain model-call span
   counts and costs completion-log estimates.
 - `activity` (Codex only): `{skills, skills_limited, tools, tools_partial}`. `skills` are the
   turn's `codex.skill_invocation` logs (exact `conversation.id` and `turn.id`) grouped as

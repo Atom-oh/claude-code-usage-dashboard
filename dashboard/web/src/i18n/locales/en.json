@@ -2038,6 +2038,8 @@
   "m49e86c3288d4": "Unavailable",
   "m051986e644b8": "The collection user ID is set to the email address of the signed-in account that approved the device. Reinstalling over an existing collector also changes it to this email address. You can specify a different ID with {0} only if the signed-in account has no verified email address.",
   "me7f6707f549f": "When you approve, the collection user ID is set to this account's email; devices that already have a collector installed also change to this email.",
+  "m1167c444c874": "{0} compactions{1} (only some shown in chart)",
+  "mb914b9145517": "Number of calls that created a subagent or instructed an existing subagent to perform a follow-up task (not the number of new subagents). Collected only for Codex turns on version 0.166 or later during periods when operators have enabled Codex turn aggregation; otherwise shown as Not collected.",
   "m5b3dd029aca7": "View confirmed subtotals for Codex token composition in Usage. We also improved date and time selection, multilingual guides, task details, and Collector connections.",
   "ma6d662d15e6a": "Codex token composition subtotals",
   "m8d7025b69b1d": "Shows confirmed subtotals for input, cache read, cache write, and output even when some usage records could not be verified. Missing records are noted, and recorded zeros are retained for periods with only rejected requests.",

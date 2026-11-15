@@ -52,8 +52,9 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
   const stats = [
     translate("m3528f9e48b06", [tokensText(s.peak.tokens), s.peak.span && numbers.get(s.peak.span) ? translate("m21b99a2fe9bf", [numbers.get(s.peak.span)]) : ""]),
     s.mainFirst !== null && s.mainLast !== null ? translate("m74c11bc77657", [tokensText(s.mainFirst), tokensText(s.mainLast)]) : null,
-    client === "codex" ? null : s.compactions === null ? translate("m5269a015879b") : s.compactions === 0 ? translate("m038c7026e148")
-      : translate("m235439579f37", [formatObserved(s.compactions), s.biggestCompaction ? ` (${s.biggestCompaction.trigger ?? translate("m8eccada106ef")} ${
+    s.compactions === null ? translate("m5269a015879b") : s.compactions === 0 ? translate("m038c7026e148")
+      // A truncated Codex span list draws only some of the turn's compactions.
+      : translate(s.compactionsPartial ? "m1167c444c874" : "m235439579f37", [formatObserved(s.compactions), s.biggestCompaction ? ` (${s.biggestCompaction.trigger ?? translate("m8eccada106ef")} ${
         tokensText(s.biggestCompaction.pre_tokens)} → ${tokensText(s.biggestCompaction.post_tokens)})` : ""]),
     s.limitShare !== null ? translate("m95ef57e2dacc", [tokensText(s.autoCompactLimit), pct(s.limitShare)]) : null,
     s.windowShare !== null ? translate("m295d47a93ce2", [tokensText(s.contextWindow), pct(s.windowShare)]) : null,
@@ -120,7 +121,7 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
       {sideSources.length > 0 && <span>{translate("m230a4032eef1", [sideExample])}</span>}
       {s.missing > 0 && <span>{translate("m6dcc5db48d2f", [formatObserved(s.missing)])}</span>}
       {s.partial && <span>{translate("me3ce4065ae02")}</span>}
-      {compactions.length > 0 && <span>{translate("m42a70e109062")}</span>}
+      {client !== "codex" && compactions.length > 0 && <span>{translate("m42a70e109062")}</span>}
       {client !== "codex" && <span>{translate("m31448e365072")}</span>}
       {client === "codex" && s.autoCompactLimit === null && s.contextWindow === null && <span>{translate("m5682cbb5ee40")}</span>}
       {client === "codex" && s.autoCompactLimit !== null && !limitInChart

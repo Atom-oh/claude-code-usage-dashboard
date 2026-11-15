@@ -54,7 +54,7 @@ class SchemaLifecycle(unittest.TestCase):
         self.assertEqual(
             [row["version"] for row in self.fixture.rows(
                 "SELECT version FROM claude_code.schema_migrations ORDER BY version"
-            )], [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            )], [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         )
 
     def test_populated_compatible_installation_only_reads_metadata(self):
@@ -335,6 +335,79 @@ class SchemaLifecycle(unittest.TestCase):
         finally:
             self.fixture.query(f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER")
 
+    def test_codex_turns_live_and_repeated_backfill_match_raw_spans(self):
+        table = "claude_code.codex_turns_v1"
+        bounds = self.fixture.rows(
+            "SELECT toString(toStartOfHour(now(), 'UTC')) AS start, "
+            "toString(toStartOfHour(now(), 'UTC') + INTERVAL 1 HOUR) AS end, "
+            "toUnixTimestamp(toStartOfHour(now(), 'UTC')) AS epoch"
+        )[0]
+        user = "codex-turns-lifecycle@example.invalid"
+        # A UUIDv7 turn id carries its start: 48 bits of Unix milliseconds, version digit 7.
+        millis = format((int(bounds["epoch"]) + 60) * 1000, "012x")
+        turn = f"{millis[:8]}-{millis[8:]}-7abc-8def-000000000012"
+        # (second, span id, span name, turn attribute). A duplicate delivery repeats a span id.
+        spans = [
+            (60, "s1", "codex.sampling", "turn_id"), (60, "s1", "codex.sampling", "turn_id"),
+            (61, "s2", "codex.sampling", "turn_id"), (62, "r1", "run_sampling_request", "turn_id"),
+            (62, "t1", "try_run_sampling_request", "turn_id"), (63, "t2", "try_run_sampling_request", "turn_id"),
+            (64, "c1", "codex.compaction", "turn.id"), (65, "a1", "collaborationspawn_agent", "turn_id"),
+        ]
+        values = ",\n".join(
+            f"(toDateTime64('{bounds['start']}', 9, 'UTC') + {second}, 'trace', '{span}', '{name}', "
+            f"map('client','codex','user.email','{user}','service.version','0.169.0'), "
+            f"map('{key}','{turn}','conversation.id','codex-turns-lifecycle','model','gpt-lifecycle'), 1000000)"
+            for second, span, name, key in spans
+        )
+        self.fixture.query(
+            "INSERT INTO claude_code.otel_traces "
+            f"(Timestamp, TraceId, SpanId, SpanName, ResourceAttributes, SpanAttributes, Duration) VALUES {values}"
+        )
+        selected = f"""SELECT TurnId, toString(min(TurnHour)) AS hour, groupUniqArrayMerge(Conversations) AS conversations,
+            toString(uniqExactMerge(SamplingSpans)) AS sampling, toString(uniqExactMerge(LegacySpans)) AS legacy,
+            toString(uniqExactMerge(SamplingTries)) AS tries, toString(uniqExactMerge(Compactions)) AS compactions,
+            toString(uniqExactMerge(SpawnCalls)) AS spawns, max(NamesTurnOnTools) AS names_turn,
+            toString(toUnixTimestamp64Milli(max(EndTs)) - toUnixTimestamp64Milli(min(StartTs))) AS window_ms
+          FROM {table} WHERE UserIdentity = '{user}' GROUP BY TurnId"""
+        expected = [{
+            "TurnId": turn, "hour": bounds["start"], "conversations": ["codex-turns-lifecycle"],
+            "sampling": "2", "legacy": "1", "tries": "2", "compactions": "1", "spawns": "1",
+            "names_turn": 1, "window_ms": "5001",
+        }]
+        self.assertEqual(self.fixture.rows(selected), expected)
+        backfill = (ROOT / "clickhouse-backfill-012.sql").read_text()
+        for zone in ("UTC", "Asia/Seoul", "UTC"):
+            self.fixture.query(backfill, param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                               session_timezone=zone, insert_deduplicate=0)
+            self.assertEqual(self.fixture.rows(selected), expected)
+        # The runbook's activation gate: no differs for the window, a lost row differs until
+        # a backfill restores it, and a misaligned window is rejected.
+        verify = (ROOT / "clickhouse-verify-012.sql").read_text()
+        def compare():
+            text = self.fixture.query(verify, param_verifyFrom=bounds["start"], param_verifyTo=bounds["end"],
+                                      session_timezone="UTC", format="JSONEachRow").stdout
+            return [r for r in map(json.loads, text.splitlines()) if "turn_id" in r]
+        self.assertIn({"turn_id": turn, "differs": 0, "clipped": 0}, compare())
+        self.assertFalse([r for r in compare() if r["differs"]])
+        self.fixture.query(f"ALTER TABLE {table} DELETE WHERE TurnId = '{turn}'", mutations_sync=2)
+        self.assertIn({"turn_id": turn, "differs": 1, "clipped": 0}, compare())
+        self.fixture.query(backfill, param_backfillFrom=bounds["start"], param_backfillTo=bounds["end"],
+                           session_timezone="UTC", insert_deduplicate=0)
+        self.assertFalse([r for r in compare() if r["differs"]])
+        bad = self.fixture.query(verify, param_verifyFrom=bounds["start"].replace(":00:00", ":30:00"),
+                                 param_verifyTo=bounds["end"], check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("hour-aligned", bad.stdout + bad.stderr)
+
+    def test_codex_turns_view_security_drift_is_rejected_without_repair(self):
+        view = "claude_code.codex_turns_v1_mv"
+        self.fixture.query(f"ALTER TABLE {view} MODIFY SQL SECURITY NONE")
+        try:
+            result = self.verify_without_writes(False)
+            self.assertIn("Codex turns view target or definer security differs", result.stderr)
+        finally:
+            self.fixture.query(f"ALTER TABLE {view} MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER")
+
     def test_source_contract_mismatch_fails_before_schema_execution(self):
         self.fixture.docker("exec", self.fixture.name, "sh", "-c",
             "mkdir /tmp/schema-mismatch && cp /sql/* /tmp/schema-mismatch/ && "
@@ -513,7 +586,7 @@ class MultiReplicaSchemaLifecycle(unittest.TestCase):
             self.assertEqual(
                 [row["version"] for row in self.fixture.rows(
                     "SELECT version FROM claude_code.schema_migrations ORDER BY version", node_index=index
-                )], [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                )], [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             )
         self.verify_without_writes(True)
 

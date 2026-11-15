@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T14:02:00.106654+00:00",
-  "source_messages": 2061,
+  "updated_at": "2026-11-15T14:27:12.761586+00:00",
+  "source_messages": 2063,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2061,
-      "bytes": 158997,
-      "sha256": "0cfa183841def72da192bbfd9a5f080d3c747d9bad257a8015026aba9a97120c"
+      "messages": 2063,
+      "bytes": 159383,
+      "sha256": "33796a8bb67a5834e365559daddb454b3c9d4cd223d0e9403e3c96c264418667"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2061,
-      "bytes": 187994,
-      "sha256": "e6f40d0090e570b51e69639d8ff05e904d1d27b165970cfe9f529455a58e964a"
+      "messages": 2063,
+      "bytes": 188476,
+      "sha256": "f22bc2c1ec23ec1c5886700c2605d9d1b97f531b0d3aaa5f93615b9a73a87970"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2061,
-      "bytes": 196914,
-      "sha256": "4bbdc8f5b44a24b082ad66f5383829b94600fb7647789ce930f2b3b48ca27046"
+      "messages": 2063,
+      "bytes": 197410,
+      "sha256": "0a3627b8e2572430446c90104a5b21f7882de1f11b27fa26d661b67e9ebbb7a2"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2061,
-      "bytes": 168997,
-      "sha256": "f2e9081e801b5dc26334eefa901de07cf307ff597e6f31a7af4dec9cf3a7dc2f"
+      "messages": 2063,
+      "bytes": 169395,
+      "sha256": "7b4635b82c232e21ba5e8b5a1655d103b91aa08236b73e97c4344ca84c43eb9b"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2061,
-      "bytes": 150392,
-      "sha256": "0e614be49604bb319db44d5d6a8ddec26ce24308e932c2e211f9342d6299cf9d"
+      "messages": 2063,
+      "bytes": 150730,
+      "sha256": "f2cc9d806a7ef07841ea5dfb421874a4eacedf2a8a20cdb20c6e8728cf02b258"
     }
   ],
   "catalog_calls": [
@@ -675,6 +675,70 @@
       },
       "stop_reason": "end_turn",
       "timestamp": "2026-11-14T10:46:19.252648+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "date": "2026-11-15",
+      "source_sha256": "1b0856cef257916f105189c1a74af98040d9e2397d9eaa22249ec20a4feb67c1",
+      "request_sha256": "44daa7586c25904381bf9bd9ff5157d3960a6108a9e6d2969eb617a7e2603bcf",
+      "output_sha256": "43ce04fab03215ce9da8dcd803609e2bd0faf3c562910a236a67c883c6b08ad0",
+      "usage": {
+        "inputTokens": 465,
+        "outputTokens": 723,
+        "totalTokens": 1188,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-15T11:04:35.354601+00:00",
+      "keys": [
+        "m1167c444c874",
+        "m8aa42f469326",
+        "mb1c9e46267bb"
+      ],
+      "messages": 3,
+      "serialization": "source: the Korean messages as a JSON object (ensure_ascii false); request: the Converse request, sorted keys; output: the text block returned",
+      "attempts": "An identical earlier call in the same session succeeded, but its output was not retained (the reading script failed on the reasoning block); this call's output is the one applied.",
+      "verification": "All five catalogs retain nonempty messages and matching positional placeholders.",
+      "removed_keys": [
+        "m8aa42f469326",
+        "mb1c9e46267bb"
+      ],
+      "removal": "2026-11-15: the Codex communication-log subagent fallback moved to a follow-up PR, so its two messages were removed from all five catalogs; the hashes and usage above still describe the original three-message call, and only m1167c444c874 remains applied."
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "date": "2026-11-15",
+      "source_sha256": "b9997a7927aaf8213ed0b62b6932b9a815cd8beaf04be29f55761f00280d6bfa",
+      "request_sha256": "5137b71ac9b5b9a398bce7c42393fe9d04763a2fbef789cd2c5305df1ad5af9f",
+      "output_sha256": "4005d99befa39907c527bb23f71ab517c648e885c645a666e1a838c036434ca0",
+      "usage": {
+        "inputTokens": 281,
+        "outputTokens": 475,
+        "totalTokens": 756,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-15T09:47:00.548531+00:00",
+      "keys": [
+        "mb914b9145517"
+      ],
+      "messages": 1,
+      "superseded": {
+        "m5657e573bb06": "subagent-calls tooltip replaced: the value is also not collected outside the Codex turn rollup read, not only before Codex 0.166"
+      },
+      "host_corrections": {
+        "zh-CN": "catalog terms: 管理员 (operators) and 轮次汇总 (turn aggregation), as in the session-turn aggregation messages",
+        "ja": "catalog term 管理者 (operators), as in the session-turn aggregation messages"
+      },
+      "verification": "All five catalogs retain nonempty messages and matching positional placeholders."
     }
   ],
   "additional_messages": {

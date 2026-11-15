@@ -382,8 +382,46 @@ test("context chart: Codex limit line and shares, unknown compactions not claime
   expect(summary.textContent).toContain("자동 컴팩션 한도 2K의 50%");
   expect(summary.textContent).toContain("컨텍스트 창 1M의 <1%");
   expect(summary.textContent).not.toContain("컴팩션 없음");
+  expect(summary.textContent).toContain("컴팩션 미수집");
   expect(section.querySelector("[data-context-limit]")).not.toBeNull();
   expect(section.textContent).not.toContain("Claude Code는");
+});
+
+test("context chart: Codex compactions without token counts are counted and drawn", async () => {
+  body = codexDetail();
+  body.context = { ...body.context, compactions: [
+    { start_ms: 1000, pre_tokens: null, post_tokens: null, trigger: null, success: null },
+    { start_ms: 4000, pre_tokens: null, post_tokens: null, trigger: null, success: null }] };
+  mount({ taskId: CODEX_ID });
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  expect(within(section).getByRole("list", { name: "컨텍스트 요약" }).textContent).toMatch(/컴팩션 2/);
+  expect(section.querySelectorAll("[data-compaction]").length).toBe(2);
+  // The note on Claude Code's reported compaction tokens is Claude-only.
+  expect(section.textContent).not.toContain("컴팩션 토큰은 Claude Code가 보고한 값");
+});
+
+test("context chart: a truncated Codex detail states the turn's full compaction count", async () => {
+  body = codexDetail();
+  body.context = { ...body.context, compactions_total: 7, compactions_partial: true, compactions: [
+    { start_ms: 1000, pre_tokens: null, post_tokens: null, trigger: null, success: null }] };
+  mount({ taskId: CODEX_ID });
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  const summary = within(section).getByRole("list", { name: "컨텍스트 요약" }).textContent;
+  expect(summary).toMatch(/컴팩션 7회/);
+  // The chart draws only some of them, and says so.
+  expect(summary).toContain("컴팩션 7회 (차트에는 일부만 표시)");
+  expect(section.querySelectorAll("[data-compaction]").length).toBe(1);
+});
+
+test("context chart: a complete Codex compaction list carries no partial mark", async () => {
+  body = codexDetail();
+  body.context = { ...body.context, compactions_total: 1, compactions_partial: false, compactions: [
+    { start_ms: 1000, pre_tokens: null, post_tokens: null, trigger: null, success: null }] };
+  mount({ taskId: CODEX_ID });
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  const summary = within(section).getByRole("list", { name: "컨텍스트 요약" }).textContent;
+  expect(summary).toContain("컴팩션 1회");
+  expect(summary).not.toContain("일부만 표시");
 });
 
 test("context chart: unknown compaction link and missing tokens are disclosed, absent context hides it", async () => {
@@ -532,6 +570,7 @@ test("a Codex turn lists its linked subagent turns with their calls, cost and th
   expect(card.textContent).toContain("spawn_agent·followup_task 호출 1건은");
   // The subagent tile shows the linked count with its basis instead of "not collected".
   expect(screen.getByText("trace의 부모 span으로 연결한 수")).toBeTruthy();
+  expect(card.textContent).toContain("연결은 trace의 부모 span 체인으로 확인하므로");
 });
 
 test("a Codex subagent turn links back to its parent turn", async () => {

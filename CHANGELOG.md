@@ -15,6 +15,54 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- Migration 012 adds a Codex turn rollup (`codex_turns_v1`, with bounded backfill and
+  verify files). With `CODEX_TURNS_READ_FROM` (Terraform `codex_turns_read_from`; verified,
+  hour-aligned UTC) set and the 7-day context inside it, the Codex task list and details
+  read the rollup instead of raw spans so long sessions stay inside the query budget;
+  unset keeps raw reads. Activation order: [Codex turns](docs/runbooks/schema-migrations.md#codex-turns-migration-012).
+- The task list shows a Codex "subagent calls" value (spawn and follow-up calls, not
+  subagents): a count for Codex 0.166+ turns, not collected before, and only while the
+  rollup read is active (not on raw reads).
+- Codex task details show retries (`try_run_sampling_request` spans beyond
+  `run_sampling_request`, both counted exactly) in the why rules and count `codex.compaction`
+  spans as context compactions (Codex 0.161+; earlier versions read as not collected),
+  stating the turn's full count and marking the chart when the bounded span list holds fewer.
+- A Codex task detail with positive evidence of no subagent calls (complete spans inside the
+  span window, no spawn, follow-up or `send_input` span, Codex 0.166+)
+  shows a known zero subagents instead of not collected.
+
+### Changed
+
+- With `CODEX_TURNS_READ_FROM` set, a Codex task detail whose list row comes from the turn
+  rollup reads the rollup too, over the turn's own window: later same-conversation turns
+  until its end plus 5 s, completions (collector time) from an hour before its start, but
+  not before the page start, to 24h after the page end, spans and skills a minute either side,
+  each stopping where the list's reads stop. Its values
+  equal its list row; a turn missing from the rollup reads raw. Subagent and parent turns
+  come from the rollup with their true start. Unset keeps raw reads.
+
+### Fixed
+
+- Codex task details also link subagent turns for Codex before 0.166, whose lineage spans
+  name no turn or conversation: the spawn/follow-up call is matched to its `codex.tool_result`
+  log and to the calling conversation's turn running at that time (UUID-shaped turn ids only,
+  never a synthetic `auto-compact-N` turn).
+- Codex task details also link the Codex CLI's subagent turns (`multi_agent_v1` spawn_agent and
+  send_input), which start through turn input rather than inter-agent communication; they were
+  shown as not collected.
+- A Codex task detail starts its subagent reads beyond the lineage span read (legacy lineage
+  resolution, subagent turn and completion pricing) only within
+  12 s of its own start, bounding the time they add to long sessions' details against the
+  25 s load budget; past that it lists the links already found without costs, marked limited
+  and partial, never as a known zero. Subagent turns and completions are read up to 48h after
+  the task's turn ends; a subagent turn ending within a day of that bound has partial calls and
+  cost and marks the result limited.
+- A Codex task detail reads the legacy call, child turn and conversation ids of its subagent
+  reads in chunks below ClickHouse's HTTP form-field limit, at most 2,000 ids of each kind
+  (more are marked limited), instead of failing the whole detail on a long lineage.
+
 ## [1.12.0] - 2026-11-15
 
 ### Added

@@ -2038,6 +2038,8 @@
   "m49e86c3288d4": "No disponible",
   "m051986e644b8": "El ID de usuario de recopilación se establece en la dirección de correo electrónico de la cuenta con sesión iniciada que aprobó el dispositivo. Si se vuelve a instalar sobre un recopilador existente, también cambiará a esta dirección de correo electrónico. Solo se puede especificar otro ID con {0} si la cuenta con sesión iniciada no tiene una dirección de correo electrónico verificada.",
   "me7f6707f549f": "Al aprobar, el ID de usuario de recopilación se establece como el correo electrónico de esta cuenta, y los dispositivos que ya tienen un recopilador instalado también cambian a este correo electrónico.",
+  "m1167c444c874": "{0} compactaciones{1} (solo se muestran algunas en el gráfico)",
+  "mb914b9145517": "Número de llamadas que crearon un subagente o indicaron a un subagente existente que realizara una tarea de seguimiento (no es el número de subagentes nuevos). Solo se recopila en turnos de Codex de la versión 0.166 o posterior durante los periodos en que los operadores hayan activado la agregación de turnos de Codex; en caso contrario, se muestra como No recopilado.",
   "m5b3dd029aca7": "Consulta en Usage los subtotales confirmados de la composición de tokens de Codex. También hemos mejorado la selección de fecha y hora, las guías multilingües, los detalles de tareas y las conexiones de Collector.",
   "ma6d662d15e6a": "Subtotales de la composición de tokens de Codex",
   "m8d7025b69b1d": "Muestra los subtotales confirmados de entrada, lectura de caché, escritura de caché y salida, aunque haya registros de uso que no se hayan podido verificar. Indica los registros que faltan y conserva los ceros registrados en periodos que solo contienen solicitudes rechazadas.",

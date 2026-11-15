@@ -302,6 +302,9 @@ test("real ClickHouse Codex legacy turns count run_sampling_request calls", {
       legacySpan("try_run_sampling_request", "CL", L1, "lt1", "2026-11-05T16:00:00Z", 10, { model: NON_ANTHROPIC }),
       legacySpan("run_sampling_request", "CL", L1, "lr2", "2026-11-05T16:00:20Z", 10, { model: NON_ANTHROPIC }),
       legacySpan("try_run_sampling_request", "CL", L1, "lt2", "2026-11-05T16:00:20Z", 10, { model: NON_ANTHROPIC }),
+      // One retried attempt of the second call, delivered twice: one more try, not two.
+      legacySpan("try_run_sampling_request", "CL", L1, "lt3", "2026-11-05T16:00:15Z", 5, { model: NON_ANTHROPIC }),
+      legacySpan("try_run_sampling_request", "CL", L1, "lt3", "2026-11-05T16:00:15Z", 5, { model: NON_ANTHROPIC }),
       // Mixed turn (later versions emit both): only codex.sampling counts.
       { ...sampling(LEGACY, "CM", M1, "ms1", "2026-11-05T17:00:00Z", 10), TraceId: "legacy-CM" },
       legacySpan("run_sampling_request", "CM", M1, "mr1", "2026-11-05T17:00:00Z", 10, { model: NON_ANTHROPIC }),
@@ -319,6 +322,9 @@ test("real ClickHouse Codex legacy turns count run_sampling_request calls", {
     assert.equal(legacy.task.llm_calls, 2);
     assert.deepEqual(legacy.spans.filter(s => s.kind === "llm").map(s => s.id).sort(), ["lr1", "lr2"]);
     assert.equal(legacy.task.completions_without_span, 0);
+    // Tries (3 distinct) minus runs (2) is one retry; no service.version: compactions unknown.
+    assert.equal(legacy.why.find(r => r.rule === "retries")?.value, 1);
+    assert.deepEqual([legacy.context.compactions, legacy.context.compactions_total], [null, null]);
     const mixed = await userTaskDetail(from, to, { id: `codex:CM:${M1}`, userExact: LEGACY }, ["codex"], run);
     assert.deepEqual(mixed.spans.filter(s => s.kind === "llm").map(s => s.id), ["ms1"]);
   } finally {

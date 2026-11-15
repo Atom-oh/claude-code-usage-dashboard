@@ -53,6 +53,17 @@ variable "session_turns_read_from" {
   }
 }
 
+variable "codex_turns_read_from" {
+  description = "Verified UTC start of the codex_turns_v1 backfill (migration 012), hour-aligned (minutes and seconds 00); empty keeps raw Codex task reads."
+  type        = string
+  default     = ""
+  nullable    = false
+  validation {
+    condition     = var.codex_turns_read_from == "" || can(regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:00:00Z$", var.codex_turns_read_from)) && can(formatdate("YYYY", var.codex_turns_read_from))
+    error_message = "codex_turns_read_from must be empty or a valid hour-aligned UTC timestamp such as 2026-10-01T00:00:00Z."
+  }
+}
+
 variable "codex_diagnostic_read_from" {
   description = "Verified UTC coverage boundary for migration 008 diagnostic states. Empty keeps raw reads; set only after replica and backfill verification."
   type        = string
@@ -450,6 +461,10 @@ resource "kubernetes_deployment_v1" "dashboard" {
           env {
             name  = "SESSION_TURNS_READ_FROM"
             value = var.session_turns_read_from
+          }
+          env {
+            name  = "CODEX_TURNS_READ_FROM"
+            value = var.codex_turns_read_from
           }
           env {
             name  = "CODEX_DIAGNOSTIC_READ_FROM"

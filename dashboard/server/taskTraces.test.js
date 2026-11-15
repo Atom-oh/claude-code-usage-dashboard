@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
   sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId, COST_CANDIDATES,
-  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES } from "./taskTraces.js";
+  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES, codexRetries, namesTurnOnTools, emitsTurnCompactions,
+  foldCodexTask } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -1327,4 +1328,585 @@ test("the Claude detail carries the session environment and never the raw sessio
   assert.ok(!JSON.stringify(out).includes("sess-secret-1"));
   const codex = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, base, DEFAULT_CODEX_PRICING);
   assert.equal(codex.environment, null);
+});
+
+test("codex turn SQL counts tries and compactions per span id", () => {
+  const { sql, params } = codexTurnSql(from, to, validateTaskQuery({ userExact: "a" }, both));
+  // Exact counts: retries subtract the exact run count from the tries.
+  assert.match(sql, /uniqExactIf\(SpanId, SpanName = 'try_run_sampling_request'\) AS sampling_tries/);
+  assert.match(sql, /uniqExactIf\(SpanId, SpanName = 'codex\.compaction'\) AS compactions/);
+  assert.doesNotMatch(sql, /\buniqIf\(/);
+  // The per-span counts read SpanId from the deduplicated span subquery, which must select it.
+  assert.match(sql, /SELECT Timestamp, SpanName, SpanId,\n/);
+  assert.match(sql, /anyIf\(span_version, span_version != ''\) AS app_version/);
+  assert.match(sql, /ResourceAttributes\['service\.version'\] AS span_version/);
+  assert.ok(!Object.values(params).some(v => String(v).includes("try_run_sampling_request")));
+});
+
+test("codex retries are tries minus runs and unknown without runs", () => {
+  assert.equal(codexRetries({ legacy_calls: "3", sampling_tries: "5" }), 2);
+  assert.equal(codexRetries({ legacy_calls: "3", sampling_tries: "3" }), 0);
+  assert.equal(codexRetries({ legacy_calls: "0", sampling_tries: "5" }), null);
+  assert.equal(codexRetries({ legacy_calls: "3", sampling_tries: "2" }), null);
+  assert.equal(codexRetries({ legacy_calls: "3" }), null);
+});
+
+test("namesTurnOnTools reads versions numerically", () => {
+  for (const v of ["0.166.0", "0.169.0", "0.166.0-alpha.5.1", "1.0.0"]) assert.equal(namesTurnOnTools(v), true, v);
+  for (const v of ["0.165.0", "0.99.9", "", null, undefined]) assert.equal(namesTurnOnTools(v), false, String(v));
+});
+
+test("emitsTurnCompactions reads versions numerically: Codex 0.161 and later", () => {
+  for (const v of ["0.161.0", "0.161.0-alpha.1", "0.169.0", "1.0.0"]) assert.equal(emitsTurnCompactions(v), true, v);
+  for (const v of ["0.160.1", "0.154.0", "0.99.9", "", null, undefined]) assert.equal(emitsTurnCompactions(v), false, String(v));
+});
+
+test("codex detail reports retries and compactions from the turn row", () => {
+  const sp = (id, name, at) => ({ span_id: id, parent_id: "", span_name: name, start_ms: String(ms(at)),
+    duration_ms: "10", a_model: "", a_tool_name: "", a_aborted: "", total_spans: "2" });
+  const rows = [sp("c2", "codex.compaction", "2026-11-05T01:00:06Z"), sp("c1", "codex.compaction", "2026-11-05T01:00:02Z")];
+  const run = (o, r = rows) => foldTaskDetail({ client: "codex", turn: turn({ legacy_calls: "3", sampling_tries: "5",
+    compactions: "2", app_version: "0.161.0", ...o }), linked: [] }, r, []);
+  const ok = run({});
+  assert.equal(ruleMap(ok).retries, 2);
+  assert.deepEqual(ok.context.compactions.map(c => c.start_ms), [2000, 6000]);
+  assert.deepEqual(ok.context.compactions[0], { start_ms: 2000, pre_tokens: null, post_tokens: null, trigger: null, success: null });
+  assert.equal(ok.context.compactions_total, 2);
+  assert.equal(ok.context.compactions_partial, false);
+  const none = run({ legacy_calls: "0" });
+  assert.ok(!("retries" in ruleMap(none)));
+  assert.equal(none.context.compactions, null);
+  assert.equal(none.context.compactions_total, null);
+  assert.deepEqual(run({ compactions: "0" }, []).context.compactions, []);
+  assert.equal(run({ compactions: "0" }, []).context.compactions_total, 0);
+  // Truncated span list: the turn row counts more compactions than the rows show; the total is the row's.
+  const partial = run({ compactions: "4" });
+  assert.equal(partial.context.compactions.length, 2);
+  assert.equal(partial.context.compactions_total, 4);
+  assert.equal(partial.context.compactions_partial, true);
+  // Codex before 0.161 emits no turn-tagged compaction spans: unknown, never a known zero.
+  for (const v of ["0.160.1", "0.154.0", ""]) {
+    const old = run({ compactions: "0", app_version: v }, []);
+    assert.deepEqual([old.context.compactions, old.context.compactions_total, "compactions_partial" in old.context],
+      [null, null, false], v);
+  }
+});
+
+test("a raw Codex detail whose spans reach the clipped span window has no spawn evidence", async () => {
+  const detailFor = (at, endAt) => userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "a" }, both, async (sql) => {
+    if (sql.includes("count() OVER ()")) return [{ span_id: "s1", parent_id: "", span_name: "exec_command",
+      start_ms: String(ms(at) + 1000), duration_ms: "5", trace_id: "tr1", a_tool_name: "exec_command", total_spans: "1" }];
+    if (sql.includes("GROUP BY turn_id")) return [turn({ in_bucket: 1, started_at: at, start_ms: String(ms(at)),
+      end_ms: String(ms(endAt)), app_version: "0.169.0" })];
+    return [];
+  }, DEFAULT_CODEX_PRICING);
+  // Inside the span window: no spawn span is a known zero on 0.166+.
+  const whole = await detailFor("2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z");
+  assert.deepEqual([whole.agents.spawn_calls, whole.agents.known_zero, whole.task.subagents], [0, true, 0]);
+  // The spans stop at to + 24h: a turn still running there may have spawned later (unknown).
+  const clipped = await detailFor("2026-11-05T20:00:00Z", "2026-11-06T23:59:30Z");
+  assert.deepEqual([clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents], [null, false, null]);
+  // Withheld spawn evidence limits the agents read: its totals are partial, never complete.
+  assert.deepEqual([clipped.agents.limited, clipped.agents.total.llm_calls_partial, clipped.agents.total.cost_partial],
+    [true, true, true]);
+  assert.deepEqual([whole.agents.limited, whole.agents.total.llm_calls_partial], [false, false]);
+});
+
+test("Codex spawn evidence is withheld with its reason", () => {
+  const { codexSpawnEvidence } = detail;
+  const toMs = to.getTime(), bound = toMs + 24 * 3600000;
+  const spawn = { span_id: "g", span_name: "collaborationspawn_agent" }, other = { span_id: "s", span_name: "exec_command" };
+  const of = (o) => codexSpawnEvidence([spawn, other], { truncated: false, endMs: bound - 120000, toMs, rowCalls: null, ...o });
+  assert.deepEqual(of({}), { ids: ["g"], withheld: null });
+  assert.deepEqual(of({ truncated: true }), { ids: null, withheld: "spans_truncated" });
+  assert.deepEqual(of({ endMs: bound - 30000 }), { ids: null, withheld: "span_window" });
+  assert.deepEqual(of({ endMs: null }), { ids: null, withheld: "turn_end_unknown" });
+  assert.deepEqual(of({ rowCalls: 2 }), { ids: null, withheld: "rollup_spawn_calls" });
+  assert.deepEqual(of({ rowCalls: 1 }), { ids: ["g"], withheld: null });
+});
+
+test("a Codex detail starts the subagent read budget at its own start", async () => {
+  const { AGENT_EXTRA_BUDGET_MS } = await import("./codexAgents.js");
+  const child = uuid(7);
+  const lineage = [
+    { trace_id: "tr1", span_id: "g", parent_id: "x", name: "collaborationspawn_agent", conversation: "c1", turn: U1, start_ms: "0" },
+    { trace_id: "tr1", span_id: "d", parent_id: "g", name: "dispatch_tool_call_with_state", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "i", parent_id: "d", name: "op.dispatch.inter_agent_communication", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "c", parent_id: "i", name: "session_task.turn", conversation: "", turn: child, start_ms: "0" },
+    { trace_id: "tr1", span_id: "r", parent_id: "c", name: "run_turn", conversation: "sub", turn: child, start_ms: "0" },
+  ];
+  let t = 5000;
+  const seen = [];
+  const run = async (sql, params) => {
+    seen.push(params);
+    if (sql.includes("op.dispatch")) return lineage;
+    if (sql.includes("count() OVER ()")) {
+      // The base detail reads take the whole budget.
+      t = 5000 + AGENT_EXTRA_BUDGET_MS;
+      return [{ span_id: "g", parent_id: "", span_name: "collaborationspawn_agent", start_ms: String(ms("2026-11-05T01:00:01Z")),
+        duration_ms: "5", trace_id: "tr1", a_tool_name: "collaborationspawn_agent", total_spans: "1" }];
+    }
+    if (sql.includes("GROUP BY turn_id"))
+      return params.conversationIds ? [turn({ conversation_id: "sub", turn_id: child })] : [turn({ in_bucket: 1 })];
+    if (sql.includes("otel_logs") && params.conversationIds) return [completion("2026-11-05T01:00:05Z", { conversation_id: "sub" })];
+    return [];
+  };
+  const detail = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING,
+    null, () => t);
+  // The lineage read still runs; the subagent turn and completion reads do not.
+  assert.ok(seen.some(p => p.traceIds));
+  assert.ok(!seen.some(p => p.conversationIds));
+  assert.deepEqual(detail.agents.children.map(c => [c.id, c.cost_usd]), [[`codex:sub:${child}`, null]]);
+  assert.deepEqual([detail.task.subagents, detail.agents.limited, detail.agents.total.cost_partial], [1, true, true]);
+});
+
+test("the Codex list reads the rollup behind the gate and keeps raw otherwise", async () => {
+  const run = (rows, seen) => async (sql, params) => {
+    seen.push({ sql, params });
+    if (sql.includes("codex_turns_v1")) return rows;
+    if (sql.includes("otel_traces")) return [];
+    if (sql.includes("codex.sse_event")) return [completion("2026-11-05T01:00:01Z")];
+    return [];
+  };
+  const page = new Date("2026-11-20T00:00:00Z"), pageTo = new Date("2026-11-21T00:00:00Z");
+  const boundary = new Date("2026-11-01T00:00:00Z");
+  const opt = { userExact: "a", client: "codex" };
+  const rawSeen = [];
+  await userTasks(page, pageTo, opt, both, run([], rawSeen), undefined, null);
+  assert.ok(rawSeen.every(s => !s.sql.includes("codex_turns_v1")), "gate unset: raw reads");
+  assert.ok(rawSeen.some(s => s.sql.includes("otel_traces")));
+  const before = [];
+  await userTasks(new Date("2026-11-05T00:00:00Z"), to, opt, both, run([], before), undefined, boundary);
+  assert.ok(before.every(s => !s.sql.includes("codex_turns_v1")), "lookback before the boundary: raw");
+
+  const seen = [];
+  const rows = [{ turn_id: U1, in_bucket: 1, conversation_id: "c1", started_at: "2026-11-20T01:00:00Z",
+    start_ms: String(ms("2026-11-20T01:00:00Z")), end_ms: String(ms("2026-11-20T01:00:10Z")),
+    llm_calls: "2", models: ["openai.gpt-6-astra"], spawn_calls: "3", names_turn: 1 }];
+  const out = await userTasks(page, pageTo, opt, both, run(rows, seen), undefined, boundary);
+  assert.ok(seen.some(s => s.sql.includes("codex_turns_v1")));
+  assert.ok(seen.every(s => !s.sql.includes("otel_traces")), "rollup list never reads spans");
+  const rollupSql = seen.find(s => s.sql.includes("codex_turns_v1"));
+  assert.ok(rollupSql.sql.includes("min_start < {spanTo:DateTime}"));
+  assert.ok(rollupSql.sql.includes("end_ms + 5000 >= toUnixTimestamp({from:DateTime}) * 1000"));
+  assert.equal(rollupSql.params.userExact, "a");
+  assert.equal(out.tasks.length, 1);
+  assert.equal(out.tasks[0].subagent_calls, 3);
+  assert.equal(out.tasks[0].subagents, null);
+});
+
+test("subagent_calls is known only for rows that name the turn on tools", () => {
+  const fold = row => foldCodexTask(turn(row), []).subagent_calls;
+  assert.equal(fold({}), null, "raw rows carry no spawn_calls");
+  assert.equal(fold({ spawn_calls: "4", names_turn: 0 }), null, "before 0.166: not collected");
+  assert.equal(fold({ spawn_calls: "0", names_turn: 1 }), 0, "0.166+: a known zero");
+  assert.equal(fold({ spawn_calls: "2", names_turn: 1 }), 2);
+});
+
+test("the rollup list equals the raw list for the same turns and completions", async () => {
+  const base = (id, at, endAt, inBucket, extra = {}) => ({ turn_id: id, in_bucket: inBucket, conversation_id: "c1",
+    started_at: at, start_ms: String(ms(at)), end_ms: String(ms(endAt)), llm_calls: "2",
+    models: ["openai.gpt-6-astra"], ...extra });
+  // A context turn that started before from, ending inside the bucket, and two bucket turns.
+  const shapes = [
+    base(uuid(10), "2026-11-04T23:59:50Z", "2026-11-05T00:00:30Z", 0),
+    base(uuid(11), "2026-11-05T01:00:00Z", "2026-11-05T01:00:10Z", 1),
+    base(uuid(12), "2026-11-05T03:00:00Z", "2026-11-05T03:00:10Z", 1, { llm_calls: "1" }),
+  ];
+  const rollupRows = shapes.map((r, i) => ({ ...r, spawn_calls: String([2, 0, 5][i]), names_turn: i === 2 ? 0 : 1 }));
+  const completions = [completion("2026-11-05T00:00:20Z"), completion("2026-11-05T01:00:01Z"),
+    completion("2026-11-05T03:00:02Z", { cost_usd: undefined }), completion("2026-11-05T09:00:00Z")];
+  const runFor = rows => async (sql) => {
+    if (sql.includes("codex_turns_v1") || (sql.includes("otel_traces") && sql.includes("'codex'"))) return rows;
+    if (sql.includes("codex.sse_event")) return completions;
+    return [];
+  };
+  const opt = { userExact: "a", client: "codex" };
+  const raw = await userTasks(from, to, opt, both, runFor(shapes), undefined, null);
+  const roll = await userTasks(from, to, opt, both, runFor(rollupRows), undefined, new Date("2026-10-01T00:00:00Z"));
+  const key = t => ({ id: t.id, llm_calls: t.llm_calls, models: t.models, cost_usd: t.cost_usd,
+    cost_partial: t.cost_partial, tokens: t.tokens, started_at: t.started_at, duration_ms: t.duration_ms });
+  assert.equal(raw.tasks.length, 2, "context turn is not a task of this bucket");
+  assert.deepEqual(roll.tasks.map(key), raw.tasks.map(key));
+  assert.deepEqual(roll.unattached_codex, raw.unattached_codex);
+  assert.equal(raw.unattached_codex.completions, 1);
+  assert.deepEqual(roll.coverage, raw.coverage);
+  assert.deepEqual(raw.tasks.map(t => t.subagent_calls), [null, null]);
+  assert.deepEqual(roll.tasks.map(t => t.subagent_calls), [0, null]);
+  // The completion at 00:00:20 attached to the context turn, so its cost is not unattached.
+  const lost = attachCompletions(shapes.slice(1), completions, { ...opts });
+  assert.equal(lost.unattached.completions, 2, "without the context turn that completion is unattached");
+});
+
+// ── Rollup detail (CODEX_TURNS_READ_FROM): the turn's own window ────────
+const { turnHourMs } = await import("./codexTurnsSchema.js");
+const { codexDetailHourFrom } = detail;
+const BOUNDARY = new Date("2026-10-01T00:00:00Z");
+const DAY_MS = 24 * 3600000;
+const v7 = (iso, n = 0) => {
+  const hex = Date.parse(iso).toString(16).padStart(12, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8)}-7000-8000-${String(n).padStart(12, "0")}`;
+};
+const chMs = (text) => Date.parse(text.replace(" ", "T") + "Z");
+// A rollup row (codexTurnsSource.rollupTurnSql shape) of owner "a", conversation c1.
+const rollupRow = (id, at, endAt, extra = {}) => ({ turn_id: id, conversation_id: "c1", started_at: at.slice(0, 19) + "Z",
+  start_ms: String(ms(at)), end_ms: String(ms(endAt)), sampling_calls: "2", legacy_calls: "0", sampling_tries: "0",
+  compactions: "0", app_version: "0.169.0", llm_calls: "2", sampling_span: "codex.sampling",
+  models: ["openai.gpt-6-astra"], spawn_calls: "0", names_turn: 1, ...extra });
+// A store-like fake for owner "a": every turn and completion read honours its bound window, so a
+// read narrowed wrongly changes the result. Raw turn reads return `rawTurns` unclipped.
+const storeRun = ({ turns = [], rawTurns = [], completions = [], spans = [], seen = [], rollupOwners } = {}) =>
+  async (sql, params) => {
+    seen.push({ sql, params });
+    const owned = params.userExact === undefined || params.userExact === "a";
+    const conv = (r) => (params.conversationId === undefined || r.conversation_id === params.conversationId)
+      && (params.conversationIds === undefined || params.conversationIds.includes(r.conversation_id));
+    const bucket = (r) => ({ ...r, in_bucket: +r.start_ms >= chMs(params.from) && +r.start_ms < chMs(params.to) ? 1 : 0 });
+    if (sql.includes("codex_turns_v1") && sql.includes("GROUP BY owner"))
+      return rollupOwners ?? (turns.some(r => r.turn_id === params.turnId) ? [{ owner: "a" }] : []);
+    if (sql.includes("codex_turns_v1")) {
+      if (!owned) return [];
+      return turns.filter(r => {
+        const hour = turnHourMs(r.turn_id, +r.start_ms), s = +r.start_ms, e = +r.end_ms;
+        if (hour < chMs(params.hourFrom) || hour >= chMs(params.hourTo) || !conv(r)) return false;
+        if (params.turnId !== undefined) return r.turn_id === params.turnId;
+        if (params.startFrom !== undefined || params.startTo !== undefined)
+          return (params.startFrom === undefined || s >= params.startFrom) && (params.startTo === undefined || s < params.startTo);
+        return s < chMs(params.spanTo) && e + COMPLETION_SLACK >= chMs(params.from);
+      }).map(bucket);
+    }
+    if (sql.includes("otel_traces") && sql.includes("GROUP BY owner"))
+      return rawTurns.some(r => r.turn_id === params.turnId && r.conversation_id === params.conversationId) ? [{ owner: "a" }] : [];
+    if (sql.includes("otel_traces") && sql.includes("GROUP BY turn_id")) return owned ? rawTurns.filter(conv).map(bucket) : [];
+    if (sql.includes("codex.sse_event"))
+      return owned ? completions.filter(c => conv(c) && +c.timestamp_ms >= chMs(params.logFrom) && +c.timestamp_ms < chMs(params.logTo)) : [];
+    if (sql.includes("count() OVER ()")) return owned ? spans : [];
+    return [];
+  };
+const COMPLETION_SLACK = 5000;
+const codexSpan = (id, at, extra = {}) => ({ span_id: id, parent_id: "", span_name: "codex.sampling", start_ms: String(ms(at)),
+  duration_ms: "1000", trace_id: "tr-rollup", a_model: "openai.gpt-6-astra", total_spans: "1", ...extra });
+const readOf = (seen, pick) => seen.find(s => pick(s));
+const rawTurnRead = (s) => s.sql.includes("otel_traces") && s.sql.includes("GROUP BY turn_id");
+
+test("a rollup Codex detail starts the subagent read budget at its own start", async () => {
+  const { AGENT_EXTRA_BUDGET_MS } = await import("./codexAgents.js");
+  const id = v7("2026-11-05T05:00:00Z", 1), child = uuid(7);
+  const lineage = [
+    { trace_id: "tr1", span_id: "g", parent_id: "x", name: "collaborationspawn_agent", conversation: "c1", turn: id, start_ms: "0" },
+    { trace_id: "tr1", span_id: "d", parent_id: "g", name: "dispatch_tool_call_with_state", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "i", parent_id: "d", name: "op.dispatch.inter_agent_communication", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "c", parent_id: "i", name: "session_task.turn", conversation: "", turn: child, start_ms: "0" },
+    { trace_id: "tr1", span_id: "r", parent_id: "c", name: "run_turn", conversation: "sub", turn: child, start_ms: "0" },
+  ];
+  let t = 5000;
+  const seen = [];
+  const store = storeRun({ seen, turns: [rollupRow(id, "2026-11-05T05:00:00.000Z", "2026-11-05T05:00:10.250Z"),
+    rollupRow(child, "2026-11-05T05:00:02.000Z", "2026-11-05T05:00:08.000Z", { conversation_id: "sub" })],
+  completions: [completion("2026-11-05T05:00:05Z", { conversation_id: "sub" })] });
+  const run = async (sql, params) => {
+    if (sql.includes("op.dispatch")) { seen.push({ sql, params }); return lineage; }
+    if (sql.includes("count() OVER ()")) {
+      seen.push({ sql, params });
+      // The base detail reads take the whole budget.
+      t = 5000 + AGENT_EXTRA_BUDGET_MS;
+      return [codexSpan("g", "2026-11-05T05:00:01Z", { span_name: "collaborationspawn_agent", trace_id: "tr1",
+        a_tool_name: "collaborationspawn_agent" })];
+    }
+    return store(sql, params);
+  };
+  const detail = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING,
+    BOUNDARY, () => t);
+  assert.ok(seen.some(s => s.sql.includes("codex_turns_v1")), "the detail reads the rollup");
+  // The lineage read still runs; the subagent turn and completion reads do not.
+  assert.ok(seen.some(s => s.params.traceIds));
+  assert.ok(!seen.some(s => s.params.conversationIds));
+  assert.deepEqual(detail.agents.children.map(c => [c.id, c.cost_usd]), [[`codex:sub:${child}`, null]]);
+  assert.deepEqual([detail.task.subagents, detail.agents.limited, detail.agents.total.cost_partial], [1, true, true]);
+});
+
+test("on the rollup path the Codex detail reads its turn's own window", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const row = rollupRow(id, "2026-11-05T05:00:00.000Z", "2026-11-05T05:00:10.250Z");
+  const seen = [];
+  const run = storeRun({ turns: [row], spans: [codexSpan("s1", "2026-11-05T05:00:01Z")], seen,
+    completions: [completion("2026-11-05T05:00:02Z")] });
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(out.task.id, `codex:c1:${id}`);
+  assert.equal(out.task.llm_calls, 2);
+  assert.ok(Math.abs(out.task.cost_usd - unitCost) < 1e-12);
+  assert.ok(!seen.some(rawTurnRead), "no raw turn read");
+  const s = ms("2026-11-05T05:00:00Z"), e = ms("2026-11-05T05:00:10.250Z");
+  // Turn row: from the id's hour minus 7 days, never after the list's first hour (from - 7 days),
+  // every hour row of the turn merged, owner and conversation bound.
+  const own = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.turnId !== undefined);
+  assert.deepEqual([own.params.turnId, own.params.conversationId, own.params.userExact, own.params.hourFrom],
+    [id, "c1", "a", "2026-10-29 00:00:00"]);
+  assert.equal(+codexDetailHourFrom(from, v7("2026-11-01T05:30:00Z")), Date.parse("2026-10-25T05:00:00Z"), "id hour - 7 days");
+  assert.equal(+codexDetailHourFrom(new Date("2026-11-01T00:00:00Z"), v7("2026-11-12T05:30:00Z")), Date.parse("2026-10-25T00:00:00Z"),
+    "a late id on a long page: the list's first hour");
+  // Competitors: start in [s, e + slack] and before to + 24h (startTo is exclusive ms).
+  const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
+  assert.deepEqual([competitors.params.startFrom, competitors.params.startTo, competitors.params.conversationId,
+    competitors.params.userExact, competitors.params.hourFrom, competitors.params.turnId], [s, e + 5001, "c1", "a", "2026-10-29 00:00:00", undefined]);
+  // Completions: [max(s - 1h, from), to + 24h): the list's own upper bound, since collector time can
+  // lag the event time the list links by.
+  const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+  assert.deepEqual([completions.params.logFrom, completions.params.logTo, completions.params.conversationId, completions.params.userExact],
+    ["2026-11-05 04:00:00", "2026-11-07 00:00:00", "c1", "a"]);
+  // Spans and skills: [s - 1 min, min(e + 1 min, to + 24h)).
+  const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
+  assert.deepEqual([spanRead.params.spanFrom, spanRead.params.spanTo, spanRead.params.turnId, spanRead.params.userExact],
+    ["2026-11-05 04:59:00", "2026-11-05 05:01:11", id, "a"]);
+  const skills = readOf(seen, x => x.sql.includes("codex.skill_invocation"));
+  assert.deepEqual([skills.params.logFrom, skills.params.logTo, skills.params.turnId, skills.params.conversationId, skills.params.userExact],
+    ["2026-11-05 04:59:00", "2026-11-05 05:01:11", id, "c1", "a"]);
+  // The window values are bound parameters, never SQL text.
+  for (const x of [own, competitors, completions, spanRead, skills])
+    assert.ok(!x.sql.includes(id) && !x.sql.includes("2026-") && !x.sql.includes("'a'"), x.sql.slice(0, 60));
+});
+
+test("the Codex detail keeps its raw reads unless both the list and the turn read the rollup", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const row = rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z");
+  const raw = { ...row, spawn_calls: undefined, names_turn: undefined };
+  const cases = [
+    ["gate unset", from, to, id, null],
+    ["list lookback before the boundary", from, to, id, new Date("2026-10-30T00:00:00Z")],
+    ["non-v7 turn id", from, to, U1, BOUNDARY],
+  ];
+  for (const [label, pageFrom, pageTo, turnId, boundary] of cases) {
+    const seen = [];
+    const run = storeRun({ turns: [{ ...row, turn_id: turnId }], rawTurns: [{ ...raw, turn_id: turnId }], seen,
+      spans: [codexSpan("s1", "2026-11-05T05:00:01Z")] });
+    const out = await userTaskDetail(pageFrom, pageTo, { id: `codex:c1:${turnId}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, boundary);
+    assert.equal(out.task.id, `codex:c1:${turnId}`, label);
+    assert.ok(!seen.some(x => x.sql.includes("codex_turns_v1") && x.params.turnId !== undefined), `${label}: no rollup detail read`);
+    assert.ok(seen.some(rawTurnRead), `${label}: raw turn read`);
+    const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
+    assert.deepEqual([spanRead.params.spanFrom, spanRead.params.spanTo], ["2026-11-04 00:00:00", "2026-11-07 00:00:00"], label);
+    const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+    assert.deepEqual([completions.params.logFrom, completions.params.logTo], ["2026-11-05 00:00:00", "2026-11-07 00:00:00"], label);
+    const skills = readOf(seen, x => x.sql.includes("codex.skill_invocation"));
+    assert.deepEqual([skills.params.logFrom, skills.params.logTo], ["2026-11-04 00:00:00", "2026-11-07 00:00:00"], label);
+  }
+});
+
+test("a rollup miss falls back to the raw detail and never answers not found by itself", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const raw = { ...rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z"), spawn_calls: undefined, names_turn: undefined };
+  // No rollup row for the turn (lost row, or a conversation the merged set lacks): raw read.
+  const seen = [];
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ rawTurns: [raw], seen }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(out.task.id, `codex:c1:${id}`);
+  assert.ok(seen.some(x => x.sql.includes("codex_turns_v1") && x.params.turnId === id));
+  assert.ok(seen.some(rawTurnRead));
+  // A shared link whose rollup owner read finds no owner: the raw owner read decides.
+  const shared = [];
+  const link = await userTaskDetail(from, to, { id: `codex:c1:${id}` }, both, storeRun({ rawTurns: [raw], seen: shared }),
+    DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(link.owner, "a");
+  assert.ok(shared.some(x => x.sql.includes("codex_turns_v1") && x.sql.includes("GROUP BY owner")));
+  assert.ok(shared.some(x => x.sql.includes("otel_traces") && x.sql.includes("GROUP BY owner")));
+  // Two rollup owners: ambiguous there, so raw decides too (here: one owner, the link opens).
+  const two = await userTaskDetail(from, to, { id: `codex:c1:${id}` }, both,
+    storeRun({ rawTurns: [raw], rollupOwners: [{ owner: "a" }, { owner: "b" }] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(two.owner, "a");
+  // Nowhere: not found.
+  const err = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, storeRun({}), DEFAULT_CODEX_PRICING, BOUNDARY)
+    .then(() => null, e => e);
+  assert.ok(err instanceof NotFoundError);
+  // A shared link resolved by the rollup reads everything for that owner.
+  const resolved = [];
+  const viaRollup = await userTaskDetail(from, to, { id: `codex:c1:${id}` }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z")], seen: resolved }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(viaRollup.owner, "a");
+  assert.ok(!resolved.some(x => x.sql.includes("otel_traces") && x.sql.includes("GROUP BY owner")));
+  assert.ok(resolved.filter(x => x.params.userExact !== undefined).every(x => x.params.userExact === "a"));
+});
+
+test("a rollup turn that starts before the page is not a detail of this page", async () => {
+  const id = v7("2026-11-04T23:59:00Z", 1);
+  const seen = [];
+  const run = storeRun({ turns: [rollupRow(id, "2026-11-04T23:59:00Z", "2026-11-05T00:10:00Z")], seen });
+  const err = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, BOUNDARY)
+    .then(() => null, e => e);
+  assert.ok(err instanceof NotFoundError);
+  assert.ok(!seen.some(rawTurnRead), "an out-of-bucket rollup row is an answer, not a miss");
+});
+
+test("the rollup detail equals its rollup list row", async () => {
+  const opt = { userExact: "a", client: "codex" };
+  const check = async (label, pageFrom, pageTo, turns, completions, id, extra = () => {}) => {
+    const list = await userTasks(pageFrom, pageTo, opt, both, storeRun({ turns, completions }), DEFAULT_CODEX_PRICING, BOUNDARY);
+    const seen = [];
+    const detail = await userTaskDetail(pageFrom, pageTo, { id: `codex:c1:${id}`, userExact: "a" }, both,
+      storeRun({ turns, completions, seen, spans: [codexSpan("s1", new Date(+turns.find(t => t.turn_id === id).start_ms + 1000).toISOString())] }),
+      DEFAULT_CODEX_PRICING, BOUNDARY);
+    assert.ok(!seen.some(rawTurnRead), `${label}: rollup detail`);
+    const row = list.tasks.find(t => t.id === `codex:c1:${id}`);
+    assert.ok(row, `${label}: listed`);
+    const key = t => ({ llm_calls: t.llm_calls, models: t.models, cost_usd: t.cost_usd, cost_partial: t.cost_partial,
+      tokens: t.tokens, duration_ms: t.duration_ms, started_at: t.started_at, subagent_calls: t.subagent_calls });
+    assert.deepEqual(key(detail.task), key(row), label);
+    extra({ list, row, detail, seen });
+  };
+  // (a) A later same-conversation turn starting within the slack wins the completion after its start.
+  const a = v7("2026-11-05T05:00:00Z", 1), aNext = v7("2026-11-05T05:00:12Z", 2), aBefore = v7("2026-11-05T04:59:00Z", 3);
+  await check("normal turn", from, to, [
+    rollupRow(aBefore, "2026-11-05T04:59:00Z", "2026-11-05T05:00:30Z"),
+    rollupRow(a, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z"),
+    rollupRow(aNext, "2026-11-05T05:00:12Z", "2026-11-05T05:00:20Z", { llm_calls: "1" }),
+  ], [completion("2026-11-05T05:00:05Z"), completion("2026-11-05T05:00:13Z"),
+    completion("2026-11-05T05:00:06Z", { model: "openai.gpt-6.1-sol", cost_usd: undefined, input_token_count: "" })], a,
+  ({ row, detail }) => {
+    assert.equal(row.subagent_calls, 0);
+    assert.equal(detail.task.subagents, 0, "known zero: no spawn spans, complete, 0.166+");
+    assert.equal(detail.agents.known_zero, true);
+    assert.equal(row.tokens.observed_tokens !== null, true);
+  });
+  // (b) A turn running past to + 24h: unclipped end; the window stops at to + 24h like the list.
+  const b = v7("2026-11-05T20:00:00Z", 4), bLate = v7("2026-11-07T00:30:00Z", 5);
+  await check("turn ending after to + 24h", from, to, [
+    rollupRow(b, "2026-11-05T20:00:00Z", "2026-11-07T02:00:00Z", { spawn_calls: "2" }),
+    rollupRow(bLate, "2026-11-07T00:30:00Z", "2026-11-07T00:50:00Z"),
+  ], [completion("2026-11-05T20:00:05Z"), completion("2026-11-06T23:00:00Z"),
+    // Collector time before to + 24h, event time after the later turn's start: only a read of that
+    // turn (beyond the list's context) would take it away.
+    completion("2026-11-07T00:45:00Z", { timestamp_ms: String(ms("2026-11-06T23:59:59Z")) }),
+    completion("2026-11-07T01:00:00Z")], b,
+  ({ row, detail, seen }) => {
+    assert.equal(row.duration_ms, ms("2026-11-07T02:00:00Z") - ms("2026-11-05T20:00:00Z"));
+    assert.equal(row.llm_calls, 2);
+    assert.equal(row.subagent_calls, 2);
+    // Spans stop at to + 24h, so their spawn calls are partial: never a known zero beside 2 calls.
+    assert.deepEqual([detail.task.subagent_calls, detail.agents.spawn_calls, detail.agents.known_zero, detail.task.subagents],
+      [2, null, false, null]);
+    const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
+    assert.equal(competitors.params.startTo, +to + DAY_MS);
+    const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+    assert.equal(completions.params.logTo, "2026-11-07 00:00:00");
+    const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
+    assert.equal(spanRead.params.spanTo, "2026-11-07 00:00:00");
+  });
+  // (d) A competitor starting exactly at e + slack wins a completion at exactly e + slack: linking
+  // accepts that time, so the competitor bound is inclusive there.
+  const edge = v7("2026-11-05T07:00:00Z", 9), edgeNext = v7("2026-11-05T07:00:15Z", 10);
+  await check("competitor at exactly e + slack", from, to, [
+    rollupRow(edge, "2026-11-05T07:00:00.000Z", "2026-11-05T07:00:10.000Z"),
+    rollupRow(edgeNext, "2026-11-05T07:00:15.000Z", "2026-11-05T07:00:20.000Z"),
+  ], [completion("2026-11-05T07:00:05.000Z"), completion("2026-11-05T07:00:15.000Z")], edge,
+  ({ row, seen }) => {
+    assert.ok(Math.abs(row.cost_usd - unitCost) < 1e-12, "the later turn wins the completion at e + 5 s");
+    const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
+    assert.equal(competitors.params.startTo, ms("2026-11-05T07:00:15.000Z") + 1);
+  });
+  // (e) A completion inside the turn whose collector time lags more than a day behind its end,
+  // still inside the list's read (to + 24h): the list links it, so the detail must too.
+  const lag = v7("2026-11-05T03:00:00Z", 11);
+  await check("collector time lagging past e + 24h", from, to, [
+    rollupRow(lag, "2026-11-05T03:00:00Z", "2026-11-05T03:00:10Z"),
+  ], [completion("2026-11-05T03:00:05Z"),
+    completion("2026-11-05T03:00:06Z", { timestamp_ms: String(ms("2026-11-06T12:00:00Z")) })], lag,
+  ({ row }) => {
+    assert.ok(Math.abs(row.cost_usd - 2 * unitCost) < 1e-12, "the list links both completions");
+    assert.equal(row.cost_partial, false);
+  });
+  // (c) A one-hour link window: completions start at the window, never s - 1h before it.
+  const hourFrom = new Date("2026-11-05T05:00:00Z"), hourTo = new Date("2026-11-05T06:00:00Z");
+  const c = v7("2026-11-05T05:00:00Z", 6), cNext = v7("2026-11-05T05:00:05Z", 7), cPrev = v7("2026-11-05T04:59:50Z", 8);
+  await check("one-hour link window", hourFrom, hourTo, [
+    rollupRow(cPrev, "2026-11-05T04:59:50Z", "2026-11-05T05:00:30Z"),
+    rollupRow(c, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z"),
+    rollupRow(cNext, "2026-11-05T05:00:05Z", "2026-11-05T05:00:20Z"),
+  ], [completion("2026-11-05T04:59:55Z"), completion("2026-11-05T05:00:02Z"), completion("2026-11-05T05:00:07Z")], c,
+  ({ row, seen }) => {
+    assert.ok(Math.abs(row.cost_usd - unitCost) < 1e-12, "one completion: the later turn wins 05:00:07");
+    const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+    assert.equal(completions.params.logFrom, "2026-11-05 05:00:00");
+  });
+});
+
+test("a rollup detail whose spans hold fewer spawn calls than its turn row has no spawn evidence", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const spawn = codexSpan("g1", "2026-11-05T05:00:02Z", { span_name: "collaborationspawn_agent", a_tool_name: "collaborationspawn_agent",
+    total_spans: "2" });
+  const spans = [codexSpan("s1", "2026-11-05T05:00:01Z", { total_spans: "2" }), spawn];
+  const detailFor = async (spawnCalls) => userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z", { spawn_calls: spawnCalls })], spans }),
+    DEFAULT_CODEX_PRICING, BOUNDARY);
+  // Not clipped, but the turn row counts 2 spawn calls and the spans show 1: unknown.
+  const short = await detailFor("2");
+  assert.deepEqual([short.task.subagent_calls, short.agents.spawn_calls, short.agents.unlinked_calls, short.agents.known_zero,
+    short.task.subagents], [2, null, null, false, null]);
+  // The spans account for every call: the spawn call stays known (here unlinked).
+  const whole = await detailFor("1");
+  assert.deepEqual([whole.task.subagent_calls, whole.agents.spawn_calls, whole.agents.unlinked_calls, whole.agents.known_zero],
+    [1, 1, 1, false]);
+  // A known zero needs the turn row's zero too.
+  const zero = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z")], spans: [{ ...spans[0], total_spans: "1" }] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.deepEqual([zero.task.subagent_calls, zero.agents.spawn_calls, zero.agents.known_zero, zero.task.subagents], [0, 0, true, 0]);
+  // A turn whose spans run past to + 24h (span window clipped): unknown even with a zero row count.
+  const longId = v7("2026-11-05T20:00:00Z", 2);
+  const clipped = await userTaskDetail(from, to, { id: `codex:c1:${longId}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(longId, "2026-11-05T20:00:00Z", "2026-11-06T23:59:30Z")],
+      spans: [codexSpan("s1", "2026-11-05T20:00:01Z")] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.deepEqual([clipped.task.subagent_calls, clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents],
+    [0, null, false, null]);
+});
+
+test("a rollup detail whose turn row counts more spawn calls than its spans limits a priced agents read", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1), child = uuid(7);
+  const lineage = [
+    { trace_id: "tr1", span_id: "g", parent_id: "x", name: "collaborationspawn_agent", conversation: "c1", turn: id, start_ms: "0" },
+    { trace_id: "tr1", span_id: "d", parent_id: "g", name: "dispatch_tool_call_with_state", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "i", parent_id: "d", name: "op.dispatch.inter_agent_communication", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "c", parent_id: "i", name: "session_task.turn", conversation: "", turn: child, start_ms: "0" },
+    { trace_id: "tr1", span_id: "r", parent_id: "c", name: "run_turn", conversation: "sub", turn: child, start_ms: "0" },
+  ];
+  const detailFor = async (spawnCalls) => {
+    const store = storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00.000Z", "2026-11-05T05:00:10.250Z", { spawn_calls: spawnCalls }),
+      rollupRow(child, "2026-11-05T05:00:02.000Z", "2026-11-05T05:00:08.000Z", { conversation_id: "sub" })],
+    completions: [completion("2026-11-05T05:00:01Z"), completion("2026-11-05T05:00:05Z", { conversation_id: "sub" })],
+    spans: [codexSpan("g", "2026-11-05T05:00:01Z", { span_name: "collaborationspawn_agent", trace_id: "tr1",
+      a_tool_name: "collaborationspawn_agent" })] });
+    const run = async (sql, params) => sql.includes("op.dispatch") ? lineage : store(sql, params);
+    return userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, BOUNDARY);
+  };
+  // 2 rollup spawn calls, 1 span returned, 1 priced child: the child's cost is known, the read limited.
+  const short = await detailFor("2");
+  assert.equal(short.agents.children.length, 1);
+  assert.ok(Math.abs(short.agents.children[0].cost_usd - unitCost) < 1e-12);
+  assert.deepEqual([short.agents.spawn_calls, short.agents.limited, short.agents.total.llm_calls_partial,
+    short.agents.total.cost_partial], [null, true, true, true]);
+  // Every spawn call seen: the same child is a complete total.
+  const whole = await detailFor("1");
+  assert.deepEqual([whole.agents.spawn_calls, whole.agents.limited, whole.agents.total.cost_partial], [1, false, false]);
+});
+
+test("a rollup detail takes the turn-naming evidence from the row's names_turn", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const detailFor = (extra) => userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z", extra)],
+      spans: [codexSpan("s1", "2026-11-05T05:00:01Z")] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  // The row says no span named the turn although its kept version is 0.166+: no known zero, as the list.
+  const unnamed = await detailFor({ names_turn: 0 });
+  assert.deepEqual([unnamed.task.subagent_calls, unnamed.agents.known_zero, unnamed.task.subagents], [null, false, null]);
+  // A row naming the turn without a version string still has the evidence.
+  const named = await detailFor({ names_turn: 1, app_version: "" });
+  assert.deepEqual([named.task.subagent_calls, named.agents.known_zero, named.task.subagents], [0, true, 0]);
+});
+
+test("a rollup detail gates compactions on the row's version", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const detailFor = (extra) => userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z", { legacy_calls: "2", ...extra })],
+      spans: [codexSpan("s1", "2026-11-05T05:00:01Z")] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  const old = await detailFor({ compactions: "0", app_version: "0.160.1" });
+  assert.deepEqual([old.context.compactions, old.context.compactions_total], [null, null]);
+  // The row counts 3; the bounded spans show none of them: the total stays the row's.
+  const known = await detailFor({ compactions: "3", app_version: "0.161.0" });
+  assert.deepEqual([known.context.compactions.length, known.context.compactions_total, known.context.compactions_partial], [0, 3, true]);
 });
