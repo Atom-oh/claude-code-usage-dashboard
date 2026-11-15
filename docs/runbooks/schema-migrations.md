@@ -21,6 +21,7 @@ installations use `clickhouse-schema.sql` instead.
 | `clickhouse-migration-009.sql` | Requires ledger 004. Add Claude session provider membership and an ingestion view. Use the [provider schema runbook](claude-provider-schema.md) for bounded backfill and `CLAUDE_PROVIDER_GROUPS` activation. |
 | `clickhouse-migration-010.sql` | Requires ledger 004. Add exact turn/request key sets per session-hour. Follow [Session turns](#session-turns-migration-010) for bounded backfill and `SESSION_TURNS_READ_FROM` activation. |
 | `clickhouse-migration-011.sql` | Requires ledger 004 and `otel_traces`. Add `otel_traces.WorkflowRunId`/`WorkflowName` (span `workflow.run_id`/`workflow.name`); deliberately no materialization. |
+| `clickhouse-migration-012.sql` | Requires ledger 004. Add `codex_turns_v1`, per-turn Codex span states, and an ingestion view on `otel_traces`. Run bounded `clickhouse-backfill-012.sql` and read-only `clickhouse-verify-012.sql` before setting `CODEX_TURNS_READ_FROM`. |
 
 Run a numbered migration through one selected pod. `ON CLUSTER` DDL propagates through the
 cluster; the guarded ledger `INSERT` is **not** `ON CLUSTER` and replicates normally. Do not
