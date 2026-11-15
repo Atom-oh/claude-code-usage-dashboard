@@ -111,6 +111,10 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
   const belowBase = (index) => `has_base AND first_lo.2.${index} < base_hi.2.${index}`;
   const decreasing = `temporality = 2 AND ${histogram ? "1" : "monotonic"} AND (${fall}
       OR ${belowBase(2)}${histogram ? ` OR ${belowBase(3)}` : ""})`;
+  // NaN never equals itself, so a lone export with a NaN optional extremum would count as a
+  // conflicting retry and withhold its count and sum; compare the text form instead, where
+  // NaN equals NaN. The fold still treats non-finite extrema as unknown.
+  const differ = (a, b) => `toString(${a}) != toString(${b})`;
   const point = "if(baseline_row, base_hi, last_hi)";
   const compacted = `SELECT toString(fromUnixTimestamp64Nano(${point}.1, 'UTC')) AS timestamp,
     toString(toTimeZone(started, 'UTC')) AS start, '${type}' AS type, ${identity},
@@ -119,7 +123,7 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
       : `${point}.2.2 AS value`},
     if(baseline_row, toUInt64(1), window_points) AS points,
     if(baseline_row, toUInt64(0), invalid_points + toUInt64(${decreasing})
-      + toUInt64(last_hi.2 != last_lo.2 OR has_base AND base_hi.2 != base_lo.2)) AS invalid_samples,
+      + toUInt64(${differ("last_hi.2", "last_lo.2")} OR has_base AND ${differ("base_hi.2", "base_lo.2")})) AS invalid_samples,
     toUInt64(0) AS extremes_missing,
     ${histogram ? `if(baseline_row, toUInt64(${point}.2.2 > 0 AND ${point}.2.3 = 0), sum_ambiguous_points)` : "toUInt64(0)"} AS sum_ambiguous,
     toUInt8(0) AS result_limited

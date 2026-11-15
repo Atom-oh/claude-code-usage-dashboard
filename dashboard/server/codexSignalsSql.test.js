@@ -318,6 +318,20 @@ test("Codex signal SQL against isolated ClickHouse", {
     }
   });
 
+  await t.test("a NaN extremum at a cumulative endpoint withholds only the extrema", () => {
+    const row = { ...base, MetricName: "codex.nan-extremum", Attributes: { model: "nan-fixture" },
+      StartTimeUnix: "2026-09-15 00:01:00", AggregationTemporality: 2, Count: 4, Sum: 40, Min: "nan", Max: 20 };
+    // An identical redelivery of the latest point is not a conflicting retry.
+    insert("histogram", [row, { ...row, TimeUnix: "2026-09-15 00:03:00", Count: 6, Sum: 60 },
+      { ...row, TimeUnix: "2026-09-15 00:03:00", Count: 6, Sum: 60 }]);
+    const result = metric("histogram", { model: "nan-fixture" });
+    const h = result.metrics.find((r) => r.name === "codex.nan-extremum");
+    assert.equal(h.count, 6);
+    assert.equal(h.sum, 60);
+    assert.equal(h.min, null);
+    assert.equal(Number(result.rows.find((r) => r.name === "codex.nan-extremum").invalid_samples), 0);
+  });
+
   for (const type of ["sum", "histogram", "exponential_histogram"]) {
     await t.test(`${type} retains every latest baseline tie after a long export history`, () => {
       const metricName = `codex.baseline-scale.${type}`;

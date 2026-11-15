@@ -104,7 +104,7 @@ each series in SQL to its latest in-window point and its latest point in the thr
 lookback. The interior checks travel with the latest point: invalid samples, a decrease
 (a fall between consecutive in-window points sorted by timestamp, or a first point below
 the baseline) and a conflicting retry at either endpoint (histogram buckets are not
-compared). Sorting per series makes the result independent of part and thread read order.
+compared; a NaN optional extremum equals itself, so it leaves count and sum available). Sorting per series makes the result independent of part and thread read order.
 An interior conflicting retry that keeps the series monotonic cannot change the result and
 is not reported. Cumulative `points` counts stored
 in-window points, including identical redeliveries; DELTA points stay exactly
