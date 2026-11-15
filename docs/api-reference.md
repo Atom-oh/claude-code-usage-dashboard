@@ -441,6 +441,27 @@ supported. Malformed or unknown compact formats are unavailable, never zero.
 This reduces response and cache size; it does not reduce the underlying SQL scan
 or prove a fleet capacity limit.
 
+### `GET /api/clients/skills`
+
+Skill invocations per selected enabled client (`client=all|claude|codex`) with the shared
+filters (user/userExact, model, backend, team; Codex model filtering uses the overview's
+session model evidence). Claude reads `skill_activated` logs, Codex `codex.skill_invocation`
+logs; exact duplicate deliveries (same Timestamp and attribute maps) count once. The window
+ends at the overview's effective end, so the page joins it to the overview's bounds.
+
+Response `{clients, skill_limit, by_client, effective_range}`. Each `by_client` row is
+`{client, skills, skills_limited, totals}`: `skills` are `{skill, calls, explicit, automatic,
+nested, users, sessions}`, most called first, at most `skill_limit` (200; `skills_limited` past
+that). `explicit` is Claude
+`user-slash` or Codex `explicit`, `automatic` Claude `claude-proactive` or Codex `implicit`,
+`nested` Claude `nested-skill` (null for Codex, which has no such kind); other triggers count
+only in `calls`. Events without a label-shaped name stay in one unnamed row (`skill` null;
+its `users`/`sessions` null when several raw names fold into it). `totals` sums the returned
+rows (`{skills, calls, explicit, automatic, nested}`; `skills` counts named rows; a malformed
+count makes its total null). `skills` is null for a malformed read, shown as not collected.
+The cache key carries the client, backend, exact filters and effective end. An empty list
+means no skill event was recorded, not that no skill was used.
+
 ### `GET /api/clients/token-economics`
 
 Returns the [token economics](metrics.md#token-economics) cost chain for the selected enabled

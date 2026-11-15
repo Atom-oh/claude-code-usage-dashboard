@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T07:05:19.082934+00:00",
-  "source_messages": 2018,
+  "updated_at": "2026-11-15T07:32:16.119371+00:00",
+  "source_messages": 2030,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2018,
-      "bytes": 155340,
-      "sha256": "88d12eaa0668bb2e870f1ffa1ed5ab6868e45c8b0b42f23f75ce9d05eab0726c"
+      "messages": 2030,
+      "bytes": 156205,
+      "sha256": "9d51057747e2e57cf9f3caea92ac7111c0b7537b03972dcfd0a57adcfc63966e"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2018,
-      "bytes": 183587,
-      "sha256": "7c7c7600a3d667ced4a85875d6d1d7de3b561ac7b7d2ce24d0905280047215a7"
+      "messages": 2030,
+      "bytes": 184563,
+      "sha256": "c3d50af8c12b7a60bafa6ea5a785113ba5d9d7ae6da84d0e9748cac48914d90c"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2018,
-      "bytes": 192467,
-      "sha256": "21c187aec480d8f993a87c059e7172a085cd9618f9565e27f0957d749117de4b"
+      "messages": 2030,
+      "bytes": 193542,
+      "sha256": "4e67587ea214647a3486a8568a3820978988ee679ce9ae919a2024c6311cefd5"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2018,
-      "bytes": 165156,
-      "sha256": "307c6de97b369a4a201be457315015b9ee3acc4fc50d87566e8dc80dd7254ef0"
+      "messages": 2030,
+      "bytes": 166050,
+      "sha256": "285d8bc716b4edff240d5d5878a36ee635456c4b0b6ed8d2d4c15fdd7b125297"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2018,
-      "bytes": 146900,
-      "sha256": "8df2862dc1134e73ffb5b7e80d2a4ca96b89bba3479dc05156dcca1bab635c16"
+      "messages": 2030,
+      "bytes": 147705,
+      "sha256": "455e78c66fe66af3b47071c35aa218e1b8b92f6d57070ba2c11500dd16f253a4"
     }
   ],
   "catalog_calls": [
@@ -1142,6 +1142,80 @@
       "m4d74eb05b9b5": "en word order",
       "m734e27062552": "en/es count as ×{2} (no plural agreement)",
       "me1a23d5c2d10": "en/es count as label: {0} (no plural agreement)"
+    }
+  },
+  "skill_usage_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-15T07:20:03.078381+00:00",
+    "added_message_count": 12,
+    "added_keys": [
+      "m06eb37c1299f",
+      "m1b8f9875345c",
+      "m1dc80ccab047",
+      "m2ef1e0a0f43a",
+      "m3e6ef8517161",
+      "m67438422c844",
+      "m6eeea76a76fc",
+      "m8aa7e241cf79",
+      "ma9cb5e800b76",
+      "mca7eb2ef0a71",
+      "mdc7506793fcd",
+      "mfeee7328687a"
+    ],
+    "source_sha256": "299f5b461c387433455efb8d8daa71a11aa2f9004cd71ee90523736f7f7e8c2f",
+    "calls": [
+      {
+        "request_sha256": "2f912382d78ce8777f9490bb924f832714d2545e6685afde3495047e614531b4",
+        "usage": {
+          "inputTokens": 311,
+          "outputTokens": 1235,
+          "totalTokens": 1546,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "83c774ece9023a2882ef90e926d9bd2b5860403a2b2c8e04c7e92fb0700fe5af"
+      },
+      {
+        "request_sha256": "00e2ce87f443472685424edb18e3c7b0b34b4c433dc1c905088ea752c9582fdc",
+        "usage": {
+          "inputTokens": 275,
+          "outputTokens": 860,
+          "totalTokens": 1135,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "0de452710a6ec6576b02dd8fb82014d22581ca7bef34a98a0d7ef4e42c0a8f52"
+      },
+      {
+        "request_sha256": "994af7db5d1ea36b96b14d90f324602f7d13ac928c4545132ca5d4fcd78a4d52",
+        "usage": {
+          "inputTokens": 197,
+          "outputTokens": 276,
+          "totalTokens": 473,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "7fc273b149c8b3a841329c8dcc3f0664f699ddaf43532d83bba9ff6c61ce9ba3"
+      }
+    ],
+    "host_corrections": {
+      "m6eeea76a76fc": "es keeps the catalog's existing term 'skill' (masculine)",
+      "m1b8f9875345c": "es keeps the catalog's existing term 'skill' (masculine)",
+      "mca7eb2ef0a71": "es keeps the catalog's existing term 'skill' (masculine)",
+      "m8aa7e241cf79": "es keeps the catalog's existing term 'skill' (masculine)",
+      "m06eb37c1299f": "es keeps the catalog's existing term 'skill' (masculine)",
+      "m1dc80ccab047": "es keeps the catalog's existing term 'skill' (masculine)",
+      "m67438422c844": "en wording",
+      "m2ef1e0a0f43a": "en: name the client list as owner of the records"
+    },
+    "superseded": {
+      "m828bea912443": "single subtitle replaced by per-client sentences before merge"
     }
   }
 }

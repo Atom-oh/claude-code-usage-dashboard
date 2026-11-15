@@ -75,6 +75,9 @@ export default function Clients({ page = "overview" }) {
   // Productivity rows join the overview's by_client rows over the overview's effective bounds.
   const productivity = useApi("/api/clients/productivity", { client, ...effortBounds },
     page === "productivity" && !loading && !error && Boolean(effortBounds.from), { linkedRange: true, hold: stale });
+  // Usage lists skills over the same bounds.
+  const skills = useApi("/api/clients/skills", { client, ...effortBounds },
+    page === "usage" && !loading && !error && Boolean(effortBounds.from), { linkedRange: true, hold: stale });
   // Token economics floors the same bounds to the hour; its trend follows the range's bucket.
   const tokenEconomics = useApi("/api/clients/token-economics", { client, intervalHours: hours, ...effortBounds },
     page === "productivity" && !loading && !error && Boolean(effortBounds.from), { linkedRange: true, hold: stale });
@@ -82,10 +85,15 @@ export default function Clients({ page = "overview" }) {
   // and active-time counters), so on Productivity an empty overview waits for the productivity
   // response and shows the sections when it has observations.
   const productivityPage = page === "productivity" && effortBounds.from;
+  // Skill events are not overview usage rows: on Usage an empty overview still shows the skill
+  // table when skills were recorded, and a failed skills request as its error.
+  const usagePage = page === "usage" && effortBounds.from;
+  const skillsObserved = (skills.data?.by_client || []).some((row) => row.skills === null || row.skills?.length > 0);
   // A failed productivity request is shown as an error in its sections, never as "no data".
   const pageEmpty = empty && !(productivityPage && (productivity.loading || productivity.error
-    || hasProductivityObservations(productivity.data)));
-  const productivityPending = empty && productivityPage && productivity.loading;
+    || hasProductivityObservations(productivity.data)))
+    && !(usagePage && (skills.loading || skills.error || skillsObserved));
+  const productivityPending = empty && ((productivityPage && productivity.loading) || (usagePage && skills.loading));
   const breakdowns = page === "cost" ? <CostBreakdowns clients={clients} data={data}
     loading={loading} error={error} empty={empty} claudeEffort={claudeEffort} codexEffort={codexEffort} /> : null;
 
@@ -115,7 +123,8 @@ export default function Clients({ page = "overview" }) {
         <section data-shared-client-panels><ClientPanels key={`${page}|${client}|${user}|${model}|${backend}|${team}`}
           page={page} data={data} clients={clients} stale={stale}
           previous={page === "trends" ? previous : undefined} breakdowns={breakdowns}
-          productivity={page === "productivity" ? productivity : undefined} /></section></>}
+          productivity={page === "productivity" ? productivity : undefined}
+          skills={page === "usage" ? skills : undefined} /></section></>}
       {(loading || error || pageEmpty) && breakdowns}
       {/* hold: 부모가 기간 변경 응답을 기다리는 동안 상세 패널은 부모의 옛 경계로 요청하지 않는다. */}
       {sections && clients.includes("codex") && <CodexInsights sections={sections}

@@ -342,6 +342,39 @@ function ToolTable({ rows, reliability = false, stale = false }) {
     rows={tools} exportName="clients_tools" stale={stale} />;
 }
 
+// Skills invoked per client (/api/clients/skills) with how each was invoked. Codex has no
+// nested kind ("—"); a client with no recorded skill event shows none recorded, never zero.
+function SkillTable({ api, clients }) {
+  const _locale = useLocale();
+  if (!api) return null;
+  const claude = clients.includes("claude"), codex = clients.includes("codex");
+  const title = translate("m6eeea76a76fc");
+  const subtitle = [claude && translate("ma9cb5e800b76"), codex && translate("mdc7506793fcd"),
+    translate(claude ? "mfeee7328687a" : "m3e6ef8517161"), translate("m67438422c844")].filter(Boolean).join(" ");
+  if (api.loading) return <Card title={title} subtitle={subtitle}><Loading /></Card>;
+  if (api.error) return <Card title={title} subtitle={subtitle}><ErrorBox error={api.error} /></Card>;
+  const byClient = (api.data?.by_client || []).filter((row) => clients.includes(row.client));
+  const rows = byClient.flatMap((row) => (row.skills || []).map((skill) => ({ client: row.client, ...skill })));
+  const limited = byClient.filter((row) => row.skills_limited);
+  // A client whose read came back malformed (skills null) is unavailable, not "none recorded".
+  const unknown = byClient.filter((row) => !Array.isArray(row.skills));
+  const unknownNote = unknown.length > 0 && <p className="text-[12px] text-warning-text">
+    {translate("m2ef1e0a0f43a", [unknown.map((row) => clientName(row.client)).join(", ")])}</p>;
+  if (!rows.length) return <Card title={title} subtitle={subtitle}>
+    {unknown.length < byClient.length && <p className="text-sm text-ink-500">{translate("m1dc80ccab047")}</p>}
+    {unknownNote}</Card>;
+  return <>
+    <ResultTable title={title} subtitle={subtitle}
+      columns={[CLIENT, { key: "skill", label: translate("m2a84c94ce347"), render: text }, number("calls", translate("m7ed9c4cb0ba9")),
+        number("explicit", translate("m1b8f9875345c")), number("automatic", translate("mca7eb2ef0a71")),
+        ...(claude ? [number("nested", translate("m8aa7e241cf79"))] : []), number("users", translate("m1ac6e422b7dc")), number("sessions", translate("me600d4f5926e"))]}
+      rows={rows} exportName="clients_skills" stale={api.stale} />
+    {limited.length > 0 && <p className="-mt-4 text-[12px] text-warning-text">
+      {translate("m06eb37c1299f", [api.data?.skill_limit ?? "—"])} ({limited.map((row) => clientName(row.client)).join(", ")})</p>}
+    {unknownNote && <div className="-mt-4">{unknownNote}</div>}
+  </>;
+}
+
 function Fractions({ rows }) {
   const _locale = useLocale();
   return <Card title={translate("m732e62530adf")}
@@ -361,7 +394,7 @@ function Fractions({ rows }) {
   </Card>;
 }
 
-function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous, breakdowns, productivity }) {
+function ClientPanels({ page = "overview", data = {}, clients = data?.clients || [], stale = false, previous, breakdowns, productivity, skills }) {
   const _locale = useLocale();
   const { from, to } = useRange();
   const rangeKey = `${from.getTime()}|${to.getTime()}`;
@@ -463,6 +496,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
           })))} xKey="client" seriesKey="part" valueKey="value" horizontal
           seriesLabel={(key) => TOKEN_PARTS.find((part) => part.key === key)?.label ?? key} />
         <ToolTable rows={tools} stale={stale} />
+        <SkillTable api={skills} clients={selected} />
       </>;
       break;
     case "users":

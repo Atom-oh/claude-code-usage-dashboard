@@ -2620,7 +2620,7 @@ const PRODUCTIVITY_COUNTERS = [
 ];
 const PRODUCTIVITY_EVENTS = ["user_prompt", "tool_result", "tool_decision"];
 
-function claudeProductivityScope(filters) {
+export function claudeProductivityScope(filters) {
   const scoped = Boolean(filters.model || filters.modelExact || filters.backend);
   const model = normModel("h.Model");
   const cte = scoped ? `, claude_scope_sessions AS (

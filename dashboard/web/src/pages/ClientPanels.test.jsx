@@ -809,3 +809,56 @@ test("token composition retains legend emphasis through every interface language
     await localeStore.select("ko");
   }
 });
+
+function mountSkills(skills, clients = ["claude", "codex"]) {
+  setPiiMask(true);
+  const data = fixture(clients);
+  return render(
+    <MemoryRouter><ConfigProvider config={{ piiMask: true }}>
+      <RangeProvider><ClientPanels page="usage" data={data} clients={clients} skills={skills} /></RangeProvider>
+    </ConfigProvider></MemoryRouter>,
+  );
+}
+
+test("Usage lists each client's skills with explicit, automatic and nested calls", () => {
+  mountSkills({ loading: false, error: null, stale: false, data: { skill_limit: 200, by_client: [
+    { client: "claude", skills_limited: false, skills: [
+      { skill: "superpowers:brainstorming", calls: 32, explicit: 0, automatic: 25, nested: 7, users: 3, sessions: 23 }] },
+    { client: "codex", skills_limited: true, skills: [
+      { skill: "co-agent:pr-autofix", calls: 12, explicit: 5, automatic: 7, nested: null, users: 1, sessions: 6 }] },
+  ] } });
+  const table = card("스킬 사용");
+  const rows = within(table).getAllByRole("row");
+  expect(rows.map((r) => r.textContent).join("|")).toContain("superpowers:brainstorming");
+  const codex = rows.find((r) => r.textContent.includes("co-agent:pr-autofix"));
+  expect(codex.textContent).toContain("Codex");
+  expect(within(table).getByRole("columnheader", { name: /중첩/ })).toBeTruthy();
+  expect(screen.getByText(/스킬이 많아 클라이언트별로 호출이 많은 200개까지만 표시합니다\./).textContent).toContain("Codex");
+});
+
+test("Usage says no skill event was recorded instead of showing zero, and surfaces failures", () => {
+  mountSkills({ loading: false, error: null, stale: false, data: { by_client: [
+    { client: "claude", skills: [], skills_limited: false }, { client: "codex", skills: [], skills_limited: false }] } });
+  expect(card("스킬 사용").textContent).toContain("이 기간에 기록된 스킬 이벤트가 없습니다.");
+  cleanup();
+  mountSkills({ loading: false, error: new Error("boom"), stale: false, data: null });
+  expect(card("스킬 사용").textContent).not.toContain("이 기간에 기록된 스킬 이벤트가 없습니다.");
+});
+
+test("a Codex-only skill table has no nested column and names only Codex's event", () => {
+  mountSkills({ loading: false, error: null, stale: false, data: { by_client: [
+    { client: "codex", skills_limited: false, skills: [
+      { skill: "co-agent:pr-autofix", calls: 12, explicit: 5, automatic: 7, nested: null, users: 1, sessions: 6 }] }] } }, ["codex"]);
+  const table = card("스킬 사용");
+  expect(within(table).queryByRole("columnheader", { name: /중첩/ })).toBeNull();
+  expect(table.textContent).toContain("codex.skill_invocation");
+  expect(table.textContent).not.toContain("skill_activated");
+});
+
+test("a client whose skill read is unknown is marked not collected, not none recorded", () => {
+  mountSkills({ loading: false, error: null, stale: false, data: { skill_limit: 200, by_client: [
+    { client: "claude", skills: null, skills_limited: false, totals: null }] } }, ["claude"]);
+  const table = card("스킬 사용");
+  expect(table.textContent).toContain("Claude Code의 스킬 기록을 읽지 못해 미수집으로 표시합니다.");
+  expect(table.textContent).not.toContain("이 기간에 기록된 스킬 이벤트가 없습니다.");
+});

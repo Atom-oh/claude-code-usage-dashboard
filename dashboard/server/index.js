@@ -2,6 +2,7 @@ import express from "express";
 import { codexInsights, validateInsightsExactFilters, validateInsightsProfile } from "./codexInsights.js";
 import { claudeEffort, validateClaudeEffort } from "./claudeEffort.js";
 import { clientProductivity } from "./clientProductivity.js";
+import { clientSkills } from "./clientSkills.js";
 import { clientTokenEconomics, tokenEconomicsWindow } from "./clientTokenEconomics.js";
 import path from "node:path";
 import os from "node:os";
@@ -316,7 +317,7 @@ function routeCacheKey(path, query) {
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
       || path === "/api/clients/productivity" || path === "/api/clients/activity"
-      || path === "/api/clients/token-economics") {
+      || path === "/api/clients/token-economics" || path === "/api/clients/skills") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
@@ -341,7 +342,8 @@ function routeCacheKey(path, query) {
         const { from, to } = parseRange(query, RANGE_OPTS);
         const w = tokenEconomicsWindow(from, to, filters.clients, query.intervalHours);
         return { effectiveFrom: w.from.toISOString(), effectiveTo: w.to.toISOString(), bucketSeconds: String(w.bucketSeconds) };
-      })() : path === "/api/clients/productivity" || path === "/api/clients/activity" ? (() => {
+      })() : path === "/api/clients/productivity" || path === "/api/clients/activity"
+        || path === "/api/clients/skills" ? (() => {
         const { from, to } = parseRange(query, RANGE_OPTS);
         return { effectiveTo: effectiveClientEnd(from, to, filters.clients).toISOString() };
       })() : {}) };
@@ -433,6 +435,11 @@ route("/api/clients/overview",
 // Shared Productivity rows; users/sessions/tokens/costs stay in the overview response.
 route("/api/clients/productivity",
   (from, to, raw) => clientProductivity(from, to, raw, clientConfig.enabledClients),
+  { client: null, warm: false, validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
+
+// Shared skill usage per client (Claude skill_activated, Codex codex.skill_invocation).
+route("/api/clients/skills",
+  (from, to, raw) => clientSkills(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: false, validate: (raw) => validateClientFilters(raw, clientConfig.enabledClients) });
 
 // Token economics (cost chain, decomposition, unit/model/outcome economics, exemplars) over
