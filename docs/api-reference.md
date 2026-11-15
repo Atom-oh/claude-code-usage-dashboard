@@ -755,11 +755,13 @@ either way. Without `userExact` (a shared task link) the owner is resolved: the 
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
 access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`
-(Codex adds `agents` and `activity`). With `CODEX_TURNS_READ_FROM` set, a Codex detail whose
-turn id is UUIDv7 at or after it reads the turn's own window (later same-conversation turns
-until its end plus 5 s, completions from an hour before it to a day after it, spans and skills a
-minute either side, each capped at the list's reads) and equals its list row; a turn missing from
-the rollup reads raw. `owner` being the exact identity the task belongs to:
+(Codex adds `agents` and `activity`); `owner` is the exact identity the task belongs to. With
+`CODEX_TURNS_READ_FROM` set, a Codex detail reads the rollup only when its list would (`from`
+minus 7 days at or after the boundary) and its turn id is UUIDv7 with a time at or after the
+boundary and within [`from` - 7 days, `to` + 1 day]. It then reads the turn's own window (later
+same-conversation turns until its end plus 5 s, completions from an hour before it to a day after
+it, spans and skills a minute either side, each capped at the list's reads) and equals its list
+row. Any other detail, and a turn missing from the rollup, reads raw. Fields:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no model-call span).
@@ -850,8 +852,8 @@ the rollup reads raw. `owner` being the exact identity the task belongs to:
   kept), else null. `known_zero` is true only with positive evidence of no subagent calls:
   complete spans that do not reach the clipped span window (`to` + 24h), no spawn, follow-up or
   `send_input` span of the turn, no link, no communication send of the conversation in the turn's
-  window, and a version that names its turn on tool spans (0.166+); `task.subagents` is then `0`
-  instead of null.
+  window, and turn-naming evidence (the rollup row's `names_turn`, else a version that names its
+  turn on tool spans, 0.166+); `task.subagents` is then `0` instead of null.
   `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans (CLI: `multi_agent_v1` `spawn_agent`) and those
   with no linked turn (null when spans are truncated). `total` is `{llm_calls,
   llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
