@@ -265,6 +265,34 @@ test("the containing turn of a call is the latest turn of its conversation start
   assert.equal(containingTurn(turns, "nope", ms("2026-11-05T01:00:05Z")), null);
 });
 
+test("a synthetic turn id covering the call never wins its containing turn over the UUID turn", () => {
+  // `auto-compact-N` ids repeat across conversations, so their merged window identifies no turn.
+  const turns = [turn("root", P, "2026-11-05T01:00:00Z", { end_ms: String(ms("2026-11-05T01:10:00Z")) }),
+    turn("root", "auto-compact-1", "2026-11-05T01:00:30Z", { end_ms: String(ms("2026-11-05T01:05:00Z")) })];
+  assert.equal(containingTurn(turns, "root", ms("2026-11-05T01:00:40Z")).turn_id, P);
+  assert.equal(containingTurn([turns[1]], "root", ms("2026-11-05T01:00:40Z")), null);
+});
+
+test("a legacy spawn call inside a synthetic turn's window stays this UUID turn's call", async () => {
+  const run = legacyRun([], { rows: legacyChain("t", 1, C1, { tool: "collaborationspawn_agent" }),
+    logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:40Z")) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z", { end_ms: String(ms("2026-11-05T01:10:00Z")) }),
+      turn("root", "auto-compact-1", "2026-11-05T01:00:30Z", { end_ms: String(ms("2026-11-05T01:05:00Z")) }),
+      turn("sub1", C1, "2026-11-05T01:00:41Z")],
+    completions: [completion("sub1", "2026-11-05T01:00:45Z")] });
+  const turnInfo = { turnId: P, conversationId: "root", startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:10:00Z"),
+    traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual(out.children.map(c => [c.id, c.parent_id, c.tool]), [[`codex:sub1:${C1}`, rootTask.id, "spawn_agent"]]);
+  assert.deepEqual([out.spawn_calls, out.unlinked_calls, out.limited], [1, 0, false]);
+  // The subagent's own detail keeps its parent link to the UUID turn.
+  const child = await codexAgents("kim@x.com", { turnId: C1, conversationId: "sub1", startMs: ms("2026-11-05T01:00:41Z"),
+    endMs: ms("2026-11-05T01:00:51Z"), traceIds: ["t"] }, { id: `codex:sub1:${C1}`, llm_calls: 2, cost_usd: 1, cost_partial: false },
+  [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.equal(child.parent.id, `codex:root:${P}`);
+});
+
 test("resolved legacy spans link like 0.166 spans, and unresolved ones stay unlinked", () => {
   const rows = [...legacyChain("t", 1, C1), ...legacyChain("t", 2, C2), ...chain("t", 3, P, G1, "sub3")];
   const turns = [turn("root", P, "2026-11-05T01:00:00Z")];
@@ -474,6 +502,14 @@ test("the parent is the sender's turn running when a send within 60 s before the
   // An earlier turn of this conversation after the send took it instead.
   const earlier = [...turns, turn("root", C1, "2026-11-05T00:59:55Z")];
   assert.equal(communicationLinks([send("spawn", "up", "root", "2026-11-05T00:59:50Z")], earlier, own).parent, null);
+});
+
+test("a synthetic sender turn covering the send never hides the sender's UUID turn", () => {
+  const turns = [turn("up", C2, "2026-11-04T23:00:00Z", { end_ms: String(ms("2026-11-05T02:00:00Z")) }),
+    turn("up", "auto-compact-1", "2026-11-05T00:59:00Z", { end_ms: String(ms("2026-11-05T01:30:00Z")) }),
+    turn("root", P, "2026-11-05T01:00:00Z")];
+  const { parent } = communicationLinks([send("spawn", "up", "root", "2026-11-05T00:59:50Z")], turns, own);
+  assert.deepEqual([parent?.parent_turn, parent?.parent_conversation], [C2, "up"]);
 });
 
 test("a send without a receiver turn of the owner does not link", () => {

@@ -158,9 +158,11 @@ GROUP BY turn_id`,
 
 // The turn of `conversation` running at atMs (turn rows as codexTurnSql returns them): the latest
 // one started by then, else (within the slack) the earliest. None is null: the call stays unlinked.
+// Only UUID-shaped turn ids compete: a synthetic id (`auto-compact-N`) groups spans of several
+// conversations into one window that identifies no turn (taskTraces.js TURN_ID).
 export function containingTurn(turns, conversation, atMs) {
   if (!Number.isFinite(atMs)) return null;
-  const within = turns.filter((t) => t.conversation_id === conversation
+  const within = turns.filter((t) => t.conversation_id === conversation && TURN_ID.test(t.turn_id ?? "")
     && count(t.start_ms) !== null && count(t.end_ms) !== null
     && count(t.start_ms) - LEGACY_CALL_SLACK_MS <= atMs && atMs <= count(t.end_ms) + LEGACY_CALL_SLACK_MS);
   const started = within.filter((t) => count(t.start_ms) <= atMs);
@@ -297,7 +299,7 @@ export function communicationLinks(sends, turns, { conversationId, turnId, start
     if (turns.some((t) => t.conversation_id === conversationId && t.turn_id !== turnId && starts(t) !== null
       && starts(t) >= x.t && starts(t) <= startMs)) continue;
     const owner = containingTurn(turns, x.sender, x.t);
-    if (!owner || !TURN_ID.test(owner.turn_id ?? "")) continue;
+    if (!owner) continue;
     parent = { parent_turn: owner.turn_id, parent_conversation: x.sender, tool_span: `communication:${x.kind}`, tool_span_id: null,
       child_turn: turnId, child_conversation: conversationId, child_start_ms: startMs, depth: 1 };
     break;
