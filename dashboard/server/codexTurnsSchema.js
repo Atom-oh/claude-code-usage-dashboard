@@ -1,0 +1,191 @@
+// One row per Codex turn (and turn hour), merged from aggregate states, so task reads get each
+// turn's exact window without scanning raw spans over the page
+// (docs/superpowers/specs/2026-11-15-codex-turn-rollup-design.md). A turn's merged rows equal
+// the raw codexTurnSql row: every count is a set of span ids, so duplicate deliveries, the live
+// view and repeated or overlapping backfills union, never add. The row is unclipped.
+// A transform change requires a new table version and migration.
+import { TURN_SPAN } from "./taskTraces.js";
+import { SPAWN_SPANS } from "./codexAgents.js";
+
+export const TURNS_ROLLUP_TABLE = "codex_turns_v1";
+export const TURNS_ROLLUP_COLUMNS = [
+  ["TurnHour", "DateTime"], ["UserIdentity", "String"], ["TurnId", "String"],
+  ["Conversations", "AggregateFunction(groupUniqArray, String)"],
+  ["StartTs", "SimpleAggregateFunction(min, DateTime64(9))"],
+  ["EndTs", "SimpleAggregateFunction(max, DateTime64(9))"],
+  ["SamplingSpans", "AggregateFunction(uniqExact, UInt64)"],
+  ["LegacySpans", "AggregateFunction(uniqExact, UInt64)"],
+  ["SamplingModels", "AggregateFunction(groupUniqArray, String)"],
+  ["LegacyModels", "AggregateFunction(groupUniqArray, String)"],
+  ["SamplingTries", "AggregateFunction(uniqExact, UInt64)"],
+  ["Compactions", "AggregateFunction(uniqExact, UInt64)"],
+  ["SpawnCalls", "AggregateFunction(uniqExact, UInt64)"],
+  ["NamesTurnOnTools", "SimpleAggregateFunction(max, UInt8)"],
+  ["AppVersion", "SimpleAggregateFunction(anyLast, String)"],
+];
+const ORDER = "UserIdentity, TurnHour, TurnId";
+
+// A UUIDv7 id's first 48 bits are its Unix milliseconds; the 15th character is the version.
+// Only UUID-shaped ids qualify (synthetic ids such as `auto-compact-N` repeat across turns).
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_V7_SQL = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+const HOUR_MS = 3600000;
+
+// UTC hour of a UUIDv7 turn id (the row's TurnHour), else null: such a turn's rows carry their
+// spans' hours instead.
+export function turnIdHour(turnId) {
+  if (typeof turnId !== "string" || !UUID_V7.test(turnId)) return null;
+  const ms = Number.parseInt(turnId.slice(0, 8) + turnId.slice(9, 13), 16);
+  return new Date(ms - (ms % HOUR_MS));
+}
+
+// SQL of turnIdHour, with the span's UTC hour for any other id.
+export function turnHourSql(turnIdExpr, tsExpr) {
+  const ms = `reinterpretAsUInt64(reverse(unhex(concat(substring(${turnIdExpr}, 1, 8), substring(${turnIdExpr}, 10, 4)))))`;
+  return `if(match(${turnIdExpr}, '${UUID_V7_SQL}'),
+      toStartOfHour(toDateTime(intDiv(${ms}, 1000), 'UTC')),
+      toStartOfHour(toDateTime(${tsExpr}, 'UTC')))`;
+}
+
+// namesTurnOnTools() (taskTraces.js) in SQL: Codex 0.166 and later name the turn on tool spans.
+// Major and minor are compared as numbers, as Number() parses them; suffixes are ignored.
+export function namesTurnOnToolsSql(versionExpr) {
+  const groups = `extractGroups(${versionExpr}, '^(\\\\d+)\\\\.(\\\\d+)')`;
+  return `toUInt8(length(${groups}) = 2
+      AND (toFloat64OrZero(${groups}[1]) > 0 OR toFloat64OrZero(${groups}[2]) >= 166))`;
+}
+
+const TURN_ID = "coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id'])";
+const SPAWN = () => `SpanName IN (${SPAWN_SPANS.map(name => `'${name}'`).join(", ")})`;
+
+// One record per stored Codex turn span with its derived columns, as codexTurnSql reads them.
+// The end is the raw read's millisecond end (start ms + whole duration ms), so the merged
+// maximum equals its end_ms exactly. Aliases avoid otel_traces column names.
+export function codexTurnSpans(where = "1") {
+  return `SELECT ${turnHourSql("turn_id_raw", "Timestamp")} AS TurnHour,
+    coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') AS UserIdentity,
+    ${TURN_ID} AS turn_id_raw,
+    turn_id_raw AS TurnId,
+    SpanAttributes['conversation.id'] AS turn_conversation,
+    Timestamp AS span_start,
+    toDateTime64(fromUnixTimestamp64Milli(toUnixTimestamp64Milli(Timestamp) + intDiv(Duration, 1000000), 'UTC'), 9) AS span_end,
+    SpanName,
+    cityHash64(TraceId, SpanId) AS span_key,
+    coalesce(nullIf(SpanAttributes['model'], ''), SpanAttributes['gen_ai.request.model']) AS span_model,
+    ResourceAttributes['service.version'] AS span_version,
+    ${namesTurnOnToolsSql("span_version")} AS span_names_turn
+  FROM claude_code.otel_traces
+  WHERE ResourceAttributes['client'] = 'codex'
+    AND ${TURN_SPAN}
+    AND (${where})`;
+}
+
+export function codexTurnsTransform(where = "1") {
+  return `SELECT TurnHour, UserIdentity, TurnId,
+  groupUniqArrayStateIf(turn_conversation, turn_conversation != '') AS Conversations,
+  min(span_start) AS StartTs,
+  max(span_end) AS EndTs,
+  uniqExactStateIf(span_key, SpanName = 'codex.sampling') AS SamplingSpans,
+  uniqExactStateIf(span_key, SpanName = 'run_sampling_request') AS LegacySpans,
+  groupUniqArrayStateIf(span_model, SpanName = 'codex.sampling' AND span_model != '') AS SamplingModels,
+  groupUniqArrayStateIf(span_model, SpanName = 'run_sampling_request' AND span_model != '') AS LegacyModels,
+  uniqExactStateIf(span_key, SpanName = 'try_run_sampling_request') AS SamplingTries,
+  uniqExactStateIf(span_key, SpanName = 'codex.compaction') AS Compactions,
+  uniqExactStateIf(span_key, ${SPAWN()}) AS SpawnCalls,
+  max(span_names_turn) AS NamesTurnOnTools,
+  anyIf(span_version, span_version != '') AS AppVersion
+FROM (
+  ${codexTurnSpans(where)}
+)
+WHERE TurnId != ''
+GROUP BY TurnHour, UserIdentity, TurnId`;
+}
+
+export function codexTurnsSchemaSql({ replicated = false } = {}) {
+  const cluster = replicated ? " ON CLUSTER 'replicated'" : "";
+  return `CREATE TABLE IF NOT EXISTS claude_code.${TURNS_ROLLUP_TABLE}${cluster}
+(
+  ${TURNS_ROLLUP_COLUMNS.map(([column, type]) => `${column} ${type} CODEC(ZSTD(1))`).join(",\n  ")}
+)
+ENGINE = ${replicated ? `ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/${TURNS_ROLLUP_TABLE}', '{replica}')` : "AggregatingMergeTree()"}
+PARTITION BY toYYYYMM(TurnHour)
+ORDER BY (${ORDER})
+TTL ${replicated ? "TurnHour + INTERVAL 45 DAY TO VOLUME 'cold',\n  " : ""}TurnHour + INTERVAL 90 DAY DELETE${replicated ? "\nSETTINGS storage_policy = 'hot_cold'" : ""};
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.${TURNS_ROLLUP_TABLE}_mv${cluster}
+TO claude_code.${TURNS_ROLLUP_TABLE}
+DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
+${codexTurnsTransform()};`;
+}
+
+export function codexTurnsBackfillSql() {
+  const from = "{backfillFrom:DateTime('UTC')}", to = "{backfillTo:DateTime('UTC')}";
+  return `SELECT throwIf(${to} <= ${from}
+  OR dateDiff('second', ${from}, ${to}) > 86400,
+  'Codex turns backfill requires a positive interval of at most one day');
+
+INSERT INTO claude_code.${TURNS_ROLLUP_TABLE} (${TURNS_ROLLUP_COLUMNS.map(([name]) => name).join(", ")})
+${codexTurnsTransform(`Timestamp >= ${from} AND Timestamp < ${to}`)};`;
+}
+
+// Activation gate: for turns whose first TurnHour is in one hour-aligned UTC window, the merged
+// rollup against raw spans in [verifyFrom - 1h, verifyTo + 24h), grouped by owner and turn id
+// (a non-v7 turn's hour rows merge). A turn whose raw end reaches verifyTo + 23h may be clipped by
+// that range: it is reported as clipped and kept out of differs. Any differs = 1 row blocks, as
+// does a turn with two conversations (reads pick one). A turn present on one side only differs.
+export function codexTurnsVerifySql() {
+  const from = "{verifyFrom:DateTime('UTC')}", to = "{verifyTo:DateTime('UTC')}";
+  const lower = `${from} - INTERVAL 1 HOUR`, upper = `${to} + INTERVAL 24 HOUR`;
+  const scope = `HAVING min(TurnHour) >= ${from} AND min(TurnHour) < ${to}`;
+  const pairs = ["conversations", "start_ts", "end_ts", "sampling", "legacy", "sampling_models",
+    "legacy_models", "tries", "compactions", "spawns", "names_turn"];
+  return `SELECT throwIf(${to} <= ${from}
+  OR toStartOfHour(${from}) != ${from} OR toStartOfHour(${to}) != ${to},
+  'Codex turns verification requires a positive hour-aligned UTC window');
+
+SELECT turn_id, differs, clipped
+FROM (
+  SELECT TurnId AS turn_id,
+    ifNull(t.present, 0) = 1 AS t_present, ifNull(r.present, 0) = 1 AS r_present,
+    toUInt8(r_present AND r.end_ts >= ${to} + INTERVAL 23 HOUR) AS clipped,
+    toUInt8(NOT (t_present AND r_present) OR (NOT clipped AND (length(t.conversations) > 1
+      OR ${pairs.map(name => `t.${name} != r.${name}`).join("\n      OR ")}
+      OR NOT hasAll(if(empty(r.versions), [''], r.versions), t.versions)))) AS differs
+  FROM (
+    SELECT UserIdentity, TurnId, toUInt8(1) AS present,
+      arraySort(groupUniqArrayMerge(Conversations)) AS conversations,
+      min(StartTs) AS start_ts, max(EndTs) AS end_ts,
+      uniqExactMerge(SamplingSpans) AS sampling, uniqExactMerge(LegacySpans) AS legacy,
+      arraySort(groupUniqArrayMerge(SamplingModels)) AS sampling_models,
+      arraySort(groupUniqArrayMerge(LegacyModels)) AS legacy_models,
+      uniqExactMerge(SamplingTries) AS tries, uniqExactMerge(Compactions) AS compactions,
+      uniqExactMerge(SpawnCalls) AS spawns, max(NamesTurnOnTools) AS names_turn,
+      groupUniqArray(AppVersion) AS versions
+    FROM claude_code.${TURNS_ROLLUP_TABLE}
+    WHERE TurnHour >= ${lower} AND TurnHour < ${upper}
+    GROUP BY UserIdentity, TurnId
+    ${scope}
+  ) AS t
+  FULL OUTER JOIN (
+    SELECT UserIdentity, TurnId, toUInt8(1) AS present,
+      arraySort(groupUniqArrayIf(turn_conversation, turn_conversation != '')) AS conversations,
+      min(span_start) AS start_ts, max(span_end) AS end_ts,
+      uniqExactIf(span_key, SpanName = 'codex.sampling') AS sampling,
+      uniqExactIf(span_key, SpanName = 'run_sampling_request') AS legacy,
+      arraySort(groupUniqArrayIf(span_model, SpanName = 'codex.sampling' AND span_model != '')) AS sampling_models,
+      arraySort(groupUniqArrayIf(span_model, SpanName = 'run_sampling_request' AND span_model != '')) AS legacy_models,
+      uniqExactIf(span_key, SpanName = 'try_run_sampling_request') AS tries,
+      uniqExactIf(span_key, SpanName = 'codex.compaction') AS compactions,
+      uniqExactIf(span_key, ${SPAWN()}) AS spawns,
+      max(span_names_turn) AS names_turn,
+      groupUniqArrayIf(span_version, span_version != '') AS versions
+    FROM (
+    ${codexTurnSpans(`Timestamp >= ${lower} AND Timestamp < ${upper}`)}
+    )
+    WHERE TurnId != ''
+    GROUP BY UserIdentity, TurnId
+    ${scope}
+  ) AS r USING (UserIdentity, TurnId)
+)
+ORDER BY differs DESC, clipped DESC, turn_id;`;
+}

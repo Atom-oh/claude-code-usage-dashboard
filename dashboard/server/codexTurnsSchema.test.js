@@ -1,0 +1,123 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  TURNS_ROLLUP_COLUMNS, TURNS_ROLLUP_TABLE, codexTurnsBackfillSql, codexTurnsSchemaSql,
+  codexTurnSpans, codexTurnsTransform, codexTurnsVerifySql, namesTurnOnToolsSql, turnHourSql, turnIdHour,
+} from "./codexTurnsSchema.js";
+import { TURN_SPAN } from "./taskTraces.js";
+import { SPAWN_SPANS } from "./codexAgents.js";
+
+const FROM = "{backfillFrom:DateTime('UTC')}", TO = "{backfillTo:DateTime('UTC')}";
+const VFROM = "{verifyFrom:DateTime('UTC')}", VTO = "{verifyTo:DateTime('UTC')}";
+
+test("table columns are the spec's turn row plus the retry, compaction, spawn and version columns", () => {
+  assert.equal(TURNS_ROLLUP_TABLE, "codex_turns_v1");
+  assert.deepEqual(TURNS_ROLLUP_COLUMNS, [
+    ["TurnHour", "DateTime"], ["UserIdentity", "String"], ["TurnId", "String"],
+    ["Conversations", "AggregateFunction(groupUniqArray, String)"],
+    ["StartTs", "SimpleAggregateFunction(min, DateTime64(9))"],
+    ["EndTs", "SimpleAggregateFunction(max, DateTime64(9))"],
+    ["SamplingSpans", "AggregateFunction(uniqExact, UInt64)"],
+    ["LegacySpans", "AggregateFunction(uniqExact, UInt64)"],
+    ["SamplingModels", "AggregateFunction(groupUniqArray, String)"],
+    ["LegacyModels", "AggregateFunction(groupUniqArray, String)"],
+    ["SamplingTries", "AggregateFunction(uniqExact, UInt64)"],
+    ["Compactions", "AggregateFunction(uniqExact, UInt64)"],
+    ["SpawnCalls", "AggregateFunction(uniqExact, UInt64)"],
+    ["NamesTurnOnTools", "SimpleAggregateFunction(max, UInt8)"],
+    ["AppVersion", "SimpleAggregateFunction(anyLast, String)"],
+  ]);
+});
+
+test("DDL has the spec's engine, partition, order, retention and storage policy", () => {
+  const local = codexTurnsSchemaSql(), replicated = codexTurnsSchemaSql({ replicated: true });
+  for (const sql of [local, replicated]) {
+    assert.ok(sql.includes("CREATE TABLE IF NOT EXISTS claude_code.codex_turns_v1"));
+    assert.ok(sql.includes("PARTITION BY toYYYYMM(TurnHour)"));
+    assert.ok(sql.includes("ORDER BY (UserIdentity, TurnHour, TurnId)"));
+    assert.ok(sql.includes("TurnHour + INTERVAL 90 DAY DELETE"));
+    assert.ok(sql.includes("CREATE MATERIALIZED VIEW IF NOT EXISTS claude_code.codex_turns_v1_mv"));
+    assert.ok(sql.includes("TO claude_code.codex_turns_v1\n"));
+    assert.ok(sql.includes("DEFINER = CURRENT_USER SQL SECURITY DEFINER"));
+  }
+  assert.ok(local.includes("ENGINE = AggregatingMergeTree()"));
+  assert.doesNotMatch(local, /ON CLUSTER|TO VOLUME|storage_policy/);
+  assert.ok(replicated.includes("ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/codex_turns_v1', '{replica}')"));
+  assert.ok(replicated.includes("TTL TurnHour + INTERVAL 45 DAY TO VOLUME 'cold',\n  TurnHour + INTERVAL 90 DAY DELETE"));
+  assert.ok(replicated.includes("SETTINGS storage_policy = 'hot_cold'"));
+  assert.equal(replicated.match(/ON CLUSTER 'replicated'/g).length, 2);
+});
+
+test("view takes Codex turn spans and keys every count by span id", () => {
+  const sql = codexTurnsTransform();
+  for (const part of [
+    "FROM claude_code.otel_traces", "ResourceAttributes['client'] = 'codex'", TURN_SPAN,
+    "coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id'])",
+    "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')",
+    "coalesce(nullIf(SpanAttributes['model'], ''), SpanAttributes['gen_ai.request.model'])",
+    "SpanAttributes['conversation.id']", "ResourceAttributes['service.version']",
+    "cityHash64(TraceId, SpanId)", "intDiv(Duration, 1000000)",
+    "groupUniqArrayStateIf(turn_conversation, turn_conversation != '') AS Conversations",
+    "uniqExactStateIf(span_key, SpanName = 'codex.sampling') AS SamplingSpans",
+    "uniqExactStateIf(span_key, SpanName = 'run_sampling_request') AS LegacySpans",
+    "uniqExactStateIf(span_key, SpanName = 'try_run_sampling_request') AS SamplingTries",
+    "uniqExactStateIf(span_key, SpanName = 'codex.compaction') AS Compactions",
+    `uniqExactStateIf(span_key, SpanName IN (${SPAWN_SPANS.map(name => `'${name}'`).join(", ")})) AS SpawnCalls`,
+    "max(span_names_turn) AS NamesTurnOnTools", "anyIf(span_version, span_version != '') AS AppVersion",
+    "WHERE TurnId != ''", "GROUP BY TurnHour, UserIdentity, TurnId",
+  ]) assert.ok(sql.includes(part), part);
+  // Raw `LIMIT 1 BY TraceId, SpanId` is reproduced by span-keyed sets, never by row counts.
+  assert.doesNotMatch(sql, /count(If)?\(|LIMIT/);
+  assert.doesNotMatch(codexTurnsSchemaSql(), /\{[a-zA-Z]+:/);
+});
+
+test("turn hour comes from a UUIDv7 id, else from the span", () => {
+  const sql = turnHourSql("t.id", "t.ts");
+  assert.ok(sql.includes("match(t.id, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')"));
+  assert.ok(sql.includes("unhex(concat(substring(t.id, 1, 8), substring(t.id, 10, 4)))"));
+  assert.ok(sql.includes("toStartOfHour(toDateTime(t.ts, 'UTC'))"));
+  assert.equal(turnIdHour("01a14f6d-7899-7a83-8000-000000000000")?.toISOString(), "2026-10-18T14:00:00.000Z");
+  assert.equal(turnIdHour("01A14F6D-7899-7A83-8000-000000000000")?.toISOString(), "2026-10-18T14:00:00.000Z");
+  for (const id of ["01a14f6d-7899-4a83-8000-000000000000", "auto-compact-7", "", null, undefined,
+    "01a14f6d-7899-7a83-8000-00000000000", "01a14f6g-7899-7a83-8000-000000000000"])
+    assert.equal(turnIdHour(id), null, String(id));
+});
+
+test("version rule parses major.minor numerically and ignores pre-release suffixes", () => {
+  const sql = namesTurnOnToolsSql("v");
+  assert.ok(sql.includes("extractGroups(v, '^(\\\\d+)\\\\.(\\\\d+)')"));
+  assert.ok(sql.includes("toFloat64OrZero"));
+  assert.ok(sql.includes(">= 166"));
+  assert.ok(codexTurnsTransform().includes(`${namesTurnOnToolsSql("span_version")} AS span_names_turn`));
+});
+
+test("backfill is bounded to one day and repeats the view's transform", () => {
+  const sql = codexTurnsBackfillSql();
+  assert.ok(sql.includes(`dateDiff('second', ${FROM}, ${TO}) > 86400`));
+  assert.ok(sql.includes(`${TO} <= ${FROM}`));
+  assert.ok(sql.includes("'Codex turns backfill requires a positive interval of at most one day'"));
+  assert.ok(sql.includes(`INSERT INTO claude_code.codex_turns_v1 (${TURNS_ROLLUP_COLUMNS.map(([name]) => name).join(", ")})`));
+  assert.ok(sql.includes(codexTurnsTransform(`Timestamp >= ${FROM} AND Timestamp < ${TO}`)));
+});
+
+test("verify compares merged rows with raw spans and keeps clipped turns out of differs", () => {
+  const sql = codexTurnsVerifySql();
+  assert.doesNotMatch(sql, /INSERT|ALTER|CREATE|DELETE/);
+  for (const part of [
+    `toStartOfHour(${VFROM}) != ${VFROM}`, `toStartOfHour(${VTO}) != ${VTO}`,
+    "'Codex turns verification requires a positive hour-aligned UTC window'",
+    `Timestamp >= ${VFROM} - INTERVAL 1 HOUR AND Timestamp < ${VTO} + INTERVAL 24 HOUR`,
+    `TurnHour >= ${VFROM} - INTERVAL 1 HOUR AND TurnHour < ${VTO} + INTERVAL 24 HOUR`,
+    `HAVING min(TurnHour) >= ${VFROM} AND min(TurnHour) < ${VTO}`,
+    `r.end_ts >= ${VTO} + INTERVAL 23 HOUR`,
+    "groupUniqArrayMerge(Conversations)", "uniqExactMerge(SamplingSpans)", "uniqExactMerge(SpawnCalls)",
+    "length(t.conversations) > 1", "FULL OUTER JOIN", "USING (UserIdentity, TurnId)",
+  ]) assert.ok(sql.includes(part), part);
+  // Output contract: one row per turn; a clipped turn never sets differs unless a side is missing.
+  assert.match(sql, /SELECT turn_id, differs, clipped\nFROM \(/);
+  assert.match(sql, /AS differs/);
+  assert.match(sql, /NOT \(t_present AND r_present\) OR \(NOT clipped AND /);
+  // The raw side reads the same span records as the view.
+  assert.ok(codexTurnsTransform().includes(codexTurnSpans("1")));
+  assert.ok(sql.includes(codexTurnSpans(`Timestamp >= ${VFROM} - INTERVAL 1 HOUR AND Timestamp < ${VTO} + INTERVAL 24 HOUR`)));
+});
