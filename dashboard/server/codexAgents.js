@@ -25,6 +25,13 @@ import { EXACT_USER, SPAN_SLACK_MS, CODEX_TURN_LIMIT, CODEX_COMPLETION_LIMIT, TU
 // Subagent levels followed below the task's turn, and subagent turns returned in all.
 export const AGENT_DEPTH = 3;
 export const AGENT_LIMIT = 50;
+// Time from the detail's start after which no read beyond the lineage span read starts (legacy
+// call-log, turn-conversation and turn reads, the communication fallback, and the subagent turn
+// and completion reads that price the links). A detail loads within the dashboard's 25 s budget;
+// the base Codex detail of the longest observed session takes about 20-22 s before any subagent
+// read, so a detail past 12 s issues only the lineage read and returns its links unpriced and
+// limited instead of exceeding the budget. A read batch started before the bound may run past it.
+export const AGENT_EXTRA_BUDGET_MS = 12000;
 // Traces of the task's spans read, and lineage spans read from them.
 export const LINEAGE_TRACE_LIMIT = 200;
 export const LINEAGE_SPAN_LIMIT = 50000;
@@ -368,8 +375,18 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
 // turn: { turnId, conversationId, startMs, endMs, traceIds, tracesPartial, namesTurn } of the detail's own turn and spans.
 // A parent turn that started over a day before the lineage window shows its clipped start.
 // One lineage read over the turn's traces, then one turn and one completion read over every
-// subagent conversation found.
-export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices }) {
+// subagent conversation found. `detailStart` (ms of `now()`, default: this call) starts the
+// AGENT_EXTRA_BUDGET_MS clock; a read skipped once it is spent leaves the result limited (no
+// known zero, partial cost) with the links the walk already found.
+export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices, detailStart = null, now = Date.now }) {
+  const started = detailStart ?? now();
+  let spent = false;
+  // May an optional read start? Once the budget is spent it stays spent, and the result is limited.
+  const extra = () => {
+    spent ||= now() - started >= AGENT_EXTRA_BUDGET_MS;
+    if (spent) limited = true;
+    return !spent;
+  };
   const traceIds = turn.traceIds.slice(0, LINEAGE_TRACE_LIMIT);
   let limited = Boolean(turn.tracesPartial) || turn.traceIds.length > traceIds.length;
   if (!traceIds.length || turn.startMs === null || turn.endMs === null)
@@ -388,14 +405,14 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   let conversations = new Map(), turnRows = [];
   const read = new Set();
   const needs = legacyNeeds(rows);
-  if (needs.callIds.length || needs.childTurns.length) {
+  if ((needs.callIds.length || needs.childTurns.length) && extra()) {
     const callSql = needs.callIds.length ? codexCallLogSql(owner, needs.callIds, turn.startMs, turn.endMs) : null;
     const convSql = needs.childTurns.length ? codexTurnConversationSql(owner, needs.childTurns, turn.startMs, turn.endMs) : null;
     const [callLogs, turnConversations] = await Promise.all([callSql ? run(callSql.sql, callSql.params) : [],
       convSql ? run(convSql.sql, convSql.params) : []]);
     const candidates = [...new Set([...callLogs.map((l) => l.conversation), ...turnConversations.map((t) => t.conversation),
       ...rows.filter((r) => NAMES_CONVERSATION.includes(r.name)).map((r) => r.conversation)])].filter((c) => IDENT.test(c ?? "")).sort();
-    if (candidates.length) {
+    if (candidates.length && extra()) {
       const s = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: candidates });
       const got = await run(s.sql, s.params);
       if (got.length > CODEX_TURN_LIMIT) limited = true;
@@ -414,7 +431,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   // No traced child: the communication logs may still name the turn's subagents (and, without a
   // traced parent, its parent), and a send of the turn rules out a known zero. One log read, then
   // one owner-filtered turn read of the conversations they name. A traced child adds no reads.
-  if (!walked.links.length && IDENT.test(turn.conversationId ?? "")) {
+  if (!walked.links.length && IDENT.test(turn.conversationId ?? "") && extra()) {
     const s = codexCommunicationSql(owner, turn.conversationId, turn.startMs, turn.endMs);
     const got = await run(s.sql, s.params);
     if (got.length > COMMUNICATION_LIMIT) limited = true;
@@ -422,7 +439,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     sendsSeen = sends.some((x) => x.sender === turn.conversationId && count(x.at_ms) >= turn.startMs && count(x.at_ms) <= turn.endMs);
     const others = [...new Set(sends.flatMap((x) => [x.sender, x.receiver]).filter((c) => IDENT.test(c ?? "")))].sort();
     const wanted = [...new Set([turn.conversationId, ...others])].filter((c) => !read.has(c));
-    if (sends.length && wanted.length) {
+    if (sends.length && wanted.length && extra()) {
       const t = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: wanted });
       const rowsRead = await run(t.sql, t.params);
       if (rowsRead.length > CODEX_TURN_LIMIT) limited = true;
@@ -442,7 +459,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   const turnIds = [...new Set([...conversationIds, ...(parentConversation ? [parentConversation] : [])])];
   const missing = turnIds.filter((c) => !read.has(c));
   let entries = [];
-  if (turnIds.length) {
+  if (turnIds.length && extra()) {
     const turnsSql = missing.length ? codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: missing }) : null;
     const completionsSql = conversationIds.length ? codexCompletionSql(lineageFrom, lineageTo, q, { conversationIds }) : null;
     const [turns, completions] = await Promise.all([turnsSql ? run(turnsSql.sql, turnsSql.params) : [],

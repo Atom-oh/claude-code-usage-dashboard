@@ -581,7 +581,10 @@ export function foldTaskDetail(task, spanRows, evidence = [], extra = []) {
   return task.client === "codex" ? foldCodexDetail(task, spanRows, extra) : foldClaudeDetail(task, spanRows, evidence, extra);
 }
 
-export async function userTaskDetail(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices()) {
+// `clock` (ms) times the Codex subagent reads' budget (codexAgents.js AGENT_EXTRA_BUDGET_MS) from
+// the detail's start.
+export async function userTaskDetail(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices(), clock = Date.now) {
+  const detailStart = clock();
   const { task, userExact } = validateTaskDetailQuery(raw, enabledClients);
   if (task.client === "claude") {
     const sql = claudeDetailSql(from, to, task.traceId, { userExact });
@@ -640,7 +643,8 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   }
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
-    traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices });
+    traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices,
+    detailStart, now: clock });
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
   return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, activity, environment: null, owner };

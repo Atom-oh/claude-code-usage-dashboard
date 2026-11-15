@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AGENT_DEPTH, AGENT_LIMIT, COMMUNICATION_CHILD_MS, LEGACY_CALL_SLACK_MS, LINEAGE_SPAN_LIMIT, LINK_WINDOW_MS, SPAWN_SPANS, agentCount,
+import { AGENT_DEPTH, AGENT_EXTRA_BUDGET_MS, AGENT_LIMIT, COMMUNICATION_CHILD_MS, LEGACY_CALL_SLACK_MS, LINEAGE_SPAN_LIMIT, LINK_WINDOW_MS, SPAWN_SPANS, agentCount,
   codexCallLogSql, codexCommunicationSql, codexLineageSql, codexAgents, communicationLinks, codexTurnConversationSql, containingTurn, foldAgents, legacyNeeds, linkWindow,
   resolveLegacy, walkLineage } from "./codexAgents.js";
 import { codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
@@ -591,3 +591,91 @@ test("a communication tool label is spawn or followup", () => {
   assert.equal(out.children[0].tool, "followup");
   assert.equal(out.links_source, null);
 });
+
+// A clock that jumps past the extra-read budget when a read matching `at` runs (no real sleeps).
+const budgetRun = (inner, at) => {
+  let t = 1000;
+  const seen = [];
+  const run = async (sql, params) => {
+    seen.push(sql);
+    const out = await inner(sql, params);
+    if (at(sql)) t = 1000 + AGENT_EXTRA_BUDGET_MS;
+    return out;
+  };
+  return { run, seen, now: () => t, detailStart: 1000 };
+};
+const isLineage = (sql) => sql.includes("op.dispatch");
+
+test("the extra-read budget is 12 s from the detail's start", () => {
+  assert.equal(AGENT_EXTRA_BUDGET_MS, 12000);
+});
+
+test("a budget spent before legacy resolution keeps the traced links without costs, limited", async () => {
+  const rows = [...chain("t", 2, P, C2, "sub2"), ...legacyChain("t", 1, C1)];
+  const inner = legacyRun([], { rows, logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z"), turn("sub2", C2, "2026-11-05T01:00:02Z")] });
+  const b = budgetRun(inner, isLineage);
+  const turnInfo = { turnId: P, conversationId: "root", startMs: T0, endMs: T1, traceIds: ["t"], namesTurn: true };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run: b.run, prices: DEFAULT_CODEX_PRICING,
+    detailStart: b.detailStart, now: b.now });
+  assert.equal(b.seen.length, 1);
+  assert.deepEqual(out.children.map(c => [c.id, c.cost_usd, c.cost_partial]), [[`codex:sub2:${C2}`, null, true]]);
+  assert.deepEqual([out.limited, out.total.cost_partial, out.known_zero], [true, true, false]);
+  // Spent after the call-log reads: no turn read, the legacy call stays unresolved.
+  const mid = budgetRun(inner, (sql) => sql.includes("codex.tool_result"));
+  const half = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run: mid.run, prices: DEFAULT_CODEX_PRICING,
+    detailStart: mid.detailStart, now: mid.now });
+  assert.equal(mid.seen.filter(s => s.includes("GROUP BY turn_id") && !s.includes("{turnIds")).length, 0);
+  assert.deepEqual([half.children.map(c => c.id), half.limited, half.known_zero], [[`codex:sub2:${C2}`], true, false]);
+});
+
+test("a budget spent before pricing lists the links without costs, limited", async () => {
+  const inner = legacyRun([], { rows: chain("t", 1, P, C1, "sub1"), logs: [], conversations: [],
+    turns: [turn("sub1", C1, "2026-11-05T01:00:02Z")], completions: [completion("sub1", "2026-11-05T01:00:05Z")] });
+  const b = budgetRun(inner, isLineage);
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, ["g1"], { from, to, run: b.run, prices: DEFAULT_CODEX_PRICING,
+    detailStart: b.detailStart, now: b.now });
+  assert.equal(b.seen.length, 1);
+  assert.deepEqual(out.children.map(c => [c.id, c.llm_calls, c.cost_usd, c.cost_partial]), [[`codex:sub1:${C1}`, null, null, true]]);
+  assert.deepEqual([out.subagents, out.limited, out.total.cost_partial, out.unlinked_calls], [1, true, true, 0]);
+});
+
+test("a budget spent before the communication fallback reads no logs and has no known zero", async () => {
+  const inner = commRun([], { sends: [send("spawn", "root", "sub1", "2026-11-05T01:00:02Z")], turns: [turn("sub1", C1, "2026-11-05T01:00:03Z")] });
+  const b = budgetRun(inner, isLineage);
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: b.run, prices: DEFAULT_CODEX_PRICING,
+    detailStart: b.detailStart, now: b.now });
+  assert.ok(!b.seen.some(s => s.includes("codex.agent_communication")));
+  assert.deepEqual([out.children.length, out.links_source, out.limited, out.known_zero, agentCount(out)], [0, null, true, false, null]);
+  // Spent after the log read: the sends still block a known zero, and the turn read is skipped.
+  const mid = budgetRun(inner, (sql) => sql.includes("codex.agent_communication"));
+  const half = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: mid.run, prices: DEFAULT_CODEX_PRICING,
+    detailStart: mid.detailStart, now: mid.now });
+  assert.ok(!mid.seen.some(s => s.includes("GROUP BY turn_id")));
+  assert.deepEqual([half.children.length, half.limited, half.known_zero], [0, true, false]);
+});
+
+test("a budget not spent leaves results and reads unchanged", async () => {
+  const cases = [
+    () => legacyRun([], { rows: [...chain("t", 2, P, C2, "sub2"), ...legacyChain("t", 1, C1)],
+      logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) }],
+      conversations: [{ turn_id: C1, conversation: "sub1" }],
+      turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z"), turn("sub2", C2, "2026-11-05T01:00:02Z")],
+      completions: [completion("sub1", "2026-11-05T01:00:05Z")] }),
+    () => commRun([], { sends: [send("spawn", "root", "sub1", "2026-11-05T01:00:02Z")], turns: [turn("sub1", C1, "2026-11-05T01:00:03Z")],
+      completions: [completion("sub1", "2026-11-05T01:00:05Z")] }),
+  ];
+  for (const make of cases) {
+    const plain = [], timed = [];
+    const count = (seen, inner) => async (sql, params) => { seen.push(sql); return inner(sql, params); };
+    const base = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: count(plain, make()), prices: DEFAULT_CODEX_PRICING });
+    // Just under the budget at every read.
+    const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: count(timed, make()), prices: DEFAULT_CODEX_PRICING,
+      detailStart: 0, now: () => AGENT_EXTRA_BUDGET_MS - 1 });
+    assert.deepEqual(out, base);
+    assert.deepEqual(timed, plain);
+    assert.ok(plain.length > 2);
+  }
+});
+

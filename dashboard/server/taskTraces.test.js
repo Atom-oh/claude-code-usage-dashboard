@@ -1406,3 +1406,39 @@ test("a raw Codex detail whose spans reach the clipped span window has no spawn 
   const clipped = await detailFor("2026-11-05T20:00:00Z", "2026-11-06T23:59:30Z");
   assert.deepEqual([clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents], [null, false, null]);
 });
+
+test("a Codex detail starts the subagent read budget at its own start", async () => {
+  const { AGENT_EXTRA_BUDGET_MS } = await import("./codexAgents.js");
+  const child = uuid(7);
+  const lineage = [
+    { trace_id: "tr1", span_id: "g", parent_id: "x", name: "collaborationspawn_agent", conversation: "c1", turn: U1, start_ms: "0" },
+    { trace_id: "tr1", span_id: "d", parent_id: "g", name: "dispatch_tool_call_with_state", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "i", parent_id: "d", name: "op.dispatch.inter_agent_communication", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "c", parent_id: "i", name: "session_task.turn", conversation: "", turn: child, start_ms: "0" },
+    { trace_id: "tr1", span_id: "r", parent_id: "c", name: "run_turn", conversation: "sub", turn: child, start_ms: "0" },
+  ];
+  let t = 5000;
+  const seen = [];
+  const run = async (sql, params) => {
+    seen.push(params);
+    if (sql.includes("op.dispatch")) return lineage;
+    if (sql.includes("count() OVER ()")) {
+      // The base detail reads take the whole budget.
+      t = 5000 + AGENT_EXTRA_BUDGET_MS;
+      return [{ span_id: "g", parent_id: "", span_name: "collaborationspawn_agent", start_ms: String(ms("2026-11-05T01:00:01Z")),
+        duration_ms: "5", trace_id: "tr1", a_tool_name: "collaborationspawn_agent", total_spans: "1" }];
+    }
+    if (sql.includes("GROUP BY turn_id"))
+      return params.conversationIds ? [turn({ conversation_id: "sub", turn_id: child })] : [turn({ in_bucket: 1 })];
+    if (sql.includes("otel_logs") && params.conversationIds) return [completion("2026-11-05T01:00:05Z", { conversation_id: "sub" })];
+    return [];
+  };
+  const detail = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING,
+    () => t);
+  // The lineage read still runs; the subagent turn and completion reads do not.
+  assert.ok(seen.some(p => p.traceIds));
+  assert.ok(!seen.some(p => p.conversationIds));
+  assert.deepEqual(detail.agents.children.map(c => [c.id, c.cost_usd]), [[`codex:sub:${child}`, null]]);
+  assert.deepEqual([detail.task.subagents, detail.agents.limited, detail.agents.total.cost_partial], [1, true, true]);
+});
+
