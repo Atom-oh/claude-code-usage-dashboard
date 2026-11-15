@@ -153,6 +153,8 @@ try {
     getSetting('max_memory_usage_for_user') AS max_memory_usage_for_user,
     getSetting('max_bytes_before_external_group_by') AS external_group_by,
     getSetting('max_bytes_before_external_sort') AS external_sort,
+    getSetting('max_temporary_data_on_disk_size_for_query') AS temp_for_query,
+    getSetting('max_temporary_data_on_disk_size_for_user') AS temp_for_user,
     getSetting('max_result_bytes') AS max_result_bytes,
     getSetting('max_rows_to_read') AS max_rows_to_read`);
   console.log(JSON.stringify(rows));
@@ -188,7 +190,8 @@ For TLS certificates requiring DNS, use verified replica DNS names instead of Po
 never disable certificate verification. Match each returned hostname to its replica.
 Expected: `otel_reader`, readonly/cancellation `1`,
 execution `60`, memory `8000000000`, memory for user `15000000000`, external GROUP BY and
-sort `4000000000`, result bytes `104857600`, rows read `2000000000`.
+sort `4000000000`, temporary data `10000000000` per query and `20000000000` per user,
+result bytes `104857600`, rows read `2000000000`.
 Any mismatch blocks rollout; a balanced service session cannot prove every replica.
 For a failed probe, inspect private dashboard/operator logs, service `targetPort`,
 replica endpoints and network policy. Keep credentials, connection URLs and query

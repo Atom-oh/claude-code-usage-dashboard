@@ -168,13 +168,16 @@ resource "kubectl_manifest" "chi" {
           # Per query 8GB, all reader queries on one server 15GB: the 24Gi pod limit gives
           # max_server_memory_usage ≈ 23.2GB (ratio 0.9), leaving room for the ~2.2GiB
           # steady state and ingest/merges. GROUP BY and ORDER BY spill to disk at 4GB
-          # (half the per-query limit) instead of failing.
+          # (half the per-query limit) instead of failing, up to the temporary-data caps.
           "readonly/max_memory_usage"                   = "8000000000"
           "readonly/max_memory_usage_for_user"          = "15000000000"
           "readonly/max_bytes_before_external_group_by" = "4000000000"
           "readonly/max_bytes_before_external_sort"     = "4000000000"
-          "readonly/max_result_bytes"                   = "104857600"
-          "readonly/max_rows_to_read"                   = "2000000000"
+          # Spills land on the 100Gi hot volume (33GiB free on 2026-11-15); cap them.
+          "readonly/max_temporary_data_on_disk_size_for_query" = "10000000000"
+          "readonly/max_temporary_data_on_disk_size_for_user"  = "20000000000"
+          "readonly/max_result_bytes"                          = "104857600"
+          "readonly/max_rows_to_read"                          = "2000000000"
         }
         # 콜드 티어링: hot(EBS gp3, 기본 disk) → cold(S3), TTL로 이동. 실제 TTL은 스키마 쪽
         # (ConfigMap clickhouse-schema-replicated)에서 `TTL ... TO VOLUME 'cold'`로 건다.

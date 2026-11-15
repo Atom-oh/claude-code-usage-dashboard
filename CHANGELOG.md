@@ -19,10 +19,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
   read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
-  queries), with GROUP BY/ORDER BY spilling to disk at 4GB. 30-day Codex insights queries
-  failed at the old limit.
-- Bundle the five interface languages with the application so switching languages
-  does not depend on separate catalog requests or files removed during a rollout.
+  queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at
+  10GB per query and 20GB per server. 30-day Codex insights queries failed at the old
+  limit.
+
+## [1.11.0] - 2026-11-15
 
 ### Added
 
@@ -35,6 +36,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Bundle the five interface languages with the application so switching languages
+  does not depend on separate catalog requests or files removed during a rollout.
 - The Codex efficiency card's expanded whole-range panel no longer shows four blank tiles
   whenever one request in the range has no collected usage. With recorded completions, it
   keeps only the HTTP request and session metrics (the cache and reasoning ratios above
