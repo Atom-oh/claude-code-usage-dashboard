@@ -276,32 +276,65 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
 }
 
 // turn: { turnId, startMs, endMs, traceIds, tracesPartial } of the detail's own turn and spans.
+// A parent turn that started over a day before the lineage window shows its clipped start.
 // One lineage read over the turn's traces, then one turn and one completion read over every
 // subagent conversation found.
-export async function codexAgents(owner, turn, task, spawnSpanIds, { from, to, run, prices }) {
+export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices }) {
   const traceIds = turn.traceIds.slice(0, LINEAGE_TRACE_LIMIT);
   let limited = Boolean(turn.tracesPartial) || turn.traceIds.length > traceIds.length;
   if (!traceIds.length || turn.startMs === null || turn.endMs === null)
     return foldAgents({ task, limited, spawnSpanIds });
   const lineage = codexLineageSql(owner, traceIds, turn.startMs, turn.endMs);
-  const rows = await run(lineage.sql, lineage.params);
-  if (rows.length > LINEAGE_SPAN_LIMIT) limited = true;
-  const walked = walkLineage(rows.slice(0, LINEAGE_SPAN_LIMIT), turn.turnId);
+  const lineageRows = await run(lineage.sql, lineage.params);
+  if (lineageRows.length > LINEAGE_SPAN_LIMIT) limited = true;
+  let rows = lineageRows.slice(0, LINEAGE_SPAN_LIMIT);
+  const q = { userExact: owner };
+  // Subagent turns start inside the lineage window, so their turns (with the competitors that could
+  // win their completions, read 24h either side) and completions are read for that window only,
+  // not the page's whole range.
+  const lineageFrom = new Date(turn.startMs - LINEAGE_LEAD_MS), lineageTo = new Date(turn.endMs + SPAN_SLACK_MS);
+  // Before Codex 0.166: resolve the spans that name no turn or conversation, reading the turns of
+  // every conversation involved once, before the walk.
+  let conversations = new Map(), turnRows = [];
+  const read = new Set();
+  const needs = legacyNeeds(rows);
+  if (needs.callIds.length || needs.childTurns.length) {
+    const callSql = needs.callIds.length ? codexCallLogSql(owner, needs.callIds, turn.startMs, turn.endMs) : null;
+    const convSql = needs.childTurns.length ? codexTurnConversationSql(owner, needs.childTurns, turn.startMs, turn.endMs) : null;
+    const [callLogs, turnConversations] = await Promise.all([callSql ? run(callSql.sql, callSql.params) : [],
+      convSql ? run(convSql.sql, convSql.params) : []]);
+    const candidates = [...new Set([...callLogs.map((l) => l.conversation), ...turnConversations.map((t) => t.conversation),
+      ...rows.filter((r) => r.name === "run_turn").map((r) => r.conversation)])].filter((c) => IDENT.test(c ?? "")).sort();
+    if (candidates.length) {
+      const s = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: candidates });
+      const got = await run(s.sql, s.params);
+      if (got.length > CODEX_TURN_LIMIT) limited = true;
+      turnRows = got.slice(0, CODEX_TURN_LIMIT);
+      for (const c of candidates) read.add(c);
+    }
+    ({ rows, conversations } = resolveLegacy(rows, callLogs, turnConversations, turnRows));
+    // A legacy call left without a turn may be this turn's: the result is incomplete.
+    if (rows.some((r) => SPAWN_SPANS.includes(r.name) && !r.turn)) limited = true;
+    if (spawnSpanIds !== null) spawnSpanIds = [...new Set([...spawnSpanIds,
+      ...rows.filter((r) => SPAWN_SPANS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id)])];
+  }
+  const walked = walkLineage(rows, turn.turnId, conversations);
   limited ||= walked.limited;
   const conversationIds = [...new Set(walked.links.map((l) => l.child_conversation).filter((c) => IDENT.test(c ?? "")))];
   const parentConversation = walked.parent && IDENT.test(walked.parent.parent_conversation ?? "")
     ? walked.parent.parent_conversation : null;
   const turnIds = [...new Set([...conversationIds, ...(parentConversation ? [parentConversation] : [])])];
+  const missing = turnIds.filter((c) => !read.has(c));
   let entries = [];
-  if (conversationIds.length || turnIds.length) {
-    const q = { userExact: owner };
-    const turnsSql = codexTurnSql(from, to, q, { conversationIds: turnIds });
-    const completionsSql = conversationIds.length ? codexCompletionSql(from, to, q, { conversationIds }) : null;
-    const [turns, completions] = await Promise.all([run(turnsSql.sql, turnsSql.params),
+  if (turnIds.length) {
+    const turnsSql = missing.length ? codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: missing }) : null;
+    const completionsSql = conversationIds.length ? codexCompletionSql(lineageFrom, lineageTo, q, { conversationIds }) : null;
+    const [turns, completions] = await Promise.all([turnsSql ? run(turnsSql.sql, turnsSql.params) : [],
       completionsSql ? run(completionsSql.sql, completionsSql.params) : []]);
     if (turns.length > CODEX_TURN_LIMIT || completions.length > CODEX_COMPLETION_LIMIT) limited = true;
-    entries = linkCompletions(turns.slice(0, CODEX_TURN_LIMIT), completions.slice(0, CODEX_COMPLETION_LIMIT),
-      { prices }).entries;
+    const wanted = new Set(turnIds);
+    const allTurns = [...turnRows.filter((t) => wanted.has(t.conversation_id)), ...turns.slice(0, CODEX_TURN_LIMIT)];
+    entries = linkCompletions(allTurns, completions.slice(0, CODEX_COMPLETION_LIMIT), { prices }).entries;
   }
   return foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds });
 }

@@ -63,6 +63,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   guides, with matching control names and synthetic capture provenance.
 - Use a localized React calendar with an explicit completion control for each
   date or time selection; keep second precision and apply the range separately.
+- Codex task details also link subagent turns for Codex before 0.166, whose lineage spans
+  name no turn or conversation: the spawn/follow-up call is matched to its `codex.tool_result`
+  log and to the calling conversation's turn running at that time.
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
   read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
   queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at
