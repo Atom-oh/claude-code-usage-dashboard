@@ -720,7 +720,15 @@ listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
 "observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
 from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
-null (no attribute links a subagent conversation; the detail's `agents` follows the trace). Spans carry no usage: tokens and cost come only from unique
+null (no attribute links a subagent conversation; the detail's `agents` follows the trace).
+`subagent_calls` counts the turn's spawn and follow-up calls (`spawn_agent`, `followup_task`,
+`multi_agent_v1` `spawn_agent`), not subagent conversations; it is null unless the rollup read
+is active (`CODEX_TURNS_READ_FROM` set and the list's start minus 7 days not before it) and the
+turn's Codex version is 0.166 or later, so a null is not collected, never zero, and `0` means no
+call. With the rollup active the list reads the migration 012 turn rollup instead of raw spans;
+its rows equal the raw rows except that a turn running past `to + 24h` shows its true end;
+unset or an earlier range keeps raw reads
+([schema runbook](runbooks/schema-migrations.md#codex-turns-migration-012)). Spans carry no usage: tokens and cost come only from unique
 usage-bearing `response.completed` completions of the same conversation whose event
 time falls in `[start, end + 5s]` (latest-starting turn when several; each completion
 once), priced per completion with the Codex AWS list estimate (`cost_basis:
@@ -747,7 +755,11 @@ either way. Without `userExact` (a shared task link) the owner is resolved: the 
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
 access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`
-(Codex adds `agents` and `activity`), `owner` being the exact identity the task belongs to:
+(Codex adds `agents` and `activity`). With `CODEX_TURNS_READ_FROM` set, a Codex detail whose
+turn id is UUIDv7 at or after it reads the turn's own window (later same-conversation turns
+until its end plus 5 s, completions from an hour before it to a day after it, spans and skills a
+minute either side, each capped at the list's reads) and equals its list row; a turn missing from
+the rollup reads raw. `owner` being the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no model-call span).
