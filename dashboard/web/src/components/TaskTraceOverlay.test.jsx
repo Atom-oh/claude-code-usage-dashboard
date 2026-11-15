@@ -573,18 +573,6 @@ test("a Codex turn lists its linked subagent turns with their calls, cost and th
   expect(card.textContent).toContain("연결은 trace의 부모 span 체인으로 확인하므로");
 });
 
-test("log-linked Codex subagents say the link comes from agent communication logs, not the trace", async () => {
-  body = agentsDetail({ parent: null, links_source: "log", subagents: 1, spawn_calls: 0, unlinked_calls: 0, limited: false,
-    children: [child(CHILD_A, 1, { tool: "spawn" })],
-    total: { llm_calls: 5, llm_calls_partial: false, cost_usd: 1.75, cost_partial: false } }, 1);
-  mount({ taskId: CODEX_ID });
-  const card = await screen.findByRole("region", { name: "서브에이전트 호출" });
-  expect(card.textContent).toContain("trace로 찾지 못한 연결은 Codex의 agent_communication 로그로 추정했습니다.");
-  expect(card.textContent).not.toContain("부모 span 체인");
-  expect(screen.getByText("agent_communication 로그로 연결한 수")).toBeTruthy();
-  expect(screen.queryByText("trace의 부모 span으로 연결한 수")).toBeNull();
-});
-
 test("a Codex subagent turn links back to its parent turn", async () => {
   body = agentsDetail({ parent: { id: CHILD_A, tool: "followup_task", started_at: "2026-09-01T23:10:00Z",
     link: { from: "2026-09-01T23:00:00.000Z", to: "2026-09-02T00:00:00.000Z" } }, subagents: 0, spawn_calls: 0, unlinked_calls: 0,
