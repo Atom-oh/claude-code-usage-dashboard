@@ -821,8 +821,7 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   ([Codex observability](reference/codex-observability.md)).
   `parent` is `{id, tool, started_at, link}` of the turn that started this one, else null
   (`started_at`/`link` null when the parent's turn row is absent). `children` are up to
-  50 subagent turns, three levels deep from traces (one level from the communication-log
-  fallback, never walked further), in tree order: `{id, parent_id, depth, tool, started_at,
+  50 subagent turns, three levels deep, in tree order: `{id, parent_id, depth, tool, started_at,
   duration_ms, models, llm_calls, llm_calls_partial, cost_usd, cost_partial, link}`: `llm_calls` is the subagent
   turn's model-call span count and `cost_usd` its completion-log estimate, folded like a list row
   (null when its turn row is absent). Each child's `link` `{from, to}` is the UTC hour containing
@@ -836,23 +835,17 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   their distinct conversations; `task.subagents` is that count when positive, `0` with
   `known_zero`, else null (a turn without links may lack traces or run a Codex version without
   collaboration spans).
-  `links_source` is `"trace"` for lineage from the trace's parent-span chain, `"log"` when a shown
-  link came from `codex.agent_communication` logs (spawn/follow-up sends, observed on Codex
-  0.167.1-0.168.0; read only when the trace links no child of the turn, and a traced parent is
-  kept; a send links only from its conversation's turn running at the send, and a receiver turn
-  only to the latest send to its conversation within 60 s before it, from any of the owner's
-  conversations, ties in one millisecond going to the greatest sender id), else null. `known_zero` is true only with positive evidence of no subagent calls:
+  `known_zero` is true only with positive evidence of no subagent calls:
   complete spans that do not reach the clipped span window (`to` + 24h), no spawn, follow-up or
-  `send_input` span of the turn, no link, no communication send of the conversation in the turn's
-  window, and a version that names its turn on tool spans (0.166+).
+  `send_input` span of the turn, no link, and a version that names its turn on tool spans (0.166+).
   `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans (CLI: `multi_agent_v1` `spawn_agent`) and those
   with no linked turn (null when spans are truncated). `total` is `{llm_calls,
   llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
   depth, count, trace, row, read-window or id bound (over 2,000 legacy call, child turn or conversation ids of
   one kind; bound id arrays are read in chunks below the HTTP form-field limit), or a spent read
   budget: past 12 s from the detail's start no
-  read beyond the lineage span read starts (legacy resolution, the communication fallback, the
-  subagent turn and completion reads), and the links already found are returned without costs,
+  read beyond the lineage span read starts (legacy resolution, the subagent turn and completion
+  reads), and the links already found are returned without costs,
   never as a known zero. Traces only establish lineage: calls remain model-call span
   counts and costs completion-log estimates.
 - `activity` (Codex only): `{skills, skills_limited, tools, tools_partial}`. `skills` are the

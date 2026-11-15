@@ -134,23 +134,12 @@ Changes:
   - A turn whose version emits neither span stays not collected.
 - `codex.api_request` `attempt` is per request and has no turn id; it is not used here.
 
-### `codex.agent_communication` fallback lineage (owner request, 2026-11-15)
+### `codex.agent_communication` fallback lineage (moved to a follow-up)
 
-`codex.agent_communication` logs are observed on 0.167.1-0.168.0. Fields: `kind` (spawn,
-followup, message, result), `state`, `sender_thread_id`, `receiver_thread_id`. Thread ids are
-conversation ids. In 30 days, 1,828 spawn/followup sends all carried the user, and 96.9% were
-followed within 60 s by a `run_turn` of the receiver.
-
-- **When it runs:** only when the trace lineage gives no edge for the turn.
-- **Children:**
-  - Read sends from the task's conversation during `[s, e]` (kind spawn/followup,
-    state send).
-  - Each send's child is the receiver conversation's first turn starting in `[t, t + 60 s]`.
-    That turn is read with the owner filter, so another user's thread never links.
-- **Parent:** a send whose receiver is the task's conversation within 60 s before `s`. The parent
-  turn is the sender conversation's turn running at `t` (`containingTurn`).
-- **Cost:** one `otel_logs` read keyed by `EventName` (a sort-key column) over the turn
-  window. Linked rows are priced like trace-linked rows and marked as log-linked.
+Moved out of this change by owner decision (2026-11-15); a later PR carries it. `codex.agent_communication`
+logs are observed on 0.167.1-0.168.0 (`kind`, `state`, `sender_thread_id`, `receiver_thread_id`;
+thread ids are conversation ids). Until then a turn without trace lineage keeps unknown
+subagents, and a known zero rests on span evidence alone.
 
 ### Reads
 

@@ -3,13 +3,12 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Serve Codex task list, detail and subagent reads from a per-turn rollup and the turn's
-own window, and fill the detail's Codex retries, compactions, known-zero subagents and
-log-linked subagents.
+own window, and fill the detail's Codex retries, compactions and known-zero subagents
+(log-linked subagents moved to a follow-up, Task 3).
 
 **Architecture:** A generated `codex_turns_v1` aggregate table (migration 012) is fed by a view
 on `otel_traces`. A `CODEX_TURNS_READ_FROM` gate picks rollup or raw per read. Raw-path
-improvements (retries, compactions, version, `agent_communication` fallback) land first and
-work without the table.
+improvements (retries, compactions, version) land first and work without the table.
 
 **Tech Stack:** Node 22 ESM (`node:test`), ClickHouse 24.8 SQL (bound parameters), React/Vite
 web, Terraform, Python schema-lifecycle tests.
@@ -25,7 +24,7 @@ web, Terraform, Python schema-lifecycle tests.
 - Every read binds the exact owner (`EXACT_USER` / `{userExact:String}`) and other values as
   parameters; no trace id, call id or thread id leaves the API.
 - `CODEX_TURNS_READ_FROM` unset → today's raw reads, byte-for-byte except the raw-path
-  additions of Tasks 1-3.
+  additions of Tasks 1-2 (Task 3 moved to a follow-up).
 - Unavailable stays null (not collected); a known zero needs positive evidence (spec rules).
 - Detail values equal their list row (spec "Reads" clamps).
 - Migration and production steps are not part of this plan's execution; they follow the
@@ -37,7 +36,6 @@ web, Terraform, Python schema-lifecycle tests.
 - A long parent turn started more than a day before its subagent: parent link keeps its true start.
 - Non-v7 turn ids: list groups hour rows by turn id; detail falls back to raw.
 - A Codex version without `try_run_sampling_request`/`codex.compaction`: retries/compactions stay null, not 0.
-- `agent_communication` send whose receiver belongs to another user: never linked.
 
 ---
 
@@ -84,30 +82,10 @@ else the existing rule.
 - [ ] Step 2-4: run/implement/run (`node --test codexAgents.test.js`, then `npm test`).
 - [ ] Step 5: commit `feat(tasks): show a known zero for Codex turns without subagent calls`.
 
-### Task 3: `codex.agent_communication` fallback lineage
+### Task 3: `codex.agent_communication` fallback lineage (moved to a follow-up)
 
-**Files:** Modify `dashboard/server/codexAgents.js`. Test `codexAgents.test.js`.
-
-**Interfaces — Produces:**
-- `export const COMMUNICATION_CHILD_MS = 60000;`
-- `export function codexCommunicationSql(owner, conversationId, startMs, endMs) -> { sql, params }` —
-  `otel_logs` `PREWHERE` `EventName = 'codex.agent_communication'`, `EXACT_USER`, `Timestamp` in
-  `[startMs - COMMUNICATION_CHILD_MS, endMs + COMMUNICATION_CHILD_MS)`; `WHERE kind IN ('spawn','followup')
-  AND state = 'send' AND (sender_thread_id = {conversationId} OR receiver_thread_id = {conversationId})`;
-  returns `kind, sender, receiver, at_ms`.
-- `export function communicationLinks(sends, turns, { conversationId, turnId, startMs, endMs }) -> { parent, links }`
-  in `walkLineage`'s link shape (`tool_span` = `communication:<kind>`, `tool_span_id` = null, depth 1),
-  child = receiver's first turn with start in `[t, t + COMMUNICATION_CHILD_MS]`; parent = send with
-  receiver = conversationId and `t` in `[startMs - COMMUNICATION_CHILD_MS, startMs]`, parent turn via `containingTurn`.
-- In `codexAgents`: only when the trace walk yields no parent and no links; turns for receivers/senders
-  come from one `codexTurnSql` read (owner-filtered); result `links_source: "trace" | "log" | null`.
-  Log-linked children count in `subagents`, not in `spawn_calls`/`unlinked_calls`.
-
-- [ ] Step 1: failing tests — `communication SQL binds owner and conversation and reads only sends`;
-  `log-linked children are the receiver's first turn within 60 s`; `a send without a receiver turn
-  of the owner does not link`; `trace links win over log links`.
-- [ ] Step 2-4: run/implement/run.
-- [ ] Step 5: commit `feat(tasks): link Codex subagents from agent communication logs without traces`.
+Moved out of this change by owner decision (2026-11-15); a later PR carries the
+communication-log lineage, its reads and its web copy. No step of this plan depends on it.
 
 ### Task 4: `codex_turns_v1` schema, generator and generated SQL (migration 012)
 
@@ -197,7 +175,7 @@ List context turns per spec (`[from - 7d, to + 24h)`, start `< to + 24h`, end + 
 **Files:** `infra/dashboard.tf` (`codex_turns_read_from` variable + env), `dashboard/docker-compose.yml`,
 `.env.example`, `docs/runbooks/schema-migrations.md` (012 section in the 010 style: inspect,
 migrate, backfill loop, verify, activate, rollback = unset), `docs/api-reference.md`,
-`docs/reference/codex-observability.md` (retries, compactions, agent_communication rows),
+`docs/reference/codex-observability.md` (retries and compactions rows),
 `CHANGELOG.md` Unreleased.
 
 - [ ] Step 1: `terraform fmt -check -recursive infra/` and `(cd infra && terraform init -backend=false && terraform validate)` → pass.

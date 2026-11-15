@@ -24,16 +24,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   spans as context compactions (Codex 0.161+; earlier versions read as not collected),
   stating the turn's full count and marking the chart when the bounded span list holds fewer.
 - A Codex task detail with positive evidence of no subagent calls (complete spans inside the
-  span window, no spawn, follow-up or `send_input` span, no communication send, Codex 0.166+)
+  span window, no spawn, follow-up or `send_input` span, Codex 0.166+)
   shows a known zero subagents instead of not collected.
-- Codex task details link subagent turns from `codex.agent_communication` logs
-  (Codex 0.167.1-0.168.0) when the traces link no child of the turn, keeping a traced parent;
-  a send is a turn's only when that turn is its conversation's turn running at the send, and a
-  receiver turn belongs only to the latest send to its conversation within 60 s before it (also
-  read from other conversations; same-millisecond sends resolve by sender id), so no two sender
-  turns share a child and a child's parent matches the turn listing it (an unresolved send links
-  nothing); the detail says these links are inferred from the logs, and more than 50 log-linked
-  children mark the result limited.
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex
   `codex.skill_invocation`): calls split into explicit, automatic and nested (Claude only)
   invocations, with users and sessions, under the shared user, model, backend and team
@@ -83,12 +75,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Codex task details also link subagent turns for Codex before 0.166, whose lineage spans
   name no turn or conversation: the spawn/follow-up call is matched to its `codex.tool_result`
   log and to the calling conversation's turn running at that time (UUID-shaped turn ids only,
-  never a synthetic `auto-compact-N` turn, also for a log-linked parent).
+  never a synthetic `auto-compact-N` turn).
 - Codex task details also link the Codex CLI's subagent turns (`multi_agent_v1` spawn_agent and
   send_input), which start through turn input rather than inter-agent communication; they were
   shown as not collected.
 - A Codex task detail starts its subagent reads beyond the lineage span read (legacy lineage
-  resolution, the communication fallback, subagent turn and completion pricing) only within
+  resolution, subagent turn and completion pricing) only within
   12 s of its own start, bounding the time they add to long sessions' details against the
   25 s load budget; past that it lists the links already found without costs, marked limited
   and partial, never as a known zero. Subagent turns and completions are read up to 48h after
