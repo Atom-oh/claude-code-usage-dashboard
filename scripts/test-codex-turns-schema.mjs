@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  TURNS_ROLLUP_TABLE, codexTurnsBackfillSql, codexTurnsSchemaSql, namesTurnOnToolsSql, turnHourSql, turnIdHour,
+  TURNS_ROLLUP_TABLE, codexTurnsBackfillSql, codexTurnsSchemaSql, namesTurnOnToolsSql, turnHourSql, turnHourMs,
 } from "../dashboard/server/codexTurnsSchema.js";
 import { codexTurnSql, namesTurnOnTools } from "../dashboard/server/taskTraces.js";
 import { SPAWN_SPANS } from "../dashboard/server/codexAgents.js";
@@ -46,15 +46,24 @@ execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} REMOVE TTL`);
 const BRIEF_ID = "01a14f6d-7899-7a83-8000-000000000001";
 const ids = [BRIEF_ID, "01A14F6D-7899-7A83-8000-000000000001", "01a14f6d-7899-4a83-8000-000000000001",
   "auto-compact-7", "", "01a14f6d-7899-7a83-8000-00000000000", "01a14f6g-7899-7a83-8000-000000000000",
-  "019a0000-0000-7000-8000-000000000000"];
+  "019a0000-0000-7000-8000-000000000000",
+  // Garbage v7 times (48-bit maximum, 1970, year ~6400) and v7 times just inside and outside
+  // [span - 7 days, span + 1 day] of the span below.
+  "ffffffff-ffff-7fff-bfff-ffffffffffff", "00000000-0001-7000-8000-000000000000", "7fffffff-ffff-7000-8000-000000000000",
+  ...[-7 * 24 * 3600000, -7 * 24 * 3600000 - 1, 24 * 3600000, 24 * 3600000 + 1].map(offset => {
+    const hex = (Date.parse("2026-10-21T09:15:00.123Z") + offset).toString(16).padStart(12, "0");
+    return `${hex.slice(0, 8)}-${hex.slice(8)}-7000-8000-000000000000`;
+  })];
 const spanTs = "2026-10-21 09:15:00.123456789";
 const hours = rows(`SELECT id, toString(${turnHourSql("id", "ts")}) AS hour
   FROM (SELECT arrayJoin({ids:Array(String)}) AS id, toDateTime64('${spanTs}', 9) AS ts)`,
 { ids: JSON.stringify(ids).replaceAll('"', "'") });
 check(Object.fromEntries(hours.map(r => [r.id, r.hour])), Object.fromEntries(ids.map(id => {
-  const hour = turnIdHour(id) ?? new Date("2026-10-21T09:00:00Z");
+  const hour = new Date(turnHourMs(id, Date.parse("2026-10-21T09:15:00.123Z")));
   return [id, hour.toISOString().slice(0, 19).replace("T", " ")];
-})), "turnHourSql equals turnIdHour, else the span hour");
+})), "turnHourSql equals turnHourMs for the same span");
+// Five non-v7 ids, a 2025 id, three garbage times and the two just outside the range.
+check(hours.filter(r => r.hour === "2026-10-21 09:00:00").length, 11, "garbage, non-v7 and out-of-range ids use the span hour");
 check(hours.find(r => r.id === BRIEF_ID).hour, "2026-10-18 14:00:00", "brief UUIDv7 id hour");
 const versions = ["0.163.0", "0.165.9", "0.166.0", "0.169.0", "0.169.0-alpha.1", "0.1660.0", "00.166",
   "1.0.0", "1.0", "2", "", "abc", "v0.169.0", "0.16", "10.0.0-rc1", "99999999999999999999999.0"];
@@ -151,6 +160,22 @@ const t6Spans = [
 const t7 = v7("2026-10-18T11:00:00.000Z", 7);
 const t7Spans = [span("codex.sampling", t7, "2026-10-18T11:00:00.000Z", { user: "", resource: { "enduser.id": userC },
   model: sol, conversation: "conv-g" })];
+// T8: a v7-shaped id with a garbage (far-future) time: its spans keep their own hours.
+const t8 = "fff00000-0000-7000-8000-000000000008";
+const t8Spans = [
+  span("codex.sampling", t8, "2026-10-18T10:10:00.000Z", { model: sol, conversation: "conv-h" }),
+  span("codex.sampling", t8, "2026-10-18T11:20:00.000Z", { model: sol, conversation: "conv-h" }),
+];
+// One insert block of garbage-time v7 ids spread over 120 months (2050-2059, inside the DateTime
+// range, so nothing saturates). With id hours it would exceed max_partitions_per_insert_block and
+// fail the otel_traces insert (ClickHouse code 252, checked against the unbounded rule).
+const userD = "turns-d@example.test";
+const garbage = Array.from({ length: 120 }, (_, i) => {
+  const hex = (Date.parse("2050-01-15T00:00:00Z") + i * 31 * 86400000).toString(16).padStart(12, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8)}-7${String(i).padStart(3, "0")}-8000-000000000000`;
+});
+const garbageSpans = garbage.map((turn, i) => span("codex.sampling", turn, `2026-10-18T08:${String(i % 60).padStart(2, "0")}:00.000Z`,
+  { user: userD, model: sol, conversation: `conv-garbage-${i}` }));
 // Not turn spans of Codex: another client, and a Codex span without a turn id.
 const excluded = [
   span("codex.sampling", t1, plus(t1At, 1500), { resource: { client: "claude" } }),
@@ -158,7 +183,8 @@ const excluded = [
 ];
 insert([...t1Spans, ...t2Spans.slice(0, 3)]);
 insert([duplicate, ...t2Spans.slice(3), ...t3Spans, ...t4Spans]);
-insert([...t5Spans, ...t6Spans, ...t7Spans, ...excluded, t1Spans[3]]);
+insert([...t5Spans, ...t6Spans, ...t7Spans, ...t8Spans, ...excluded, t1Spans[3]]);
+insert(garbageSpans);
 // A version-less span of T5 in its own insert: its row's empty version must never win a merge.
 insert([span("shell", t5, "2026-10-18T18:05:02.000Z", { version: "", conversation: "conv-d" })]);
 
@@ -199,7 +225,7 @@ function rollupRows(user, conversation = "") {
 }
 function parity(phase) {
   const read = {};
-  for (const user of [userA, userB, userC]) {
+  for (const user of [userA, userB, userC, userD]) {
     const raw = codexTurnSql(from, to, { userExact: user });
     const rawRows = rows(raw.sql, raw.params).map(sorted);
     const spawns = Object.fromEntries(rows(spawnSql, { userExact: user, spawn: `['${SPAWN_SPANS.join("','")}']` })
@@ -216,7 +242,7 @@ function parity(phase) {
 }
 const live = parity("live view");
 const byId = Object.fromEntries(live[userA].map(r => [r.turn_id, r]));
-check(Object.keys(byId).sort(), [t1, t2, t3, t4, t5].sort(), "user A turns");
+check(Object.keys(byId).sort(), [t1, t2, t3, t4, t5, t8].sort(), "user A turns");
 check([byId[t1].llm_calls, byId[t1].legacy_calls, byId[t1].sampling_tries, byId[t1].compactions,
   byId[t1].spawn_calls, byId[t1].models, byId[t1].names_turn, byId[t1].conversation_id],
 ["3", "3", "4", "1", "3", [astra, sol].sort(), 1, "conv-a"], "T1 counts, models and conversation");
@@ -233,6 +259,10 @@ check(rows(`SELECT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TA
   [{ hour: "2026-10-18 13:00:00" }, { hour: "2026-10-18 14:00:00" }], "non-v7 turn keeps one row per span hour");
 check(rows(`SELECT DISTINCT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t4}'`),
   [{ hour: "2026-10-18 14:00:00" }], "v7 turn keeps its id hour for spans on the next day");
+check(rows(`SELECT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t8}' ORDER BY hour`),
+  [{ hour: "2026-10-18 10:00:00" }, { hour: "2026-10-18 11:00:00" }], "garbage-time v7 turn keeps one row per span hour");
+check(rows(`SELECT count() AS turns, uniqExact(toYYYYMM(TurnHour)) AS months FROM claude_code.${TURNS_ROLLUP_TABLE}
+  WHERE UserIdentity = '${userD}'`), [{ turns: "120", months: "1" }], "garbage-time ids stay in the span's partition");
 check(rows(`SELECT DISTINCT UserIdentity AS u FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t3}' ORDER BY u`),
   [{ u: userA }, { u: userB }], "a shared synthetic id stays per owner");
 console.log(JSON.stringify({ phase: "live", status: "passed", assertions }));
@@ -282,6 +312,8 @@ const expected = [
   { hour: 14, turn_id: t4, differs: 0, clipped: 1 }, { hour: 14, turn_id: t1, differs: 0, clipped: 0 },
   { hour: 16, turn_id: t6, differs: 1, clipped: 0 },
   { hour: 18, turn_id: t5, differs: 0, clipped: 0 },
+  { hour: 10, turn_id: t8, differs: 0, clipped: 0 },
+  ...garbage.map(turn_id => ({ hour: 8, turn_id, differs: 0, clipped: 0 })),
 ];
 const order = list => [...list].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 check(order(verified), order(expected), "verify: each turn once; only the two-conversation turn differs; the clipped turn is excluded");
