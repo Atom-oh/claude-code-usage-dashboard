@@ -20,7 +20,7 @@
 // (a conversation runs one turn at a time). The child's conversation comes from its own turn spans.
 import { toChDateTime } from "./clickhouse.js";
 import { EXACT_USER, SPAN_SLACK_MS, CODEX_TURN_LIMIT, CODEX_COMPLETION_LIMIT, TURN_ID, TURN_SPAN, count,
-  codexTurnSql, codexCompletionSql, linkCompletions, foldCodexTask } from "./taskTraces.js";
+  chunkIds, codexTurnSql, codexCompletionSql, linkCompletions, foldCodexTask } from "./taskTraces.js";
 
 // Subagent levels followed below the task's turn, and subagent turns returned in all.
 export const AGENT_DEPTH = 3;
@@ -32,6 +32,13 @@ export const AGENT_LIMIT = 50;
 // read, so a detail past 12 s issues only the lineage read and returns its links unpriced and
 // limited instead of exceeding the budget. A read batch started before the bound may run past it.
 export const AGENT_EXTRA_BUDGET_MS = 12000;
+// Ids of one kind (legacy call ids, unnamed child turn ids, conversation ids of one turn read) bound
+// into the reads after the lineage read. Each read's array is chunked below the HTTP form-field
+// budget (taskTraces.js chunkIds, COST_ID_PARAM_BYTES); ids past this many are not read and the
+// result is limited. Ids are at most 128 characters that need no percent-encoding (about 137
+// encoded bytes each with quotes and comma), so 2000 ids take at most 3 chunks per kind (UUIDs: 1),
+// and each chunk after the first starts only within AGENT_EXTRA_BUDGET_MS.
+export const AGENT_ID_LIMIT = 2000;
 // Traces of the task's spans read, and lineage spans read from them.
 export const LINEAGE_TRACE_LIMIT = 200;
 export const LINEAGE_SPAN_LIMIT = 50000;
@@ -375,7 +382,7 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
 // turn: { turnId, conversationId, startMs, endMs, traceIds, tracesPartial, namesTurn } of the detail's own turn and spans.
 // A parent turn that started over a day before the lineage window shows its clipped start.
 // One lineage read over the turn's traces, then one turn and one completion read over every
-// subagent conversation found. `detailStart` (ms of `now()`, default: this call) starts the
+// subagent conversation found (each id array chunked and capped at AGENT_ID_LIMIT). `detailStart` (ms of `now()`, default: this call) starts the
 // AGENT_EXTRA_BUDGET_MS clock; a read skipped once it is spent leaves the result limited (no
 // known zero, partial cost) with the links the walk already found.
 export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices, detailStart = null, now = Date.now }) {
@@ -395,6 +402,29 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   const lineageRows = await run(lineage.sql, lineage.params);
   if (lineageRows.length > LINEAGE_SPAN_LIMIT) limited = true;
   let rows = lineageRows.slice(0, LINEAGE_SPAN_LIMIT);
+  // At most AGENT_ID_LIMIT of `ids` (in order, `first` kept first); dropping any limits the result.
+  const capIds = (ids, first = []) => {
+    if (ids.length <= AGENT_ID_LIMIT) return ids;
+    limited = true;
+    const all = new Set(ids);
+    const keep = new Set([...new Set([...first.filter((id) => all.has(id)), ...ids])].slice(0, AGENT_ID_LIMIT));
+    return ids.filter((id) => keep.has(id));
+  };
+  // One read per chunk of `ids`, rows unioned (the ids are disjoint across chunks, and each read
+  // filters by them, so the union is the unchunked read's). The caller's extra() covers the first
+  // chunk; a later chunk starts only while the budget lasts. Rows past `limit` limit the result.
+  // `covered`: the ids whose chunk was read.
+  const readChunked = async (ids, sqlOf, limit = Infinity) => {
+    const out = [], covered = [];
+    for (const [i, chunk] of chunkIds(ids).entries()) {
+      if (i > 0 && !extra()) break;
+      const s = sqlOf(chunk);
+      out.push(...await run(s.sql, s.params));
+      covered.push(...chunk);
+    }
+    if (out.length > limit) limited = true;
+    return { rows: out.slice(0, limit), covered };
+  };
   const q = { userExact: owner };
   // Subagent turns start inside the lineage window, so their turns (with the competitors that could
   // win their completions, read 24h either side) and completions are read for that window only,
@@ -406,18 +436,18 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   const read = new Set();
   const needs = legacyNeeds(rows);
   if ((needs.callIds.length || needs.childTurns.length) && extra()) {
-    const callSql = needs.callIds.length ? codexCallLogSql(owner, needs.callIds, turn.startMs, turn.endMs) : null;
-    const convSql = needs.childTurns.length ? codexTurnConversationSql(owner, needs.childTurns, turn.startMs, turn.endMs) : null;
-    const [callLogs, turnConversations] = await Promise.all([callSql ? run(callSql.sql, callSql.params) : [],
-      convSql ? run(convSql.sql, convSql.params) : []]);
-    const candidates = [...new Set([...callLogs.map((l) => l.conversation), ...turnConversations.map((t) => t.conversation),
-      ...rows.filter((r) => NAMES_CONVERSATION.includes(r.name)).map((r) => r.conversation)])].filter((c) => IDENT.test(c ?? "")).sort();
+    const [callLogs, turnConversations] = (await Promise.all([
+      readChunked(capIds(needs.callIds), (ids) => codexCallLogSql(owner, ids, turn.startMs, turn.endMs)),
+      readChunked(capIds(needs.childTurns), (ids) => codexTurnConversationSql(owner, ids, turn.startMs, turn.endMs)),
+    ])).map((r) => r.rows);
+    // Over the cap, the task's own conversation and the calling conversations are read first.
+    const candidates = capIds([...new Set([...callLogs.map((l) => l.conversation), ...turnConversations.map((t) => t.conversation),
+      ...rows.filter((r) => NAMES_CONVERSATION.includes(r.name)).map((r) => r.conversation)])].filter((c) => IDENT.test(c ?? "")).sort(),
+    [turn.conversationId, ...callLogs.map((l) => l.conversation)]);
     if (candidates.length && extra()) {
-      const s = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: candidates });
-      const got = await run(s.sql, s.params);
-      if (got.length > CODEX_TURN_LIMIT) limited = true;
-      turnRows = got.slice(0, CODEX_TURN_LIMIT);
-      for (const c of candidates) read.add(c);
+      const got = await readChunked(candidates, (ids) => codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: ids }), CODEX_TURN_LIMIT);
+      turnRows = got.rows;
+      for (const c of got.covered) read.add(c);
     }
     ({ rows, conversations } = resolveLegacy(rows, callLogs, turnConversations, turnRows));
     // A legacy call left without a turn may be this turn's: the result is incomplete.
@@ -438,13 +468,12 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     const sends = got.slice(0, COMMUNICATION_LIMIT);
     sendsSeen = sends.some((x) => x.sender === turn.conversationId && count(x.at_ms) >= turn.startMs && count(x.at_ms) <= turn.endMs);
     const others = [...new Set(sends.flatMap((x) => [x.sender, x.receiver]).filter((c) => IDENT.test(c ?? "")))].sort();
-    const wanted = [...new Set([turn.conversationId, ...others])].filter((c) => !read.has(c));
+    // At most COMMUNICATION_LIMIT + 1 ids (each send names this conversation), chunked and capped.
+    const wanted = capIds([...new Set([turn.conversationId, ...others])].filter((c) => !read.has(c)), [turn.conversationId]);
     if (sends.length && wanted.length && extra()) {
-      const t = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: wanted });
-      const rowsRead = await run(t.sql, t.params);
-      if (rowsRead.length > CODEX_TURN_LIMIT) limited = true;
-      turnRows = [...turnRows, ...rowsRead.slice(0, CODEX_TURN_LIMIT)];
-      for (const c of wanted) read.add(c);
+      const got = await readChunked(wanted, (ids) => codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: ids }), CODEX_TURN_LIMIT);
+      turnRows = [...turnRows, ...got.rows];
+      for (const c of got.covered) read.add(c);
     }
     const found = communicationLinks(sends, turnRows, { conversationId: turn.conversationId, turnId: turn.turnId,
       startMs: turn.startMs, endMs: turn.endMs });
@@ -460,14 +489,18 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   const missing = turnIds.filter((c) => !read.has(c));
   let entries = [];
   if (turnIds.length && extra()) {
-    const turnsSql = missing.length ? codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: missing }) : null;
-    const completionsSql = conversationIds.length ? codexCompletionSql(lineageFrom, lineageTo, q, { conversationIds }) : null;
-    const [turns, completions] = await Promise.all([turnsSql ? run(turnsSql.sql, turnsSql.params) : [],
-      completionsSql ? run(completionsSql.sql, completionsSql.params) : []]);
-    if (turns.length > CODEX_TURN_LIMIT || completions.length > CODEX_COMPLETION_LIMIT) limited = true;
+    // At most AGENT_LIMIT + 1 conversations: one chunk each in practice.
+    const [turns, completions] = await Promise.all([
+      readChunked(capIds(missing), (ids) => codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: ids }), CODEX_TURN_LIMIT),
+      readChunked(capIds(conversationIds), (ids) => codexCompletionSql(lineageFrom, lineageTo, q, { conversationIds: ids }),
+        CODEX_COMPLETION_LIMIT),
+    ]);
     const wanted = new Set(turnIds);
-    const allTurns = [...turnRows.filter((t) => wanted.has(t.conversation_id)), ...turns.slice(0, CODEX_TURN_LIMIT)];
-    entries = linkCompletions(allTurns, completions.slice(0, CODEX_COMPLETION_LIMIT), { prices }).entries;
+    const allTurns = [...turnRows.filter((t) => wanted.has(t.conversation_id)), ...turns.rows];
+    // A turn whose completions were not read stays unpriced (cost unknown), never a zero cost.
+    const priced = new Set(completions.covered);
+    const unpriced = new Set(conversationIds.filter((c) => !priced.has(c)));
+    entries = linkCompletions(allTurns, completions.rows, { prices }).entries.filter((e) => !unpriced.has(e.turn.conversation_id));
   }
   const toolSpanIds = rows.filter((r) => LINK_TOOLS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id);
   return foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds, namesTurn: turn.namesTurn,

@@ -679,3 +679,111 @@ test("a budget not spent leaves results and reads unchanged", async () => {
   }
 });
 
+
+// Bound id arrays: ClickHouse rejects an HTTP form field over 128 KiB, so every id array a subagent
+// read binds is chunked below the base's COST_ID_PARAM_BYTES and capped per kind at AGENT_ID_LIMIT.
+const encodedBytes = (ids) => encodeURIComponent(JSON.stringify(ids)).length;
+const longId = (prefix, i) => `${prefix}${String(i).padStart(5, "0")}_${"x".repeat(110)}`;
+
+test("chunkIds splits ids below the form-field budget and keeps a small list whole", async () => {
+  const { chunkIds, COST_ID_PARAM_BYTES } = await import("./taskTraces.js");
+  assert.equal(typeof chunkIds, "function");
+  const small = ["a", "b", "c"];
+  assert.deepEqual(chunkIds(small), [small]);
+  assert.deepEqual(chunkIds([]), []);
+  const ids = Array.from({ length: 20000 }, (_, i) => `call_${i}_${"y".repeat(20)}`);
+  const chunks = chunkIds(ids);
+  assert.ok(chunks.length > 1);
+  for (const c of chunks) assert.ok(encodedBytes(c) <= COST_ID_PARAM_BYTES);
+  assert.deepEqual(chunks.flat(), ids);
+});
+
+test("a legacy call-id list over the form-field budget is read in chunks with the unchunked result", async () => {
+  const { COST_ID_PARAM_BYTES } = await import("./taskTraces.js");
+  const n = 1500;
+  const calls = Array.from({ length: n }, (_, i) => span("t", `h${i}`, "x", "collaborationfollowup_task", { call_id: longId("call_", i) }));
+  // call_Z sorts after every long id: its log is read by the last chunk.
+  const rows = [...calls, ...legacyChain("t", "Z", C1)];
+  const at = String(ms("2026-11-05T01:00:01Z"));
+  const seen = [];
+  const base = legacyRun(seen, { rows, logs: [], conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z")],
+    completions: [completion("sub1", "2026-11-05T01:00:05Z")] });
+  const run = async (sql, params) => sql.includes("codex.tool_result")
+    ? (seen.push({ sql, params }), params.callIds.map((id) => ({ call_id: id, conversation: "root", at_ms: at })))
+    : base(sql, params);
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  const callReads = seen.filter(s => s.sql.includes("codex.tool_result"));
+  assert.ok(callReads.length > 1, String(callReads.length));
+  for (const s of callReads) assert.ok(encodedBytes(s.params.callIds) <= COST_ID_PARAM_BYTES);
+  assert.deepEqual(callReads.flatMap(s => s.params.callIds), [...calls.map(c => c.call_id), "call_Z"].sort());
+  assert.deepEqual(out.children.map(c => c.id), [`codex:sub1:${C1}`]);
+  assert.deepEqual([out.limited, out.spawn_calls, out.unlinked_calls], [false, n + 1, n]);
+  assert.equal(seen.filter(s => s.sql.includes("GROUP BY turn_id") && !s.sql.includes("{turnIds")).length, 1);
+});
+
+test("legacy call ids over AGENT_ID_LIMIT are capped, each chunk under the budget, and the result limited", async () => {
+  const { AGENT_ID_LIMIT } = await import("./codexAgents.js");
+  const { COST_ID_PARAM_BYTES } = await import("./taskTraces.js");
+  assert.ok(Number.isSafeInteger(AGENT_ID_LIMIT));
+  const rows = Array.from({ length: 20000 }, (_, i) => span("t", `h${i}`, "x", "collaborationfollowup_task", { call_id: longId("call_", i) }));
+  const seen = [];
+  const run = legacyRun(seen, { rows, logs: [], conversations: [], turns: [] });
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  const callReads = seen.filter(s => s.sql.includes("codex.tool_result"));
+  assert.ok(callReads.length > 1 && callReads.length <= 4, String(callReads.length));
+  for (const s of callReads) assert.ok(encodedBytes(s.params.callIds) <= COST_ID_PARAM_BYTES);
+  assert.equal(callReads.flatMap(s => s.params.callIds).length, AGENT_ID_LIMIT);
+  assert.deepEqual([out.limited, out.total.cost_partial, out.known_zero], [true, true, false]);
+});
+
+test("unnamed legacy child turns over AGENT_ID_LIMIT set limited; exactly the limit does not", async () => {
+  const { AGENT_ID_LIMIT } = await import("./codexAgents.js");
+  assert.ok(Number.isSafeInteger(AGENT_ID_LIMIT));
+  // Subagent turns of another turn (not this one's links) whose run_turn names no conversation.
+  const other = uuid(9999);
+  const make = (n) => Array.from({ length: n }, (_, i) => [
+    span("t", `g${i}`, "x", "collaborationspawn_agent", { turn: other, conversation: "elsewhere" }),
+    span("t", `d${i}`, `g${i}`, "dispatch_tool_call_with_state"),
+    span("t", `i${i}`, `d${i}`, "op.dispatch.inter_agent_communication"),
+    span("t", `c${i}`, `i${i}`, "session_task.turn", { turn: uuid(20000 + i) }),
+  ]).flat();
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const outcome = async (n) => {
+    const seen = [];
+    const base = legacyRun(seen, { rows: make(n), logs: [], conversations: [], turns: [] });
+    const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run: base, prices: DEFAULT_CODEX_PRICING });
+    return { limited: out.limited, read: seen.filter(s => s.sql.includes("{turnIds")).flatMap(s => s.params.turnIds).length };
+  };
+  assert.deepEqual(await outcome(AGENT_ID_LIMIT), { limited: false, read: AGENT_ID_LIMIT });
+  assert.deepEqual(await outcome(AGENT_ID_LIMIT + 1), { limited: true, read: AGENT_ID_LIMIT });
+});
+
+test("a budget spent after the first id chunk starts no further chunk, limited", async () => {
+  const rows = Array.from({ length: 1500 }, (_, i) => span("t", `h${i}`, "x", "collaborationfollowup_task", { call_id: longId("call_", i) }));
+  const inner = legacyRun([], { rows, logs: [], conversations: [], turns: [] });
+  const b = budgetRun(inner, (sql) => sql.includes("codex.tool_result"));
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run: b.run, prices: DEFAULT_CODEX_PRICING,
+    detailStart: b.detailStart, now: b.now });
+  assert.equal(b.seen.filter(s => s.includes("codex.tool_result")).length, 1);
+  assert.deepEqual([out.limited, out.known_zero], [true, false]);
+});
+
+test("the communication fallback reads the turns of many long conversation ids in chunks", async () => {
+  const { COST_ID_PARAM_BYTES } = await import("./taskTraces.js");
+  const receivers = Array.from({ length: 1000 }, (_, i) => longId("conv", i));
+  const sends = receivers.map((r, i) => ({ kind: "spawn", sender: "root", receiver: r, at_ms: String(T0 + i * 5) }));
+  const last = receivers.at(-1);
+  const seen = [];
+  const run = commRun(seen, { sends, turns: [turn(last, C1, new Date(T0 + 999 * 5 + 50).toISOString())],
+    completions: [completion(last, new Date(T0 + 999 * 5 + 100).toISOString())] });
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  const turnReads = seen.filter(s => s.sql.includes("GROUP BY turn_id"));
+  assert.ok(turnReads.length > 1, String(turnReads.length));
+  for (const s of turnReads) assert.ok(encodedBytes(s.params.conversationIds) <= COST_ID_PARAM_BYTES);
+  assert.deepEqual(turnReads.flatMap(s => s.params.conversationIds).sort(), ["root", ...receivers].sort());
+  assert.deepEqual([out.links_source, out.children.map(c => c.id), out.limited], ["log", [`codex:${last}:${C1}`], false]);
+});

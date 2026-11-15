@@ -830,20 +830,22 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   the lineage window, not the page range (completions from 10 minutes before the turn to 48h
   after it ends, turn spans a day before that too): a linked subagent outside it is listed with
   unknown calls and cost and a partial total. `subagents` counts
-  their distinct conversations; `task.subagents` is that count when positive, else null (a turn
-  without links may lack traces or run a Codex version without collaboration spans).
+  their distinct conversations; `task.subagents` is that count when positive, `0` with
+  `known_zero`, else null (a turn without links may lack traces or run a Codex version without
+  collaboration spans).
   `links_source` is `"trace"` for lineage from the trace's parent-span chain, `"log"` when a shown
   link came from `codex.agent_communication` logs (spawn/follow-up sends, observed on Codex
   0.167.1-0.168.0; read only when the trace links no child of the turn, and a traced parent is
   kept), else null. `known_zero` is true only with positive evidence of no subagent calls:
   complete spans that do not reach the clipped span window (`to` + 24h), no spawn, follow-up or
   `send_input` span of the turn, no link, no communication send of the conversation in the turn's
-  window, and a version that names its turn on tool spans (0.166+); `task.subagents` is then `0`
-  instead of null.
+  window, and a version that names its turn on tool spans (0.166+).
   `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans (CLI: `multi_agent_v1` `spawn_agent`) and those
   with no linked turn (null when spans are truncated). `total` is `{llm_calls,
   llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
-  depth, count, trace or row bound, or a spent read budget: past 12 s from the detail's start no
+  depth, count, trace, row or id bound (over 2,000 legacy call, child turn or conversation ids of
+  one kind; bound id arrays are read in chunks below the HTTP form-field limit), or a spent read
+  budget: past 12 s from the detail's start no
   read beyond the lineage span read starts (legacy resolution, the communication fallback, the
   subagent turn and completion reads), and the links already found are returned without costs,
   never as a known zero. Traces only establish lineage: calls remain model-call span

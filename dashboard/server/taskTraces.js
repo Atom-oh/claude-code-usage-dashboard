@@ -200,15 +200,15 @@ export function claudeCostSql(from, to, requestIds) {
 // and sort=cost over COST_CANDIDATES interactions can carry thousands of request ids. Each
 // chunk's id array stays below this budget, measured as the percent-encoded JSON array (an
 // upper bound for the form body: quotes, commas and brackets each grow to three bytes).
-// Request ids are disjoint across chunks, so the per-request GROUP BY rows simply concatenate.
 export const COST_ID_PARAM_BYTES = 96 * 1024;
 const ENCODED_BRACKETS = encodeURIComponent("[]").length, ENCODED_COMMA = encodeURIComponent(",").length;
-export async function claudeCostRows(from, to, requestIds, run) {
+// `ids` in order, split into consecutive chunks whose bound array parameter stays within `budget`.
+export function chunkIds(ids, budget = COST_ID_PARAM_BYTES) {
   const chunks = [];
   let chunk = [], bytes = ENCODED_BRACKETS;
-  for (const id of requestIds) {
+  for (const id of ids) {
     const item = encodeURIComponent(JSON.stringify(id)).length;
-    if (chunk.length && bytes + ENCODED_COMMA + item > COST_ID_PARAM_BYTES) {
+    if (chunk.length && bytes + ENCODED_COMMA + item > budget) {
       chunks.push(chunk);
       chunk = [];
       bytes = ENCODED_BRACKETS;
@@ -217,8 +217,13 @@ export async function claudeCostRows(from, to, requestIds, run) {
     chunk.push(id);
   }
   if (chunk.length) chunks.push(chunk);
+  return chunks;
+}
+
+// Request ids are disjoint across chunks, so the per-request GROUP BY rows simply concatenate.
+export async function claudeCostRows(from, to, requestIds, run) {
   const results = [];
-  for (const ids of chunks) {
+  for (const ids of chunkIds(requestIds)) {
     const cost = claudeCostSql(from, to, ids);
     results.push(...await run(cost.sql, cost.params));
   }

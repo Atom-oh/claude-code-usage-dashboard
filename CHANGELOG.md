@@ -85,6 +85,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   12 s of its own start, bounding the time they add to long sessions' details against the
   25 s load budget; past that it lists the links already found without costs, marked limited
   and partial, never as a known zero.
+- A Codex task detail reads the legacy call, child turn and conversation ids of its subagent
+  reads in chunks below ClickHouse's HTTP form-field limit, at most 2,000 ids of each kind
+  (more are marked limited), instead of failing the whole detail on a long lineage.
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
   read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
   queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at
