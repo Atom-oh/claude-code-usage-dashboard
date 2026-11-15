@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "Atom-oh/claude-code-usage-dashboard",
-  "commit": "afe1466c905ce7249c1719ce621821ecec5fe422",
+  "commit": "5cfd825938b2945ab8269754b9e8c29020326af9",
   "files": [
     {
       "path": "site/assets/diagrams/system.html",
@@ -64,6 +64,246 @@
       "sha256": "db8ab3534e98268176c3144c538e344732ff9ee6bccc823be70eaed66483536e"
     },
     {
+      "path": "site/assets/img/guide-en-analytics.png",
+      "bytes": 395156,
+      "sha256": "18b0f3661d738e61bb5c5eaa77b6e5a3cb0aeb86b8488b4efe0a53287de9b5f1"
+    },
+    {
+      "path": "site/assets/img/guide-en-collector.png",
+      "bytes": 145835,
+      "sha256": "9819f7fd8a96d0a936d86d651fcc777987eff82afd69c341aca4af1631d60841"
+    },
+    {
+      "path": "site/assets/img/guide-en-cost-summary.png",
+      "bytes": 476965,
+      "sha256": "2438f365d85d865adfc2a6a58ca00f20be037956aa8d4115233294b27b3a5203"
+    },
+    {
+      "path": "site/assets/img/guide-en-cost.png",
+      "bytes": 251839,
+      "sha256": "43460bc57cab11242f4fcbbed3038634bd8a37fa999e653b9d3b6feb56b1b3e8"
+    },
+    {
+      "path": "site/assets/img/guide-en-economics.png",
+      "bytes": 253977,
+      "sha256": "35fe3c62cd49ce0f398710ff99176f9ae6dfa8ad31cd0ffba8bdc04ee33c8edd"
+    },
+    {
+      "path": "site/assets/img/guide-en-executive.png",
+      "bytes": 379306,
+      "sha256": "8542bd39247dd22e5557136164950c7bb7986a3c00d3e427966c1476c46fd15b"
+    },
+    {
+      "path": "site/assets/img/guide-en-installation.png",
+      "bytes": 548937,
+      "sha256": "510a65519b5275181962ed81738a0c5f160953c88e66f49a14f492db5b962c74"
+    },
+    {
+      "path": "site/assets/img/guide-en-mcp.png",
+      "bytes": 99465,
+      "sha256": "0968ebe6c2caf6a87c9aeeb23f0f25bbb572ecead323c3a5c6a4aeb4920005c4"
+    },
+    {
+      "path": "site/assets/img/guide-en-overview.png",
+      "bytes": 430655,
+      "sha256": "06321604970c34ef0a9b5751150ce57320751a6fe7db715e82d14985d5566258"
+    },
+    {
+      "path": "site/assets/img/guide-en-plugins.png",
+      "bytes": 45402,
+      "sha256": "e2f8b9bed12728294b88dfa10225c7397ee79959ad1b2426297294438c692cb5"
+    },
+    {
+      "path": "site/assets/img/guide-en-reliability.png",
+      "bytes": 377962,
+      "sha256": "96283ba8c0607b2c120ae55d385e23db08730f19b12cdab1af37d8c3b9615b9b"
+    },
+    {
+      "path": "site/assets/img/guide-en-settings.png",
+      "bytes": 365247,
+      "sha256": "e5f6c4308518f4f2e08ca522cda17cb5270256433f8981a1c47a043800ecbc2f"
+    },
+    {
+      "path": "site/assets/img/guide-en-skills.png",
+      "bytes": 119038,
+      "sha256": "65071e6bac12025f66dfba7879fef873d7a7738f8046b2eabd9788034caa88b1"
+    },
+    {
+      "path": "site/assets/img/guide-en-task-call.png",
+      "bytes": 72286,
+      "sha256": "ee23196bbf4fe293042e05686ed42c7a427a82058c8298219df32f5d670d40d6"
+    },
+    {
+      "path": "site/assets/img/guide-en-task-context.png",
+      "bytes": 258263,
+      "sha256": "05e1a53330aa285d1fc0a31631e8264737275d74127f5407b6182b535d431ddd"
+    },
+    {
+      "path": "site/assets/img/guide-en-task-list.png",
+      "bytes": 106519,
+      "sha256": "7e21fa993375fa9d22372a8e5983515f5e84328a35e9d98808cf94de40448402"
+    },
+    {
+      "path": "site/assets/img/guide-en-task-trace.png",
+      "bytes": 412395,
+      "sha256": "f1c575516e72e41186c6a2e4f87b8e7e32340312c451b86a8e1a787f675c9634"
+    },
+    {
+      "path": "site/assets/img/guide-en-time-range.png",
+      "bytes": 80457,
+      "sha256": "2c8e0b16cabac5ba8456f62d5ee6303819132ec5f42568d2116baca11e59000c"
+    },
+    {
+      "path": "site/assets/img/guide-en-tools.png",
+      "bytes": 150632,
+      "sha256": "f964fcfc6853236f999383e68a87808437dd1c261285b033790cd0a8b80461c2"
+    },
+    {
+      "path": "site/assets/img/guide-en-trends.png",
+      "bytes": 483454,
+      "sha256": "dd2dbd3cf5e5d511b57427b020bf3dffc803889db2837a1d69f06129cce3af5a"
+    },
+    {
+      "path": "site/assets/img/guide-en-unit-cost.png",
+      "bytes": 78460,
+      "sha256": "73b40797f5c83afd7c0885968263694836ef184fdf523796c4f4f0b4b95f6210"
+    },
+    {
+      "path": "site/assets/img/guide-en-usage.png",
+      "bytes": 133454,
+      "sha256": "d723c2bcbc821d4720ff4d127b9e858ac7a816700d11e34a8603dc17fdfc157e"
+    },
+    {
+      "path": "site/assets/img/guide-en-user-detail.png",
+      "bytes": 223171,
+      "sha256": "b19063fc904353e65605ac3932b67274b62a854c2214f49f4f0f998a5a3660d1"
+    },
+    {
+      "path": "site/assets/img/guide-en-users.png",
+      "bytes": 165973,
+      "sha256": "ea6a49bc5e315499ad838eeba41ad8f35db5bf3fe8da25d68e8a0f05796b3a8b"
+    },
+    {
+      "path": "site/assets/img/guide-es-analytics.png",
+      "bytes": 410190,
+      "sha256": "556eafb4f9ea68d5fd3d1cc8787cc6a57191c21796acbfff9bfa9340c08ea3e8"
+    },
+    {
+      "path": "site/assets/img/guide-es-collector.png",
+      "bytes": 158879,
+      "sha256": "c6d3b262801228584ddaf288ef4014c0e95ef54d7dc912b39e4bb3c403f30a1d"
+    },
+    {
+      "path": "site/assets/img/guide-es-cost-summary.png",
+      "bytes": 495347,
+      "sha256": "920d8934c8a348eabe339db8c4ba74c5bf49c9f778cc9c8265183658805538ab"
+    },
+    {
+      "path": "site/assets/img/guide-es-cost.png",
+      "bytes": 272812,
+      "sha256": "209f17d92daa6ba10a7828c3daae1e71849875a5faeb3cf5f6318d2537a1fd1e"
+    },
+    {
+      "path": "site/assets/img/guide-es-economics.png",
+      "bytes": 273198,
+      "sha256": "d9062cb2cb475923c579a7a0deef53efa5ef915335a203db8f1577239cff7fcd"
+    },
+    {
+      "path": "site/assets/img/guide-es-executive.png",
+      "bytes": 398280,
+      "sha256": "3867c5c6cfb47aca35fbd6ce38a2f6a1c316e938bc8c83881d986e65f334be30"
+    },
+    {
+      "path": "site/assets/img/guide-es-installation.png",
+      "bytes": 621495,
+      "sha256": "1c6e3b4a51ee4bea1a0343da05b6bed7c3063f552cd79c45bf530f0caec811fd"
+    },
+    {
+      "path": "site/assets/img/guide-es-mcp.png",
+      "bytes": 100841,
+      "sha256": "06406595235180efb055edfdf39e92ed20a3f0e4e90d4be82e0ba4b2d30f22f8"
+    },
+    {
+      "path": "site/assets/img/guide-es-overview.png",
+      "bytes": 448980,
+      "sha256": "574e8fc798ed4ece5862da485566da99be4409087f2d57b8b3e085328c91b3ed"
+    },
+    {
+      "path": "site/assets/img/guide-es-plugins.png",
+      "bytes": 51368,
+      "sha256": "2754ca64e8dbf85c29f986f7640d726359edee8bd902a0dc02a85ec99935be03"
+    },
+    {
+      "path": "site/assets/img/guide-es-reliability.png",
+      "bytes": 402238,
+      "sha256": "7cd6c7230cfd0624beaecbf41f733a1f18c0c53be07e120f3f53d5c75bcbbef1"
+    },
+    {
+      "path": "site/assets/img/guide-es-settings.png",
+      "bytes": 410753,
+      "sha256": "dadb46e4f11c397ee7cf31e5f69efeb64882d6bdc26d414bf336e27741262801"
+    },
+    {
+      "path": "site/assets/img/guide-es-skills.png",
+      "bytes": 130428,
+      "sha256": "97562f9beb06a646fba50b43b5f48a016ec5dd99aefa03131bc31217933c21d9"
+    },
+    {
+      "path": "site/assets/img/guide-es-task-call.png",
+      "bytes": 83436,
+      "sha256": "ce8bb19b91f9097ea878c418f7c9e021c08ab7a38c2c31c0a9fd3980c1348d6f"
+    },
+    {
+      "path": "site/assets/img/guide-es-task-context.png",
+      "bytes": 287396,
+      "sha256": "701acabc4bb2777e8a72bb2a29f837376c5c10c4fe80dcb32d1a825536ac25d1"
+    },
+    {
+      "path": "site/assets/img/guide-es-task-list.png",
+      "bytes": 125501,
+      "sha256": "d83f56d1154793a7fd9d3b4630732ce06504f8f08ca57b24b99290ab9dc7201b"
+    },
+    {
+      "path": "site/assets/img/guide-es-task-trace.png",
+      "bytes": 452833,
+      "sha256": "d7f93ca90a4feba8ea474d8481d2f22b9aa6d4b48a7df754e6755d2833c6b9e6"
+    },
+    {
+      "path": "site/assets/img/guide-es-time-range.png",
+      "bytes": 86655,
+      "sha256": "21c01f2b1c32dbbd2acb0beb50e62298f8ab2fe904843dbb111fe2fd6ae936a1"
+    },
+    {
+      "path": "site/assets/img/guide-es-tools.png",
+      "bytes": 167015,
+      "sha256": "92d0143d13d1dd0ad7fa9f69a3d0b2bab3ae92a4f3559b4ce7a1e057fe52d875"
+    },
+    {
+      "path": "site/assets/img/guide-es-trends.png",
+      "bytes": 509848,
+      "sha256": "dd4fac1b70334db8e340645d06e4e42cc7a9b70d73f0bada19b59664e5edc70e"
+    },
+    {
+      "path": "site/assets/img/guide-es-unit-cost.png",
+      "bytes": 81811,
+      "sha256": "0c91338c7357c66fdfedbec685afc923c69eaecd46419c613613f925468c3c38"
+    },
+    {
+      "path": "site/assets/img/guide-es-usage.png",
+      "bytes": 146125,
+      "sha256": "e44116826de9a126c4b4e3f0298130d02396265461c8b3eaae887575502db106"
+    },
+    {
+      "path": "site/assets/img/guide-es-user-detail.png",
+      "bytes": 234876,
+      "sha256": "c69be424326739cd0bfd7f5b4c93ea885fc70204277f22723ddc3e188cb7939a"
+    },
+    {
+      "path": "site/assets/img/guide-es-users.png",
+      "bytes": 175974,
+      "sha256": "a4b39081e5abcfa72b645eae2c1e2a65f1bbf8c4adebc99ffc4ee5db55365916"
+    },
+    {
       "path": "site/assets/img/guide-executive-charts.png",
       "bytes": 50942,
       "sha256": "92c031e60a9cdbd392a8b839488adbf990736e6bc045c7485a3bc5f3e8f563ae"
@@ -77,6 +317,246 @@
       "path": "site/assets/img/guide-installation.png",
       "bytes": 432568,
       "sha256": "93efb1eb99abf73617058ab6229dca7093f9ec5f880e0872a05732c48029e530"
+    },
+    {
+      "path": "site/assets/img/guide-ja-analytics.png",
+      "bytes": 403716,
+      "sha256": "beaf504c9667ac9966cae85db30251aaf1236e3c917a3fe74c40b90724868da3"
+    },
+    {
+      "path": "site/assets/img/guide-ja-collector.png",
+      "bytes": 201192,
+      "sha256": "67a4a9917e1b5ccd7f77cbf504a4dfa0b3963e2892f53eaaac3a908ae4aaf965"
+    },
+    {
+      "path": "site/assets/img/guide-ja-cost-summary.png",
+      "bytes": 493327,
+      "sha256": "aee2748aaf5ad1a342dc15d336a408add8a290c18ab2aa49c7940f4ed43e75e6"
+    },
+    {
+      "path": "site/assets/img/guide-ja-cost.png",
+      "bytes": 273087,
+      "sha256": "f5e20996fc9fcbca7fdb0cd739951b3a55a0693beae5eb567900ada1ec13b058"
+    },
+    {
+      "path": "site/assets/img/guide-ja-economics.png",
+      "bytes": 286971,
+      "sha256": "f2d4ddbf83b2d453cf1a760b189160ade5f323089f96c46982a2ffbbefbf3c14"
+    },
+    {
+      "path": "site/assets/img/guide-ja-executive.png",
+      "bytes": 380089,
+      "sha256": "7ba13cb3ff7a81280f9ed71d5487893aa129d45cc76cbaf69dd22d5426cda7bf"
+    },
+    {
+      "path": "site/assets/img/guide-ja-installation.png",
+      "bytes": 619231,
+      "sha256": "76a4d7faa44f508ec4ed14d0307d031c1588f180ea0b4742719756331317ffa4"
+    },
+    {
+      "path": "site/assets/img/guide-ja-mcp.png",
+      "bytes": 104760,
+      "sha256": "ad5b89de52edcb8631e0fbdfe23c9645f3e8be798fafd4a2925726a0a04ee9bd"
+    },
+    {
+      "path": "site/assets/img/guide-ja-overview.png",
+      "bytes": 439917,
+      "sha256": "3cd9b7b511ab3926a087853132da7d8e903d8b571d015d53c60551829d6eb79b"
+    },
+    {
+      "path": "site/assets/img/guide-ja-plugins.png",
+      "bytes": 54714,
+      "sha256": "87d9a962acbd7bf55c59e563a4bdcf1cfb33a09124d35689991bc5f54ea36002"
+    },
+    {
+      "path": "site/assets/img/guide-ja-reliability.png",
+      "bytes": 371890,
+      "sha256": "05ddb3ef7bc9943b1782582f45a0d8f9ad5fd765d77e56379edf34bf66e31c1d"
+    },
+    {
+      "path": "site/assets/img/guide-ja-settings.png",
+      "bytes": 373838,
+      "sha256": "fde66f1a0379a688d0945f5c2a74e13dad43070d2bb1b2c9d37a22db636d4e05"
+    },
+    {
+      "path": "site/assets/img/guide-ja-skills.png",
+      "bytes": 123760,
+      "sha256": "26179af12644d782ed7f331dc116327e3c3cae934fb3997815298d1990d772dd"
+    },
+    {
+      "path": "site/assets/img/guide-ja-task-call.png",
+      "bytes": 69091,
+      "sha256": "e84762e3ba39fa0359b7af6d45ea33526b264112748c8e537a8d0d6d3ac0b71b"
+    },
+    {
+      "path": "site/assets/img/guide-ja-task-context.png",
+      "bytes": 300920,
+      "sha256": "29f4a2a5f980beba50732b4dbcfa67e41f057550a28631937632d1bd9638125e"
+    },
+    {
+      "path": "site/assets/img/guide-ja-task-list.png",
+      "bytes": 110864,
+      "sha256": "43b251546228425267391a9db5c8d1bbd62b55b18a059876c461d72cc1cc5b32"
+    },
+    {
+      "path": "site/assets/img/guide-ja-task-trace.png",
+      "bytes": 465162,
+      "sha256": "2b63dfd05f355c8e8ba1576cf39d50e39dad373cb3f903b23be63ba100ea08c7"
+    },
+    {
+      "path": "site/assets/img/guide-ja-time-range.png",
+      "bytes": 79461,
+      "sha256": "5d765334af1cdb38026f3155e07020a04f1b064ff96c4a015f87e4224c8a92b4"
+    },
+    {
+      "path": "site/assets/img/guide-ja-tools.png",
+      "bytes": 156060,
+      "sha256": "c91df8661540198169a41ac576b89b1e8455da363a50e7b29fe5892bc1fbe0c3"
+    },
+    {
+      "path": "site/assets/img/guide-ja-trends.png",
+      "bytes": 496141,
+      "sha256": "0fa2974ee85ec5e2fcb6b3f2d2b4f1f8496b0d303e3578bf57444c99e8c874e7"
+    },
+    {
+      "path": "site/assets/img/guide-ja-unit-cost.png",
+      "bytes": 82486,
+      "sha256": "4aba1aad40a7e27c77d1503d33bd786a6e14fb717174f8cfe2d156c133cc164e"
+    },
+    {
+      "path": "site/assets/img/guide-ja-usage.png",
+      "bytes": 137966,
+      "sha256": "4993c79a2eb0f614bbff3eb4154cef72f69dcc6e573c1a87f9966c15a725bd0f"
+    },
+    {
+      "path": "site/assets/img/guide-ja-user-detail.png",
+      "bytes": 239762,
+      "sha256": "488d4fce2f5668fc31ae2f8332fc990ca4038eded19208d79a0e3f55fa3de428"
+    },
+    {
+      "path": "site/assets/img/guide-ja-users.png",
+      "bytes": 183819,
+      "sha256": "855ff641adc48db5a0ea6b6d25a0546f339aff18ff97ce8bcaccdb3fa2e0a14f"
+    },
+    {
+      "path": "site/assets/img/guide-ko-analytics.png",
+      "bytes": 333698,
+      "sha256": "dd3200a1e3eeafeffb7ea8733b549d951ba4f791282149a9df48a1abb9ee7714"
+    },
+    {
+      "path": "site/assets/img/guide-ko-collector.png",
+      "bytes": 131679,
+      "sha256": "60f17c7573edb611fd3e3e74b5076fb400db302120763643146e359e1682b4d8"
+    },
+    {
+      "path": "site/assets/img/guide-ko-cost-summary.png",
+      "bytes": 406800,
+      "sha256": "15de93c8c41c73b90068dbd9fea5fabb1c164c1456524ddc81ba83aae24ba2b7"
+    },
+    {
+      "path": "site/assets/img/guide-ko-cost.png",
+      "bytes": 208573,
+      "sha256": "1afdd380576cae379adc6b7d68f9f95ae15bc8ef4e19f250d747e197e89a6b04"
+    },
+    {
+      "path": "site/assets/img/guide-ko-economics.png",
+      "bytes": 215337,
+      "sha256": "a48d021b47f4fbb04b129ea3add730a70935263194cf61803cba20654083b5b7"
+    },
+    {
+      "path": "site/assets/img/guide-ko-executive.png",
+      "bytes": 308760,
+      "sha256": "9810cd8429c4981e1792152e83d926c5444a2565d4cf38176898199ed6b11974"
+    },
+    {
+      "path": "site/assets/img/guide-ko-installation.png",
+      "bytes": 435535,
+      "sha256": "ac05c96e5b7ac7a4af791d0bb4041a86d1445e76126673a9a1112d07999e0f77"
+    },
+    {
+      "path": "site/assets/img/guide-ko-mcp.png",
+      "bytes": 89897,
+      "sha256": "ac3e2456c4dca213f87d1ada01aae12eaa9bf54f5d534f47eab1bd6997a4caf1"
+    },
+    {
+      "path": "site/assets/img/guide-ko-overview.png",
+      "bytes": 363922,
+      "sha256": "140fa4172400c5d1e655f2040fad5ec25413014889dba4f98ef9d5a91fbb1982"
+    },
+    {
+      "path": "site/assets/img/guide-ko-plugins.png",
+      "bytes": 41926,
+      "sha256": "8034a1d761edb1ca3a5b1d1f2e0f3ad4e0788b3684409f0d76f46d2a333829f2"
+    },
+    {
+      "path": "site/assets/img/guide-ko-reliability.png",
+      "bytes": 320320,
+      "sha256": "c7ed2b3a461132b7575d69a4e68bedffa7265d1dceb389bdd32f8b742f44571b"
+    },
+    {
+      "path": "site/assets/img/guide-ko-settings.png",
+      "bytes": 310905,
+      "sha256": "786bdbb88d08ac5a5c34724e8ca09ae7aeb00b7d4928714aabf8634d58c8ff54"
+    },
+    {
+      "path": "site/assets/img/guide-ko-skills.png",
+      "bytes": 107871,
+      "sha256": "0eb40d57f46793b13f3d1ebfe329a9b20cefb803695d08c4513586625df2ed04"
+    },
+    {
+      "path": "site/assets/img/guide-ko-task-call.png",
+      "bytes": 58831,
+      "sha256": "50a0c6a4f24befc1ef5861f75fc1c0d211c36b18bf874cb92bca0130560d27c7"
+    },
+    {
+      "path": "site/assets/img/guide-ko-task-context.png",
+      "bytes": 220955,
+      "sha256": "a0217809aa7c15a7731af1beac0dc104646f65b5f8d991ea15c725c5d6880227"
+    },
+    {
+      "path": "site/assets/img/guide-ko-task-list.png",
+      "bytes": 94141,
+      "sha256": "b083dcba9bc3ce4192e3c052b1486f67cd9e558c530f4d36ed9aa14bacc34ad1"
+    },
+    {
+      "path": "site/assets/img/guide-ko-task-trace.png",
+      "bytes": 385223,
+      "sha256": "0eae7e32fcaaf5483e848ba5eeba37d30b71e7fbb6f5f6eeba9252651d85fa0c"
+    },
+    {
+      "path": "site/assets/img/guide-ko-time-range.png",
+      "bytes": 69057,
+      "sha256": "3f5663bdcd33b4516c3331adfa07ec163475464555fc322e81ed33725c081439"
+    },
+    {
+      "path": "site/assets/img/guide-ko-tools.png",
+      "bytes": 141615,
+      "sha256": "8027f493e67e2fec551f9ac52c3f0a9b07401d3d929bef677d69597f6cbf3202"
+    },
+    {
+      "path": "site/assets/img/guide-ko-trends.png",
+      "bytes": 401135,
+      "sha256": "f6c90f64f97cf6a539766297a9ce96ba351d5525255c6abfb06487294c8e9116"
+    },
+    {
+      "path": "site/assets/img/guide-ko-unit-cost.png",
+      "bytes": 70137,
+      "sha256": "977017b37ac8a3eae119405edd34299b9a864c0ed365b269fee8871903db3577"
+    },
+    {
+      "path": "site/assets/img/guide-ko-usage.png",
+      "bytes": 118044,
+      "sha256": "2f519c0744bad657d9f10f6134c2d6b5e44bff89c93c96adadca1108edc6407a"
+    },
+    {
+      "path": "site/assets/img/guide-ko-user-detail.png",
+      "bytes": 210330,
+      "sha256": "4cab88c024601860b347e0ca3b41ad77957e47123e33983bd942d18ef7a60bca"
+    },
+    {
+      "path": "site/assets/img/guide-ko-users.png",
+      "bytes": 140952,
+      "sha256": "4469849c9c0c18c85b1e234e34430cce2f22cc9e818d5af720de263605978fd8"
     },
     {
       "path": "site/assets/img/guide-mcp.png",
@@ -172,6 +652,126 @@
       "path": "site/assets/img/guide-users.png",
       "bytes": 140196,
       "sha256": "c97163e42b4423c54fd52445f1d8a3a1d541c51db93a89edfea8250618a14195"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-analytics.png",
+      "bytes": 393799,
+      "sha256": "ec6ec7d4700c0bcd3b69c116e8c1f8191affd591496a6a92d302f8d648aeac85"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-collector.png",
+      "bytes": 158717,
+      "sha256": "78d35788e092cbd53ef654cfd6d916c50cc8123451b35733494d839d449e7e29"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-cost-summary.png",
+      "bytes": 488631,
+      "sha256": "7cdc681d4f3cae8712164b30f566560e2b51998c5ad5129a3c354eef06d616b6"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-cost.png",
+      "bytes": 250489,
+      "sha256": "019db503244736f4db7877f2c2588823ab84084ffc276143bae045fd0e5135e8"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-economics.png",
+      "bytes": 274616,
+      "sha256": "d30b292df669d33142aade53530f137ad3db275f0a2eb0f8e4e186ebd54352b5"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-executive.png",
+      "bytes": 367009,
+      "sha256": "9a37455717b6f6be9d9a19e64878521c0614e5037cb29f92da7381933e174aae"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-installation.png",
+      "bytes": 534913,
+      "sha256": "d12a56f10ddba0cdc0f4cacd1f3f597fdd7c65ae764364912e45851f9fa366b2"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-mcp.png",
+      "bytes": 112179,
+      "sha256": "d648ecccfe0f67e43419d3dd41aac28e5c1fc1429439fa11ea5e96e4eaf217d9"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-overview.png",
+      "bytes": 424241,
+      "sha256": "d6dd21ed8304a78a3b0bb1015b1f767355f9cf4663321cb0997f53e5ca7b609c"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-plugins.png",
+      "bytes": 45470,
+      "sha256": "ba3bec165edfee9207bc17a94ca4aefaa28c7effff9cdc82b0d091812ea65b9b"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-reliability.png",
+      "bytes": 379306,
+      "sha256": "ad55bda6482a9746692b2d59014b27d50b37a1f074f93640d9b9ffc3c2c52b0d"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-settings.png",
+      "bytes": 367513,
+      "sha256": "78e48841d2470869f8da3a1e3c6b1eeb5830f1511699bf72ec4279389aba15fc"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-skills.png",
+      "bytes": 125280,
+      "sha256": "cd99cc3fe4c342161e4ccc8e242655f051584d64164005a2c7d1204c8940e708"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-task-call.png",
+      "bytes": 67769,
+      "sha256": "124350a46f461c325c4df1a6d97ec31f5d85a68bc4161aceb11f080552670ea7"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-task-context.png",
+      "bytes": 261616,
+      "sha256": "37fdb4c0fc07bb625ffa553b4c4426a6da83e3c2dce95d6c149312b6a4facd72"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-task-list.png",
+      "bytes": 111604,
+      "sha256": "1408dce46ebdbe1f6e823377816a7aa005b499b971423cc94d6540fee07012e6"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-task-trace.png",
+      "bytes": 456627,
+      "sha256": "3befe0c456eac1fbd9073bc17c8bbdaee997ce107ca33a13ddbbafc1f728ebeb"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-time-range.png",
+      "bytes": 76515,
+      "sha256": "f99387520ebe4b09d0fc8af14cd9256ce261ea094ef1f9b2d7ee93cee1d8dc8a"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-tools.png",
+      "bytes": 163467,
+      "sha256": "a40934222ea1fcc408d9cc2a6d62eabc9c81f557fd8020536044230f72414dde"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-trends.png",
+      "bytes": 481773,
+      "sha256": "bd1b60c62c92a956bfb9a1ff6a290f6a5cfaf5df203b6fba41426406eee287fa"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-unit-cost.png",
+      "bytes": 79268,
+      "sha256": "7e649260a58672445a015ff9971af5c6b1dbd1c1f90e00423add1abfa6137a23"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-usage.png",
+      "bytes": 130819,
+      "sha256": "11b2e54c60d93ba4ebb046215081ad13a6082cdb6e376da282270c277327f948"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-user-detail.png",
+      "bytes": 231397,
+      "sha256": "ea766ad7c5407a55458d39a2d9b1bf2ca3fdcaa11210eea581055a05d8a34e87"
+    },
+    {
+      "path": "site/assets/img/guide-zh-CN-users.png",
+      "bytes": 166187,
+      "sha256": "f47bd68930de815a419a9bc17eb1b83d481c92bda688fa38e34b29cdcf567155"
     },
     {
       "path": "site/assets/img/product-tour-ko-poster.jpg",
