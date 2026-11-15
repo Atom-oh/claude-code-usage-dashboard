@@ -52,7 +52,7 @@ const MISSING = "미수집";
 const TRUNCATED = "일부 span만 표시 — 전체 합계 미표시";
 const pct = (v) => `${Math.round(v * 100)}%`;
 
-function Kpis({ task, linksSource = null }) {
+function Kpis({ task }) {
   const _locale = useLocale();
   const t = task.tokens || {};
   const tokens = compactCount(t.observed_tokens);
@@ -65,8 +65,7 @@ function Kpis({ task, linksSource = null }) {
       hint={[basis, task.cost_partial ? translate("md15c830a6f1c") : null].filter(Boolean).join(" · ") || undefined} />
     <StatTile label={translate("m5570150cd696")} value={orMissing(task.llm_calls)} />
     <StatTile label={translate("m7d688dae8673")} value={orMissing(task.subagents)}
-      hint={task.client === "codex" ? translate(observedNumber(task.subagents) === null ? "m54b53da3d83f"
-        : linksSource === "log" ? "m8aa42f469326" : "m0bd87b5900b9") : undefined} />
+      hint={task.client === "codex" ? translate(observedNumber(task.subagents) === null ? "m54b53da3d83f" : "m0bd87b5900b9") : undefined} />
     <StatTile label={translate("mce075704a738")} value={formatTaskDuration(task.duration_ms)} />
   </div>;
 }
@@ -231,7 +230,7 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
   return <>
     {truncated ? <p role="status" className="rounded-md bg-warning-surface px-3 py-2 text-sm text-warning-text">
       <span>{translateSource(TRUNCATED)}</span>{` (span ${formatObserved(spans.length)} / ${formatObserved(data.span_total)})`}</p>
-      : <Kpis task={task} linksSource={data.agents?.links_source ?? null} />}
+      : <Kpis task={task} />}
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
       <div className="min-w-0 rounded-lg border border-ink-100 p-4">
         {lanes.length ? <TaskTimeline lanes={lanes} spans={shown} numbers={numbers} end={end} truncated={truncated}

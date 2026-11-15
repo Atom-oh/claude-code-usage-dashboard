@@ -2,8 +2,7 @@ import { translate, translateSource, useLocale } from "../i18n/index.js";
 // Codex subagent calls of one task (/api/users/tasks/detail `agents`): the parent turn that
 // started this one, the subagent turns this turn started (nested ones indented) with their
 // own calls and linked cost estimates, and the turn's total including them. Links are found
-// through the trace's parent-span chain, else (`links_source: "log"`) inferred from Codex
-// agent_communication logs, so an absent link is unknown, never zero subagents.
+// through the trace's parent-span chain, so an absent link is unknown, never zero subagents.
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { formatClientTimestamp, observedNumber } from "../clientPresentation.js";
 import { taskSharePath } from "../clientNavigation.js";
@@ -19,7 +18,7 @@ function cost(value, partial) {
 export function TaskAgents({ agents, from, to }) {
   const _locale = useLocale();
   if (!agents) return null;
-  const { parent, children = [], total, unlinked_calls: unlinked, limited, links_source: source } = agents;
+  const { parent, children = [], total, unlinked_calls: unlinked, limited } = agents;
   const th = "px-2 py-1 font-medium";
   const link = "text-brand-700 underline-offset-2 hover:underline";
   return <section aria-label={translate("mdf62edb62607")} className="rounded-lg border border-ink-100 p-4">
@@ -58,6 +57,6 @@ export function TaskAgents({ agents, from, to }) {
     </> : !parent && <p className="text-[13px] text-ink-500">{translate("mc6dc5f0f3a29")}</p>}
     {unlinked > 0 && <p className="mt-2 text-[12px] text-ink-500">{translate("mdaa24361cf11", [formatObserved(unlinked)])}</p>}
     {limited && <p className="mt-1 text-[12px] text-warning-text">{translate("me9647623a44e")}</p>}
-    <p className="mt-2 text-[12px] text-ink-500">{translate(source === "log" ? "mb1c9e46267bb" : "mb94cdf6330f5")}</p>
+    <p className="mt-2 text-[12px] text-ink-500">{translate("mb94cdf6330f5")}</p>
   </section>;
 }

@@ -26,8 +26,8 @@ import { EXACT_USER, SPAN_SLACK_MS, CODEX_TURN_LIMIT, CODEX_COMPLETION_LIMIT, TU
 export const AGENT_DEPTH = 3;
 export const AGENT_LIMIT = 50;
 // Time from the detail's start after which no read beyond the lineage span read starts (legacy
-// call-log, turn-conversation and turn reads, the communication fallback, and the subagent turn
-// and completion reads that price the links). A detail loads within the dashboard's 25 s budget;
+// call-log, turn-conversation and turn reads, and the subagent turn and completion reads that
+// price the links). A detail loads within the dashboard's 25 s budget;
 // the base Codex detail of the longest observed session takes about 20-22 s before any subagent
 // read, so a detail past 12 s issues only the lineage read and returns its links unpriced and
 // limited instead of exceeding the budget. A read batch started before the bound may run past it.
@@ -187,9 +187,7 @@ export function resolveLegacy(rows, callLogs, turnConversations, turns) {
   return { rows: resolved, conversations };
 }
 
-// A log-linked edge has no tool span: its tool_span is `communication:<kind>`.
-const COMMUNICATION = /^communication:(spawn|followup)$/;
-const toolName = (span) => TOOL.exec(span ?? "")?.[1] ?? COMMUNICATION.exec(span ?? "")?.[1] ?? null;
+const toolName = (span) => TOOL.exec(span ?? "")?.[1] ?? null;
 const taskId = (conversation, turn) => IDENT.test(conversation ?? "") && TURN_ID.test(turn ?? "")
   ? `codex:${conversation}:${turn}` : null;
 
@@ -242,98 +240,6 @@ export function walkLineage(rows, turnId, conversations = new Map()) {
   return { parent, links, limited };
 }
 
-// Codex 0.167.1 and later log codex.agent_communication when a thread sends to another (thread ids
-// are conversation ids). Without traces it is the only lineage: a spawn/followup send starts the
-// receiver's next turn within this long.
-export const COMMUNICATION_CHILD_MS = 60000;
-export const COMMUNICATION_LIMIT = 1000;
-
-const communicationSql = (match) => `SELECT LogAttributes['kind'] AS kind, LogAttributes['sender_thread_id'] AS sender,
-    LogAttributes['receiver_thread_id'] AS receiver,
-    toString(toUnixTimestamp64Milli(Timestamp)) AS at_ms
-FROM claude_code.otel_logs
-PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
-  AND EventName = 'codex.agent_communication'
-  AND ${EXACT_USER}
-WHERE LogAttributes['kind'] IN ('spawn', 'followup')
-  AND LogAttributes['state'] = 'send'
-  AND ${match}
-  AND coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '') = {userExact:String}
-ORDER BY Timestamp
-LIMIT ${COMMUNICATION_LIMIT + 1}`;
-// The read window. A send of the turn is at most LEGACY_CALL_SLACK_MS outside its window
-// (containingTurn), and a send competing for its child (communicationLinks) falls between it and
-// that child's start, at most COMMUNICATION_CHILD_MS later. spanTo is truncated to the second.
-const communicationWindow = (startMs, endMs) => ({ spanFrom: toChDateTime(new Date(startMs - COMMUNICATION_CHILD_MS)),
-  spanTo: toChDateTime(new Date(endMs + LEGACY_CALL_SLACK_MS + COMMUNICATION_CHILD_MS + 1000)) });
-
-// The spawn/follow-up sends to or from `conversationId` around the turn's window. A send is a log
-// row of the owner; only kind, the two thread ids and the time leave the database.
-export function codexCommunicationSql(owner, conversationId, startMs, endMs) {
-  return {
-    sql: communicationSql(`(LogAttributes['sender_thread_id'] = {conversationId:String} OR LogAttributes['receiver_thread_id'] = {conversationId:String})`),
-    params: { ...communicationWindow(startMs, endMs), userExact: owner, conversationId },
-  };
-}
-
-// The sends of other conversations of the owner to `receivers` (the conversations
-// `conversationId` sent to) in the same window: a later one may claim the receiver turn that a
-// send of the turn would otherwise start.
-export function codexCompetingSendSql(owner, conversationId, receivers, startMs, endMs) {
-  return {
-    sql: communicationSql(`LogAttributes['receiver_thread_id'] IN {receivers:Array(String)}
-  AND LogAttributes['sender_thread_id'] != {conversationId:String}`),
-    params: { ...communicationWindow(startMs, endMs), userExact: owner, conversationId, receivers },
-  };
-}
-
-// walkLineage-shaped parent and links from communication sends (rows of codexCommunicationSql
-// and codexCompetingSendSql) and turn rows of the conversations involved (the task's own
-// included). A receiver turn belongs to one send at most: the latest spawn/followup send to its
-// conversation with t <= start <= t + COMMUNICATION_CHILD_MS. Sends of one millisecond are
-// ordered by sender id, then kind, and the last wins (an arbitrary fixed order, so every detail
-// names the same winner; sends of one conversation at one time resolve to the same turn). That
-// send's turn is its sender's turn running at it (containingTurn: observed windows of one
-// conversation's turns may overlap); an unresolved turn claims the receiver turn for nobody.
-// This turn's children are the receiver turns that its sends claim, each the receiver's first
-// turn starting in [t, t + COMMUNICATION_CHILD_MS] (a later turn is no send's); its parent is the
-// send claiming this turn. Only UUID-shaped turn ids count. `limited`: more eligible children
-// than AGENT_LIMIT were found and the rest are not returned.
-export function communicationLinks(sends, turns, { conversationId, turnId, startMs, endMs }) {
-  const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-  const valid = sends.filter((x) => IDENT.test(x.sender ?? "") && IDENT.test(x.receiver ?? "")
-    && x.sender !== x.receiver && /^(spawn|followup)$/.test(x.kind ?? "") && Number.isFinite(count(x.at_ms)))
-    .map((x) => ({ ...x, t: count(x.at_ms) })).sort((a, b) => a.t - b.t || order(a.sender, b.sender) || order(a.kind, b.kind));
-  const starts = (t) => count(t.start_ms);
-  // The send claiming a turn of `receiver` starting at `at`: the last eligible one in send order.
-  const claimant = (receiver, at) => valid.findLast((x) => x.receiver === receiver && x.t <= at && at <= x.t + COMMUNICATION_CHILD_MS) ?? null;
-  const links = [], seen = new Set([turnId]);
-  let limited = false;
-  for (const x of valid) {
-    if (x.sender !== conversationId || containingTurn(turns, conversationId, x.t)?.turn_id !== turnId) continue;
-    const child = turns.filter((t) => t.conversation_id === x.receiver && TURN_ID.test(t.turn_id ?? "") && starts(t) !== null
-      && starts(t) >= x.t && starts(t) <= x.t + COMMUNICATION_CHILD_MS)
-      .reduce((a, b) => (!a || starts(b) < starts(a) ? b : a), null);
-    if (!child || seen.has(child.turn_id)) continue;
-    // A later send (of another turn or conversation) claims the child instead.
-    const w = claimant(x.receiver, starts(child));
-    if (w.sender !== conversationId || containingTurn(turns, conversationId, w.t)?.turn_id !== turnId) continue;
-    if (links.length >= AGENT_LIMIT) { limited = true; break; }
-    seen.add(child.turn_id);
-    links.push({ parent_turn: turnId, parent_conversation: conversationId, tool_span: `communication:${w.kind}`,
-      tool_span_id: null, child_turn: child.turn_id, child_conversation: x.receiver, child_start_ms: starts(child), depth: 1 });
-  }
-  let parent = null;
-  const x = Number.isFinite(startMs) ? claimant(conversationId, startMs) : null;
-  // This turn must be the conversation's first to start after the send.
-  const first = x && !turns.some((t) => t.conversation_id === conversationId && t.turn_id !== turnId && TURN_ID.test(t.turn_id ?? "")
-    && starts(t) !== null && starts(t) >= x.t && starts(t) <= startMs);
-  const owner = first ? containingTurn(turns, x.sender, x.t) : null;
-  if (owner) parent = { parent_turn: owner.turn_id, parent_conversation: x.sender, tool_span: `communication:${x.kind}`, tool_span_id: null,
-    child_turn: turnId, child_conversation: conversationId, child_start_ms: startMs, depth: 1 };
-  return { parent, links, limited };
-}
-
 // Summed known values with a partial flag; all unknown is null.
 function knownSum(values) {
   const known = values.filter((v) => v !== null && v !== undefined && Number.isFinite(v));
@@ -347,7 +253,7 @@ function knownSum(values) {
 // the subagent turn and completion reads; a subagent turn ending within SPAN_SLACK_MS of it may
 // continue past it (its later spans and completions unread), so its calls and cost are partial and
 // the result limited.
-export function foldAgents({ task, parent = null, links = [], entries = [], limited = false, spawnSpanIds = null, namesTurn = false, linksSource = null, sendsSeen = false, toolSpanIds = [], readToMs = null }) {
+export function foldAgents({ task, parent = null, links = [], entries = [], limited = false, spawnSpanIds = null, namesTurn = false, toolSpanIds = [], readToMs = null }) {
   const parentId = parent ? taskId(parent.parent_conversation, parent.parent_turn) : null;
   const byTurn = new Map(entries.map((e) => [e.turn.turn_id, e]));
   const idOfTurn = new Map(links.map((l) => [l.child_turn, taskId(l.child_conversation, l.child_turn)]));
@@ -401,7 +307,6 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
   }
   return {
     parent: parentOut,
-    links_source: linksSource,
     children: ordered,
     subagents: conversations.size,
     // Spawn/follow-up calls of this turn whose subagent turn was not found in the traces.
@@ -410,10 +315,9 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
     limited,
     // Positive evidence of no subagent calls: spans read complete, no call, and a version that
     // names its turn on tool spans (a missing call there is a real absence, not a missing tag),
-    // no unlinked tool span of the turn (a send_input may have started a turn the traces missed)
-    // and no communication send of the turn's conversation in its window.
+    // and no unlinked tool span of the turn (a send_input may have started a turn the traces missed).
     known_zero: spawnSpanIds !== null && spawnSpanIds.length === 0 && !limited && links.length === 0 && Boolean(namesTurn)
-      && toolSpanIds.every((id) => linkedSpawns.has(id)) && !sendsSeen,
+      && toolSpanIds.every((id) => linkedSpawns.has(id)),
     total: { llm_calls: calls.value, llm_calls_partial: calls.partial || limited,
       cost_usd: cost.value, cost_partial: cost.partial || limited || Boolean(task.cost_partial)
         || children.some((c) => c.cost_partial) },
@@ -496,45 +400,8 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     if (spawnSpanIds !== null) spawnSpanIds = [...new Set([...spawnSpanIds,
       ...rows.filter((r) => SPAWN_SPANS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id)])];
   }
-  let walked = walkLineage(rows, turn.turnId, conversations);
+  const walked = walkLineage(rows, turn.turnId, conversations);
   limited ||= walked.limited;
-  let linksSource = walked.parent || walked.links.length ? "trace" : null, sendsSeen = false;
-  // No traced child: the communication logs may still name the turn's subagents (and, without a
-  // traced parent, its parent), and a send of the turn rules out a known zero. One log read, then
-  // one owner-filtered turn read of the conversations they name alongside one log read of other
-  // conversations' sends to this conversation's receivers. A traced child adds no reads.
-  if (!walked.links.length && IDENT.test(turn.conversationId ?? "") && extra()) {
-    const s = codexCommunicationSql(owner, turn.conversationId, turn.startMs, turn.endMs);
-    const got = await run(s.sql, s.params);
-    if (got.length > COMMUNICATION_LIMIT) limited = true;
-    const sends = got.slice(0, COMMUNICATION_LIMIT);
-    sendsSeen = sends.some((x) => x.sender === turn.conversationId && count(x.at_ms) >= turn.startMs && count(x.at_ms) <= turn.endMs);
-    const others = [...new Set(sends.flatMap((x) => [x.sender, x.receiver]).filter((c) => IDENT.test(c ?? "")))].sort();
-    // At most COMMUNICATION_LIMIT + 1 ids (each send names this conversation), chunked and capped.
-    const wanted = capIds([...new Set([turn.conversationId, ...others])].filter((c) => !read.has(c)), [turn.conversationId]);
-    // Another conversation's later send may claim a receiver turn of this conversation's sends, so
-    // those receivers' sends are read too (the sends to this conversation already are). Their
-    // senders' turns are not needed: a send of another conversation is never this turn's.
-    const receivers = capIds([...new Set(sends.filter((x) => x.sender === turn.conversationId && IDENT.test(x.receiver ?? "")
-      && x.receiver !== turn.conversationId).map((x) => x.receiver))].sort());
-    const [turnsGot, competing] = await Promise.all([
-      sends.length && wanted.length && extra()
-        ? readChunked(wanted, (ids) => codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: ids }), CODEX_TURN_LIMIT) : null,
-      receivers.length && extra()
-        ? readChunked(receivers, (ids) => codexCompetingSendSql(owner, turn.conversationId, ids, turn.startMs, turn.endMs), COMMUNICATION_LIMIT)
-        : { rows: [] },
-    ]);
-    if (turnsGot) {
-      turnRows = [...turnRows, ...turnsGot.rows];
-      for (const c of turnsGot.covered) read.add(c);
-    }
-    const found = communicationLinks([...sends, ...competing.rows], turnRows, { conversationId: turn.conversationId, turnId: turn.turnId,
-      startMs: turn.startMs, endMs: turn.endMs });
-    limited ||= found.limited;
-    // A traced parent stays; the log's parent is used only when the trace has none.
-    const parent = walked.parent ?? found.parent;
-    if (found.links.length || parent !== walked.parent) { walked = { ...walked, parent, links: found.links }; linksSource = "log"; }
-  }
   const conversationIds = [...new Set(walked.links.map((l) => l.child_conversation).filter((c) => IDENT.test(c ?? "")))];
   const parentConversation = walked.parent && IDENT.test(walked.parent.parent_conversation ?? "")
     ? walked.parent.parent_conversation : null;
@@ -557,7 +424,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   }
   const toolSpanIds = rows.filter((r) => LINK_TOOLS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id);
   return foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds, namesTurn: turn.namesTurn,
-    linksSource, sendsSeen, toolSpanIds, readToMs: lineageTo.getTime() + SPAN_SLACK_MS });
+    toolSpanIds, readToMs: lineageTo.getTime() + SPAN_SLACK_MS });
 }
 
 // A linked count, or a zero only with positive evidence (`known_zero`); otherwise unknown (no
