@@ -29,6 +29,8 @@ const ORDER = "UserIdentity, TurnHour, TurnId";
 // Only UUID-shaped ids qualify (synthetic ids such as `auto-compact-N` repeat across turns).
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID_V7_SQL = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+// Any UUID-shaped id: one turn, unlike a synthetic id such as `auto-compact-N`.
+const UUID_SQL = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 const HOUR_MS = 3600000;
 
 // A span's TurnHour uses its v7 id time only when that time is plausible for the span: at most
@@ -153,8 +155,9 @@ ${codexTurnsTransform(`Timestamp >= ${from} AND Timestamp < ${to}`)};`;
 // TURN_ID_MAX_AGE_MS: the raw scan, so every window row is compared whole. A turn whose rollup
 // end reaches the raw end may have spans past it and is reported as clipped, kept out of
 // differs. A turn is compared in each window holding one of its rows, over its rows from that
-// window on. Any differs = 1 row blocks, as does a turn with two conversations (reads pick one).
-// A turn present on one side only differs.
+// window on. Any differs = 1 row blocks, as does a UUID turn with two conversations (reads pick
+// one). A synthetic id groups spans of several conversations, so it differs only when the
+// conversation sets differ. A turn present on one side only differs.
 export function codexTurnsVerifySql() {
   const from = "{verifyFrom:DateTime('UTC')}", to = "{verifyTo:DateTime('UTC')}";
   const hours = ms => `INTERVAL ${ms / HOUR_MS} HOUR`;
@@ -172,7 +175,7 @@ FROM (
   SELECT TurnId AS turn_id,
     ifNull(t.present, 0) = 1 AS t_present, ifNull(r.present, 0) = 1 AS r_present,
     toUInt8(t_present AND t.end_ts >= ${upper}) AS clipped,
-    toUInt8(NOT (t_present AND r_present) OR (NOT clipped AND (length(t.conversations) > 1
+    toUInt8(NOT (t_present AND r_present) OR (NOT clipped AND ((match(TurnId, '${UUID_SQL}') AND length(t.conversations) > 1)
       OR ${pairs.map(name => `t.${name} != r.${name}`).join("\n      OR ")}))) AS differs
   FROM (
     SELECT UserIdentity, TurnId, toUInt8(1) AS present,

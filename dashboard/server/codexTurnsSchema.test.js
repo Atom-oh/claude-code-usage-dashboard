@@ -130,6 +130,8 @@ test("backfill is bounded to one day and repeats the view's transform", () => {
 
 test("verify compares merged rows with raw spans and keeps clipped turns out of differs", () => {
   const sql = codexTurnsVerifySql();
+  const UUID_SQL = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+  assert.doesNotMatch(sql, /NOT clipped AND \(length\(t\.conversations\) > 1/);
   assert.doesNotMatch(sql, /INSERT|ALTER|CREATE|DELETE/);
   // Raw spans of a turn keyed in the window start at most the id lead before it and, on its id
   // hour, at most the id age after it: [verifyFrom - 1 day, verifyTo + 7 days).
@@ -147,7 +149,9 @@ test("verify compares merged rows with raw spans and keeps clipped turns out of 
     // Clipped from the rollup's end, which reaches past the raw end only when spans do.
     `toUInt8(t_present AND t.end_ts >= ${VTO} + INTERVAL ${age} HOUR) AS clipped`,
     "groupUniqArrayMerge(Conversations)", "uniqExactMerge(SamplingSpans)", "uniqExactMerge(SpawnCalls)",
-    "length(t.conversations) > 1", "FULL OUTER JOIN", "USING (UserIdentity, TurnId)",
+    // Two conversations block a UUID turn only; a synthetic id groups several conversations and
+    // differs only when the conversation sets differ.
+    `(match(TurnId, '${UUID_SQL}') AND length(t.conversations) > 1)`, "t.conversations != r.conversations", "FULL OUTER JOIN", "USING (UserIdentity, TurnId)",
     // The version is the largest non-empty one on both sides: deterministic, and empty never wins.
     "max(AppVersion) AS version", "maxIf(span_version, span_version != '') AS version", "t.version != r.version",
   ]) assert.ok(sql.includes(part), part);

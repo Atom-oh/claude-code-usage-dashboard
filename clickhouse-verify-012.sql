@@ -11,7 +11,7 @@ FROM (
   SELECT TurnId AS turn_id,
     ifNull(t.present, 0) = 1 AS t_present, ifNull(r.present, 0) = 1 AS r_present,
     toUInt8(t_present AND t.end_ts >= {verifyTo:DateTime('UTC')} + INTERVAL 168 HOUR) AS clipped,
-    toUInt8(NOT (t_present AND r_present) OR (NOT clipped AND (length(t.conversations) > 1
+    toUInt8(NOT (t_present AND r_present) OR (NOT clipped AND ((match(TurnId, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') AND length(t.conversations) > 1)
       OR t.conversations != r.conversations
       OR t.start_ts != r.start_ts
       OR t.end_ts != r.end_ts

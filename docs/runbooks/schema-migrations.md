@@ -371,7 +371,9 @@ ledger to equal its version list, so run steps 3-5 only from merged `main`.
    first), not hour by hour: each call pays the full 192 h scan, so hourly calls would rescan the
    same week 24 times per day. It returns one row per turn whose first hour is in the window:
    `differs` (rollup and raw disagree on conversation set, start, end, any span count, models,
-   version, or the turn is missing on one side) and `clipped` (the rollup end reaches
+   version, the turn is missing on one side, or a UUID turn id has two conversations; a synthetic
+   id such as `auto-compact-N` groups several conversations and differs only when the sets
+   differ) and `clipped` (the rollup end reaches
    `verifyTo + 168h`, so the raw range may cut the turn; counted, not compared). Record the number
    of clipped turns; they do not block activation. Any other row with `differs = 1` blocks it.
    Expired raw rows cannot be reconstructed, so hours before the first backfilled hour are a

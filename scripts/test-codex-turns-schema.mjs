@@ -210,6 +210,12 @@ const boundarySpans = [
   span("codex.sampling", t12, "2026-10-25T13:30:00.000Z", { user: userE, model: sol, conversation: "conv-l" }),
   span("codex.sampling", t12, "2026-10-25T15:00:00.000Z", { user: userE, model: sol, conversation: "conv-l" }),
 ];
+// T13: a synthetic id grouping spans of two conversations (auto-compact ids repeat across
+// conversations): the sets match on both sides, so verify does not block on it.
+const t13 = "auto-compact-13";
+boundarySpans.push(
+  span("codex.compaction", t13, "2026-10-18T19:00:00.000Z", { user: userE, key: "turn.id", conversation: "conv-n" }),
+  span("codex.compaction", t13, "2026-10-18T19:05:00.000Z", { user: userE, key: "turn.id", conversation: "conv-o" }));
 // One insert block of garbage-time v7 ids spread over 120 months (2050-2059, inside the DateTime
 // range, so nothing saturates). With id hours it would exceed max_partitions_per_insert_block and
 // fail the otel_traces insert (ClickHouse code 252, checked against the unbounded rule).
@@ -606,11 +612,12 @@ const expected = [
   { hour: 21, turn_id: t11, differs: 0, clipped: 1 },
   { hour: 16, turn_id: t6, differs: 1, clipped: 0 },
   { hour: 18, turn_id: t5, differs: 0, clipped: 0 },
+  { hour: 19, turn_id: t13, differs: 0, clipped: 0 },
   { hour: 10, turn_id: t8, differs: 0, clipped: 0 }, { hour: 11, turn_id: t8, differs: 0, clipped: 0 },
   ...garbage.map(turn_id => ({ hour: 8, turn_id, differs: 0, clipped: 0 })),
 ];
 const order = list => [...list].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-check(order(verified), order(expected), "verify: each turn row's window; only the two-conversation turn differs; clipped turns are excluded");
+check(order(verified), order(expected), "verify: each turn row's window; only the two-conversation UUID turn differs; clipped turns are excluded");
 // T12's own-hour window reads the 15:00 span and its row; the 13:30 span on the same day belongs
 // to the id-hour row, so neither side groups it here.
 check(verifyHour(15, "2026-10-25"), [{ turn_id: t12, differs: 0, clipped: 0 }], "verify: a fragment past the 7 day age matches");
