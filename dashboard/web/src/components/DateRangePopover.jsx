@@ -58,6 +58,7 @@ function PickerField({ id, label, value, setValue, mode, locale, active, onOpen,
       <DatePicker inline selected={calendarDay(value)} onChange={changeDay}
         locale={calendarLocale[locale]} dateFormatCalendar={calendarHeader[locale]}
         maxDate={mode === "date" ? calendarDay(maxDay) : new Date()}
+        monthAriaLabelPrefix="" showWeekNumbers={false}
         previousMonthAriaLabel={translate("m77f9e6084937")} nextMonthAriaLabel={translate("m4c33c6a0b753")}
         chooseDayAriaLabelPrefix={translate("m83e222c2fb52")} disabledDayAriaLabelPrefix={translate("m49e86c3288d4")} />
       {mode === "time" && <div className="mt-2 flex gap-2">

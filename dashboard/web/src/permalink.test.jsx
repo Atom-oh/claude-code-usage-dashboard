@@ -240,6 +240,16 @@ test("Escape closes the calendar and returns focus without dismissing the range 
   expect(screen.getByRole("button", { name: "적용", exact: true })).toBeTruthy();
 });
 
+test("the calendar month announcement follows the selected locale", () => {
+  stubFetch();
+  const { container } = mount("/cost", cfg());
+  fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+  fireEvent.click(screen.getByRole("button", { name: "시작일 달력 열기" }));
+  const month = container.querySelector(".react-datepicker__month");
+  expect(month.getAttribute("aria-label")).toContain("월");
+  expect(month.getAttribute("aria-label")).not.toMatch(/^Month\b/);
+});
+
 test("a growing range editor is repositioned to keep its controls inside the viewport", () => {
   stubFetch();
   let notifyResize;
