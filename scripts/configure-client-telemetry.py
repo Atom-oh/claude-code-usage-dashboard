@@ -11,12 +11,25 @@ import tempfile
 
 BEGIN = "# >>> ccdash otel (setup-test-telemetry-all.sh) >>>"
 END = "# <<< ccdash otel <<<"
+# Codex exports to the local Collector over loopback OTLP/gRPC, like Claude. Codex merges
+# `-c otel.*` overrides into this table, so a launcher must use the same exporter kind
+# (codex_exporter_kind).
+CODEX_GRPC_ENDPOINT = "http://127.0.0.1:4317"
 CODEX_OTEL = '''[otel]
+log_user_prompt = false
+exporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317" } }
+metrics_exporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317" } }
+trace_exporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317" } }
+'''
+# The previous default (loopback OTLP/HTTP JSON). The Collector still receives it; setup
+# replaces it with CODEX_OTEL, including a hand-written copy without markers.
+LEGACY_CODEX_OTEL = '''[otel]
 log_user_prompt = false
 exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/logs", protocol = "json" } }
 metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics", protocol = "json" } }
 trace_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/traces", protocol = "json" } }
 '''
+CODEX_SIGNALS = (("exporter", "logs"), ("metrics_exporter", "metrics"), ("trace_exporter", "traces"))
 CLAUDE_ENV = {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
     "OTEL_METRICS_EXPORTER": "otlp",
@@ -61,6 +74,48 @@ def toml_load(text):
         raise ValueError("invalid Codex TOML; no client configuration was changed") from None
 
 
+def codex_exporter_kind(config):
+    """Exporter kind a launcher override must use: Codex merges `-c otel.<exporter>` into
+    the configured table, and two kinds in one exporter fail its config load."""
+    otel = config.get("otel", {}) if isinstance(config, dict) else {}
+    kinds = {kind for key, _ in CODEX_SIGNALS if isinstance(otel.get(key), dict) for kind in otel[key]}
+    return "otlp-http" if "otlp-http" in kinds else "otlp-grpc"
+
+
+def codex_exporter_override(key, signal, kind, headers=None):
+    """One `-c` value routing a Codex signal to the local Collector with optional headers."""
+    header = (",headers={" + ",".join(json.dumps(k) + "=" + json.dumps(v) for k, v in headers.items()) + "}"
+              if headers else "")
+    if kind == "otlp-http":
+        target = 'otlp-http={endpoint="http://127.0.0.1:4318/v1/' + signal + '",protocol="json"'
+    else:
+        target = 'otlp-grpc={endpoint="' + CODEX_GRPC_ENDPOINT + '"'
+    return "otel." + key + "={" + target + header + "}}"
+
+
+def without_otel_table(text):
+    """Text without its `[otel]` / `[otel.*]` tables, or None when the table cannot be cut out
+    exactly (dotted keys, inline tables elsewhere): every other setting must parse unchanged."""
+    lines = text.splitlines(keepends=True)
+    header = re.compile(r"\s*\[\s*([^\[\]]+?)\s*\]\s*(#.*)?$")
+    kept, skipping = [], False
+    for line in lines:
+        match = header.match(line.rstrip("\r\n"))
+        if match:
+            name = match.group(1)
+            skipping = name == "otel" or name.startswith("otel.")
+        if not skipping:
+            kept.append(line)
+    result = "".join(kept)
+    try:
+        before, after = toml_load(text), toml_load(result)
+    except ValueError:
+        return None
+    if "otel" in after or {k: v for k, v in before.items() if k != "otel"} != after:
+        return None
+    return result
+
+
 def codex_config(text, enabled):
     if not enabled and BEGIN not in text and END not in text:
         # A disabled client with no block we own needs no config operation.
@@ -77,10 +132,19 @@ def codex_config(text, enabled):
         stripped = text
     remaining = toml_load(stripped)
     if "otel" in remaining:
-        if enabled and remaining["otel"] != toml_load(CODEX_OTEL)["otel"]:
+        if enabled and remaining["otel"] == toml_load(LEGACY_CODEX_OTEL)["otel"]:
+            # The previous loopback HTTP default written by hand: move it to gRPC. When the
+            # table cannot be cut out exactly it keeps working (the Collector still receives
+            # HTTP), so it stays as written.
+            cut = without_otel_table(stripped)
+            if cut is None:
+                return text
+            stripped, remaining = cut, toml_load(cut)
+        elif enabled and remaining["otel"] != toml_load(CODEX_OTEL)["otel"]:
             raise ValueError("unmanaged Codex [otel] conflicts with local collection; migrate it before setup")
-        # A matching hand-written table already works. Never append a duplicate.
-        return text
+        else:
+            # A matching hand-written table already works. Never append a duplicate.
+            return text
     result = stripped.rstrip() + "\n" if stripped.strip() else ""
     if enabled:
         result += "\n" + BEGIN + "\n" + CODEX_OTEL + END + "\n"

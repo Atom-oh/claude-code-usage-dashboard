@@ -22,7 +22,7 @@ connected in a running environment.
 flowchart TB
     subgraph HOST["Participant host - outside EKS"]
         CLIENT["Claude Code, when enabled"] -->|"OTLP/gRPC on loopback 4317"| COLLECTOR["Collector and disk queue"]
-        CODEX["Codex, when enabled"] -->|"OTLP/HTTP logs, metrics, traces on loopback 4318"| COLLECTOR
+        CODEX["Codex, when enabled"] -->|"OTLP logs, metrics, traces on loopback: gRPC 4317 (managed setup) or HTTP 4318 (workshop launcher)"| COLLECTOR
     end
     BROWSER["Browser running React SPA"] -->|"HTTPS"| EDGE["Dashboard CloudFront distribution"]
     NLB["Internal NLB in the VPC"]

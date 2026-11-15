@@ -118,8 +118,12 @@ accepts a chosen nonsecret ID. Legacy macOS migration reuses `user.email` from C
 settings or the current shell when available; otherwise it asks for the existing ID.
 Restart clients after setup.
 
-Claude uses loopback gRPC on 127.0.0.1:4317; Codex uses loopback HTTP on
-127.0.0.1:4318. For Codex backend provenance use:
+Claude and Codex both export over loopback OTLP/gRPC on 127.0.0.1:4317. Rerunning
+setup moves an existing managed or hand-written copy of the previous Codex default
+(OTLP/HTTP JSON on 127.0.0.1:4318) to gRPC; the Collector still receives HTTP on 4318
+for configurations it cannot rewrite. Codex merges `-c otel.*` overrides into its
+`[otel]` table, so the launcher below uses the configured exporter kind. For Codex
+backend provenance use:
 
 ```bash
 python3 "$HOME/.local/share/ccdash-collector/launch-codex.py"

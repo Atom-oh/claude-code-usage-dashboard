@@ -29,6 +29,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Changed
 
+- Device and local setup configure Codex to export over loopback OTLP/gRPC on
+  127.0.0.1:4317, like Claude, instead of OTLP/HTTP JSON on 4318; rerunning setup moves an
+  existing copy of the previous default. Both launchers pass overrides of the configured
+  exporter kind, because Codex merges them and rejects two kinds in one exporter. The
+  Collector still receives HTTP on 4318.
 - License the repository under FSL-1.1-ALv2 instead of all rights reserved: internal
   use, education, research and professional services are permitted, competing commercial
   products or services are not, and each version becomes Apache-2.0 two years after

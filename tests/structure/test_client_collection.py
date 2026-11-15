@@ -132,6 +132,21 @@ class ClientConfigurationTests(unittest.TestCase):
                     self.assertIn('"x-ccdash-backend"="bedrock-' + endpoint + '"', setting)
                 self.assertNotIn("fixture-secret-do-not-print", " ".join(command))
                 self.assertEqual(child["AWS_BEARER_TOKEN_BEDROCK"], "fixture-secret-do-not-print")
+                # A Codex config already on loopback gRPC (managed local setup) gets gRPC overrides:
+                # Codex merges them into that table, and mixed kinds fail its config load.
+                with tempfile.TemporaryDirectory() as home:
+                    Path(home, "config.toml").write_text(
+                        '[otel]\nexporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317" } }\n')
+                    grpc, _ = self.module.launch_command({
+                        "CODEX_ENABLED": "true", "CODEX_BEDROCK_ENDPOINT": endpoint, "CODEX_HOME": home,
+                        "AWS_BEARER_TOKEN_BEDROCK": "fixture-secret-do-not-print",
+                    }, ["--version"])
+                    exporters = [v for v in grpc if v.startswith(("otel.exporter=", "otel.metrics_exporter=", "otel.trace_exporter="))]
+                    self.assertEqual(len(exporters), 3)
+                    for value in exporters:
+                        self.assertIn('otlp-grpc={endpoint="http://127.0.0.1:4317"', value)
+                        self.assertIn('"x-ccdash-backend"="bedrock-' + endpoint + '"', value)
+                        self.assertNotIn("4318", value)
                 self.assertIn("backend=bedrock-" + endpoint, child["OTEL_RESOURCE_ATTRIBUTES"])
                 if endpoint == "runtime":
                     self.assertTrue(any('env_key="AWS_BEARER_TOKEN_BEDROCK"' in value for value in overrides))

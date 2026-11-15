@@ -151,8 +151,8 @@ class Installer(unittest.TestCase):
             self.assertEqual(auth.read_text(), '{"private":"unchanged"}')
             self.assertEqual(json.loads(claude.read_text())["env"]["ANTHROPIC_BASE_URL"],
                              "https://private.example")
-            self.assertEqual(config["otel"]["metrics_exporter"]["otlp-http"]["endpoint"],
-                             "http://127.0.0.1:4318/v1/metrics")
+            self.assertEqual(config["otel"]["metrics_exporter"]["otlp-grpc"]["endpoint"],
+                             "http://127.0.0.1:4317")
             self.assertEqual(self.module.client_plan(home, "developer")[0], [])
 
     def test_unmanaged_client_conflict_preserves_both_files(self):
@@ -206,6 +206,13 @@ class Installer(unittest.TestCase):
         self.assertFalse(any(value.startswith(("model=", "model_provider=", "model_providers.")) for value in command))
         self.assertEqual(sum("x-ccdash-backend" in value and "bedrock-runtime" in value for value in command), 3)
         self.assertEqual(config["model"], "leave-this-model")
+        # Overrides use loopback gRPC unless the configured table is still the legacy HTTP one:
+        # Codex merges them, and two exporter kinds in one table fail its config load.
+        self.assertEqual(sum('otlp-grpc={endpoint="http://127.0.0.1:4317"' in value for value in command), 3)
+        legacy = {**config, **launcher.configurator.toml_load(launcher.configurator.LEGACY_CODEX_OTEL)}
+        command, _ = launcher.launch_command(legacy, arguments, {})
+        self.assertEqual(sum("otlp-http={endpoint=\"http://127.0.0.1:4318/v1/" in value for value in command), 3)
+        self.assertFalse(any("otlp-grpc" in value for value in command))
 
     def test_codex_custom_provider_is_not_guessed_from_a_model_name(self):
         spec = importlib.util.spec_from_file_location("launcher", ROOT / "launch-codex.py")

@@ -213,7 +213,8 @@ for the collector. Its Claude/Codex pipelines and matching activation flags must
 already be enabled. Both modes configure:
 
 - `${CODEX_HOME:-$HOME/.codex}/config.toml`: a managed `[otel]` table with all
-  three native OTLP/HTTP JSON exporters and `log_user_prompt=false`. Plain Codex,
+  three native OTLP/gRPC exporters on `127.0.0.1:4317` and `log_user_prompt=false`; an
+  existing copy of the previous OTLP/HTTP JSON default moves to gRPC. Plain Codex,
   `icodex` and other wrappers that retain user configuration use the same settings.
 - `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`: Claude telemetry environment
   defaults, preserving other settings/env entries. It updates resource attributes only
@@ -246,8 +247,11 @@ configuration roots may take precedence. Configure each intended root separately
 This is support for Claude Code/Codex entry points, not arbitrary application logs.
 Receiver readiness still does not prove end-to-end dashboard coverage.
 
-Receivers bind only to loopback: Claude OTLP/gRPC on `127.0.0.1:4317`, Codex OTLP/HTTP
-JSON on `127.0.0.1:4318/v1/{logs,metrics,traces}`. Existing ClickHouse TLS, ingest
+Receivers bind only to loopback: OTLP/gRPC on `127.0.0.1:4317` and OTLP/HTTP JSON on
+`127.0.0.1:4318/v1/{logs,metrics,traces}`; pipelines split clients by provenance, not port.
+Claude and managed Codex settings use gRPC. The workshop launcher uses HTTP (qualified with
+Codex 0.154.0) unless the user's Codex config already uses gRPC: Codex merges its `-c`
+overrides into that table, and two exporter kinds fail config load. Existing ClickHouse TLS, ingest
 credentials, durable queues and retry settings remain. Apply additive
 [migration 006](../../clickhouse-migration-006.sql) before enabling the new pipelines.
 It requires ledger 004, not migration 005; Codex traces reuse existing `otel_traces`.

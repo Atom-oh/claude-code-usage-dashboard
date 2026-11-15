@@ -94,10 +94,12 @@ def launch_command(config, arguments, environment, provenance_known=True):
     if local or profile_selected or not provenance_known:
         backend = None
     command = ["codex", "-c", "otel.log_user_prompt=false"]
-    for key, signal in (("exporter", "logs"), ("metrics_exporter", "metrics"), ("trace_exporter", "traces")):
-        header = ',headers={"x-ccdash-backend"=' + json.dumps(backend) + '}' if backend else ""
-        command.extend(["-c", 'otel.' + key + '={otlp-http={endpoint="http://127.0.0.1:4318/v1/'
-                        + signal + '",protocol="json"' + header + '}}'])
+    # Codex merges these into the user's [otel] table, so they use its exporter kind:
+    # loopback gRPC (the managed default) unless a legacy HTTP table is still configured.
+    kind = configurator.codex_exporter_kind(config)
+    for key, signal in configurator.CODEX_SIGNALS:
+        command.extend(["-c", configurator.codex_exporter_override(
+            key, signal, kind, {"x-ccdash-backend": backend} if backend else None)])
     return command + arguments, dict(environment)
 
 
