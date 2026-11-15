@@ -197,16 +197,17 @@ const ceilSecond = (ms) => Math.ceil(ms / 1000) * 1000;
 // [s, e + slack] and before to + 24h; earlier turns cannot win a completion from this one, and
 // linkCompletions links a completion at exactly e + slack, which a turn starting then wins (the
 // bound is inclusive: startTo is exclusive milliseconds, so e + slack + 1). Completions:
-// Timestamp in [max(s - 1h, from), min(e + 24h, to + 24h)) (link time is event.timestamp, and
-// collector time can lag). Spans and skills: [s - 1 min, min(e + 1 min, to + 24h)). The upper bounds
-// stop at the list's own reads, so a detail never links what its list row did not read. DateTime
+// Timestamp in [max(s - 1h, from), to + 24h): linking uses event.timestamp, while the read bounds
+// the collector Timestamp, which can lag the event by any amount (a device collector buffering
+// offline); the list links every such completion it reads up to to + 24h, so the detail reads to
+// that same bound. Spans and skills: [s - 1 min, min(e + 1 min, to + 24h)). The upper bounds stop
+// at the list's own reads, so a detail never links what its list row did not read. DateTime
 // parameters carry whole seconds: lower bounds round down, upper bounds up, never narrower.
 export function codexTurnWindow(from, to, startMs, endMs) {
   const cap = to.getTime() + SPAN_SLACK_MS;
   return {
     competitors: { startFrom: startMs, startTo: Math.min(endMs + COMPLETION_SLACK_MS + 1, cap) },
-    completions: { logFrom: new Date(Math.max(startMs - HOUR_MS, from.getTime())),
-      logTo: new Date(Math.min(ceilSecond(endMs + SPAN_SLACK_MS), cap)) },
+    completions: { logFrom: new Date(Math.max(startMs - HOUR_MS, from.getTime())), logTo: new Date(cap) },
     spans: { spanFrom: new Date(startMs - MINUTE_MS), spanTo: new Date(Math.min(ceilSecond(endMs + MINUTE_MS), cap)) },
   };
 }

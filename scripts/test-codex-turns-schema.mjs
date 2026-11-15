@@ -352,6 +352,8 @@ function detailWindow() {
     completed("2026-10-23T00:00:00.000Z"), completed("2026-10-21T05:00:05.000Z", "conv-other"),
     completed("2026-10-21T05:00:05.000Z", "conv-detail", userA),
     completed("2026-10-21T08:00:05.000Z", "conv-edge"), completed("2026-10-21T08:00:15.000Z", "conv-edge"),
+    // Inside turn D by event time; its collector time lags past D's end + 24h, before to + 24h.
+    { ...completed("2026-10-21T05:00:07.000Z"), Timestamp: ts("2026-10-22T06:00:00.000Z") },
     skill("2026-10-21T04:58:59.000Z", "skill-early"), skill("2026-10-21T05:00:03.000Z", "skill-in"),
     skill("2026-10-21T05:01:09.000Z", "skill-in"), skill("2026-10-21T05:01:10.000Z", "skill-late"),
   ].map(value => JSON.stringify(value)).join("\n"));
@@ -367,7 +369,8 @@ function detailWindow() {
   check(asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-detail", hourFrom: hourFrom(d), ...dWin.competitors }))
     .map(r => r.turn_id), [d, d2], "competitors: same conversation, start in [s, e + 5 s)");
   check(times(asRows(codexCompletionSql(pageFrom, pageTo, q, { conversationId: "conv-detail", ...dWin.completions }))),
-    ["2026-10-21T04:00:00.000Z", "2026-10-21T05:00:05.000Z", "2026-10-22T05:00:09.000Z"], "completions: [s - 1h, e + 24h)");
+    ["2026-10-21T04:00:00.000Z", "2026-10-21T05:00:05.000Z", "2026-10-22T05:00:09.000Z", "2026-10-22T05:00:10.000Z",
+      "2026-10-22T06:00:00.000Z", "2026-10-22T23:59:59.000Z"], "completions: [s - 1h, to + 24h), the list's upper bound");
   const dSpans = asRows(codexDetailSql(pageFrom, pageTo, q, "conv-detail", d, dWin.spans).spans);
   check([dSpans.length, dSpans[0].total_spans], [2, "2"], "spans of the turn in [s - 1 min, e + 1 min)");
   check(asRows(codexSkillsSql(pageFrom, pageTo, q, "conv-detail", d, { logFrom: dWin.spans.spanFrom, logTo: dWin.spans.spanTo })),
@@ -380,7 +383,8 @@ function detailWindow() {
   check(asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-detail", hourFrom: hourFrom(long), ...lWin.competitors }))
     .map(r => r.turn_id), [long], "long turn: a competitor starting at or after to + 24h is not read");
   check(times(asRows(codexCompletionSql(pageFrom, pageTo, q, { conversationId: "conv-detail", ...lWin.completions }))),
-    ["2026-10-22T05:00:09.000Z", "2026-10-22T05:00:10.000Z", "2026-10-22T23:59:59.000Z"], "long turn: completions stop at to + 24h");
+    ["2026-10-22T05:00:09.000Z", "2026-10-22T05:00:10.000Z", "2026-10-22T06:00:00.000Z", "2026-10-22T23:59:59.000Z"],
+    "long turn: completions stop at to + 24h");
   check(asRows(codexDetailSql(pageFrom, pageTo, q, "conv-detail", long, lWin.spans).spans).length, 2,
     "long turn: spans stop at to + 24h");
   // Turn M: two hour rows merge from id hour - 7 days; pinned to the id hour it would start late.
@@ -423,6 +427,18 @@ function detailWindow() {
   check([halfOpen.competitors, halfOpen.linked], [[edge], 2], "edge: a half-open bound takes the competitor's completion");
   assert.notDeepEqual(halfOpen.task, listTask, "edge: a half-open bound would differ from the list");
   assertions++;
+  // Turn D's detail reads fold to its list row, including the completion whose collector time lags
+  // more than a day behind the turn's end.
+  const listD = attachCompletions(asRows(rollupTurnSql(pageFrom, pageTo, q)), asRows(codexCompletionSql(pageFrom, pageTo, q)),
+    { prices, from: pageFrom, to: pageTo }).tasks.find(t => t.id === `codex:conv-detail:${d}`);
+  const [dFull] = asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-detail", turnId: d, hourFrom: hourFrom(d) }));
+  const dEntry = linkCompletions([dFull, ...asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-detail",
+    hourFrom: hourFrom(d), ...dWin.competitors })).filter(t => t.turn_id !== d)],
+  asRows(codexCompletionSql(pageFrom, pageTo, q, { conversationId: "conv-detail", ...dWin.completions })), { prices }).entries
+    .find(e => e.turn.turn_id === d);
+  check(dEntry.linked.map(l => new Date(l.time).toISOString()), ["2026-10-21T05:00:05.000Z", "2026-10-21T05:00:07.000Z"],
+    "lagged completion: the detail links it by event time");
+  check(foldCodexTask(dEntry.turn, dEntry.linked), listD, "lagged completion: detail equals the list row");
   // A link's conversation outside the turn's set: no row (the detail then reads raw).
   check(turnRow(d, "conv-other"), [], "another conversation finds no turn row");
   // Agents: subagent/parent turns by conversation from the lineage start minus 7 days, unclipped.

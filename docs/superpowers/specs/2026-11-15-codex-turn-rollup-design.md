@@ -170,9 +170,10 @@ followed within 60 s by a `run_turn` of the receiver.
   - Competitors: same-conversation turns with start in
     `[s, min(e + COMPLETION_SLACK_MS, to + 24h))`. Earlier turns cannot win a completion from a
     later-starting turn under `linkCompletions`.
-  - Completions: conversation completions with `Timestamp` in
-    `[max(s - 1h, from), min(e + 24h, to + 24h))`. Link time is `event.timestamp` else
-    `Timestamp`, and collector time can lag.
+  - Completions: conversation completions with `Timestamp` in `[max(s - 1h, from), to + 24h)`.
+    Link time is `event.timestamp` else `Timestamp`, and collector time can lag by any amount
+    (a buffering device collector), so the upper bound is the list's own: the list links every
+    such completion it reads.
   - The upper bounds are clamped to the list's own reads (completions `[from, to + 24h)`,
     context turns starting before `to + 24h`). A detail therefore never links what its list row
     did not read, including on one-hour links (`linkWindow`).

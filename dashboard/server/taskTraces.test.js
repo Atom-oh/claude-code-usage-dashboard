@@ -1632,10 +1632,11 @@ test("on the rollup path the Codex detail reads its turn's own window", async ()
   const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
   assert.deepEqual([competitors.params.startFrom, competitors.params.startTo, competitors.params.conversationId,
     competitors.params.userExact, competitors.params.hourFrom, competitors.params.turnId], [s, e + 5001, "c1", "a", "2026-10-29 00:00:00", undefined]);
-  // Completions: [max(s - 1h, from), min(e + 24h, to + 24h)), upper bound rounded up to the second.
+  // Completions: [max(s - 1h, from), to + 24h): the list's own upper bound, since collector time can
+  // lag the event time the list links by.
   const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
   assert.deepEqual([completions.params.logFrom, completions.params.logTo, completions.params.conversationId, completions.params.userExact],
-    ["2026-11-05 04:00:00", "2026-11-06 05:00:11", "c1", "a"]);
+    ["2026-11-05 04:00:00", "2026-11-07 00:00:00", "c1", "a"]);
   // Spans and skills: [s - 1 min, min(e + 1 min, to + 24h)).
   const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
   assert.deepEqual([spanRead.params.spanFrom, spanRead.params.spanTo, spanRead.params.turnId, spanRead.params.userExact],
@@ -1783,6 +1784,17 @@ test("the rollup detail equals its rollup list row", async () => {
     assert.ok(Math.abs(row.cost_usd - unitCost) < 1e-12, "the later turn wins the completion at e + 5 s");
     const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
     assert.equal(competitors.params.startTo, ms("2026-11-05T07:00:15.000Z") + 1);
+  });
+  // (e) A completion inside the turn whose collector time lags more than a day behind its end,
+  // still inside the list's read (to + 24h): the list links it, so the detail must too.
+  const lag = v7("2026-11-05T03:00:00Z", 11);
+  await check("collector time lagging past e + 24h", from, to, [
+    rollupRow(lag, "2026-11-05T03:00:00Z", "2026-11-05T03:00:10Z"),
+  ], [completion("2026-11-05T03:00:05Z"),
+    completion("2026-11-05T03:00:06Z", { timestamp_ms: String(ms("2026-11-06T12:00:00Z")) })], lag,
+  ({ row }) => {
+    assert.ok(Math.abs(row.cost_usd - 2 * unitCost) < 1e-12, "the list links both completions");
+    assert.equal(row.cost_partial, false);
   });
   // (c) A one-hour link window: completions start at the window, never s - 1h before it.
   const hourFrom = new Date("2026-11-05T05:00:00Z"), hourTo = new Date("2026-11-05T06:00:00Z");

@@ -759,9 +759,9 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
 `CODEX_TURNS_READ_FROM` set, a Codex detail reads the rollup only when its list would (`from`
 minus 7 days at or after the boundary) and its turn id is UUIDv7 with a time at or after the
 boundary and within [`from` - 7 days, `to` + 1 day]. It then reads the turn's own window (later
-same-conversation turns until its end plus 5 s, completions from an hour before it to a day after
-it, spans and skills a minute either side, each capped at the list's reads) and equals its list
-row. Any other detail, and a turn missing from the rollup, reads raw. Fields:
+same-conversation turns until its end plus 5 s, completions from an hour before it to the list's
+own bound (`to` + 24h, since collector time can lag the event time that links them), spans and
+skills a minute either side, each capped at the list's reads) and equals its list row. Any other detail, and a turn missing from the rollup, reads raw. Fields:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no model-call span).
