@@ -164,6 +164,18 @@ part or a Codex request had no usage-bearing completion (for example an interrup
 parts are null when none is known or a sum is unsafe. The input/cache composition card shows
 this labelled subtotal when the strict components are null.
 
+`by_client.observed_token_parts` carries `{ input_tokens, cache_read_tokens,
+cache_write_tokens, output_tokens, partial }`. All four disjoint parts come from the
+same usage rows with validated components; incomplete rows are excluded whole.
+`partial` discloses excluded usage or missing Codex usage scopes. With no usable rows
+the parts remain null, except identified rejection-only Codex scopes retain zero recorded
+completion usage under ADR-016. Invalid components projected as null by SQL are excluded
+whole as incomplete records. Counts arriving as unsafe values, unsafe combined sums or
+marked aggregate overflows make all four parts unavailable instead of exposing a smaller prefix. The shared
+Usage composition chart labels this cohort's subtotal and lists unavailable clients
+without hiding another client's usable chart. This display does not replace canonical
+counts, observed input/output pairs, or ratio denominators.
+
 `cost_usd` uses `cost_basis=client_reported` (Claude) or `aws_list_estimate` (Codex), or
 (Claude, this endpoint only) `computed_estimate`/`mixed` for a token-priced fallback when
 no report is usable ([ADR-017](decisions/ADR-017-backend-cost-fallback.md)); `cost_estimated`

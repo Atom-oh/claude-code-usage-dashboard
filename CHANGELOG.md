@@ -51,6 +51,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Keep the shared Usage token composition chart visible for known Claude/Codex
+  usage when other records are incomplete. Label the four-component subtotal,
+  disclose unavailable clients, and retain strict counts for tables and ratios.
 - Claude detail views over windows of four hours or less no longer time out: the raw path
   read three days of raw counter rows to find cumulative baselines (about 6 s per query on
   production, over the 25 s load budget when a page issues several). It now reads raw rows
