@@ -853,7 +853,7 @@ row. Any other detail, and a turn missing from the rollup, reads raw. Fields:
   `links_source` is `"trace"` for lineage from the trace's parent-span chain, `"log"` when a shown
   link came from `codex.agent_communication` logs (spawn/follow-up sends, observed on Codex
   0.167.1-0.168.0; read only when the trace links no child of the turn, and a traced parent is
-  kept), else null. `known_zero` is true only with positive evidence of no subagent calls:
+  kept; a send links only from its conversation's turn running at the send), else null. `known_zero` is true only with positive evidence of no subagent calls:
   complete spans that do not reach the clipped span window (`to` + 24h), no spawn, follow-up or
   `send_input` span of the turn, no link, no communication send of the conversation in the turn's
   window, and turn-naming evidence (the rollup row's `names_turn`, else a version that names its
