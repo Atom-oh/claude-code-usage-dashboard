@@ -278,3 +278,82 @@ test("resolved legacy spans link like 0.166 spans, and unresolved ones stay unli
   // The input rows are not changed.
   assert.equal(rows[0].turn, "");
 });
+
+// A run() for one legacy chain: lineage rows, the call log, the child conversation lookup, turns
+// and completions, recording every read.
+const legacyRun = (seen, { rows, logs, conversations, turns, completions = [] }) => async (sql, params) => {
+  seen.push({ sql, params });
+  if (sql.includes("op.dispatch")) return rows;
+  if (sql.includes("codex.tool_result")) return logs;
+  if (sql.includes("{turnIds:Array(String)}")) return conversations;
+  if (sql.includes("GROUP BY turn_id")) return turns.filter(t => params.conversationIds.includes(t.conversation_id));
+  if (sql.includes("otel_logs")) return completions;
+  throw new Error("unexpected SQL");
+};
+
+test("a legacy turn links its subagents through call logs with one turn read", async () => {
+  const seen = [];
+  const run = legacyRun(seen, { rows: legacyChain("t", 1, C1),
+    logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z")],
+    completions: [completion("sub1", "2026-11-05T01:00:05Z")] });
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual(out.children.map(c => [c.id, c.depth, c.tool]), [[`codex:sub1:${C1}`, 1, "followup_task"]]);
+  assert.deepEqual([out.spawn_calls, out.unlinked_calls, out.subagents], [1, 0, 1]);
+  assert.ok(Math.abs(out.children[0].cost_usd - unitCost) < 1e-12);
+  const turnReads = seen.filter(s => s.sql.includes("GROUP BY turn_id") && !s.sql.includes("{turnIds"));
+  assert.equal(turnReads.length, 1);
+  assert.deepEqual(turnReads[0].params.conversationIds, ["root", "sub1"]);
+  assert.deepEqual(seen.find(s => s.sql.includes("codex.tool_result")).params.callIds, ["call_1"]);
+  assert.ok(seen.every(s => s.params.userExact === "kim@x.com"));
+});
+
+test("a legacy call with no running turn of its conversation leaves the result incomplete", async () => {
+  const run = legacyRun([], { rows: legacyChain("t", 1, C1),
+    logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T09:00:00Z")) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z")] });
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  // The call belongs to no known turn, so it is not this turn's call; the result says it is incomplete.
+  assert.deepEqual([out.children.length, out.spawn_calls, out.unlinked_calls, agentCount(out)], [0, 0, 0, null]);
+  assert.deepEqual([out.limited, out.total.cost_partial], [true, true]);
+});
+
+test("a legacy subagent turn gets its parent link from its call log", async () => {
+  const run = legacyRun([], { rows: legacyChain("t", 1, C1),
+    logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z")] });
+  const task = { id: `codex:sub1:${C1}`, llm_calls: 2, cost_usd: 1, cost_partial: false };
+  const turnInfo = { turnId: C1, startMs: ms("2026-11-05T01:00:02Z"), endMs: ms("2026-11-05T01:00:12Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, task, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([out.parent.id, out.parent.tool, out.parent.started_at], [`codex:root:${P}`, "followup_task", "2026-11-05T01:00:00Z"]);
+  assert.deepEqual([out.children.length, out.spawn_calls], [0, 0]);
+});
+
+test("a 0.166 detail issues no legacy reads", async () => {
+  const seen = [];
+  const run = legacyRun(seen, { rows: chain("t", 1, P, C1, "sub1"), logs: [], conversations: [],
+    turns: [turn("sub1", C1, "2026-11-05T01:00:00Z")] });
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, ["g1"], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.equal(out.children.length, 1);
+  assert.ok(!seen.some(s => s.sql.includes("codex.tool_result") || s.sql.includes("{turnIds:Array(String)}")));
+  assert.equal(seen.filter(s => s.sql.includes("GROUP BY turn_id")).length, 1);
+});
+
+test("subagent turn and completion reads cover the lineage window, not the whole page range", async () => {
+  const seen = [];
+  const run = legacyRun(seen, { rows: chain("t", 1, P, C1, "sub1"), logs: [], conversations: [],
+    turns: [turn("sub1", C1, "2026-11-05T01:00:00Z")] });
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const wide = { from: new Date("2026-10-06T00:00:00Z"), to: new Date("2026-11-06T00:00:00Z") };
+  await codexAgents("kim@x.com", turnInfo, rootTask, [], { ...wide, run, prices: DEFAULT_CODEX_PRICING });
+  const turns = seen.find(s => s.sql.includes("GROUP BY turn_id"));
+  assert.deepEqual([turns.params.spanFrom, turns.params.spanTo], ["2026-11-04 00:50:00", "2026-11-07 01:00:10"]);
+  const completions = seen.find(s => s.sql.includes("otel_logs"));
+  assert.deepEqual([completions.params.logFrom, completions.params.logTo], ["2026-11-05 00:50:00", "2026-11-07 01:00:10"]);
+});
