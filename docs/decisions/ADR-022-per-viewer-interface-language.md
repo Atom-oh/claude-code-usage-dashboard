@@ -25,10 +25,12 @@ telemetry, cost coverage or authorization.
 ## Decision
 
 Use the browser preference `ccdash.locale`, defaulting to Korean. Accept only
-`en`, `zh-CN`, `ja`, `es` and `ko`. Keep Korean in the initial bundle and load the
-other catalogs on demand. Invalid stored values use Korean; a failed catalog
-load retains the current language and remains retryable. A later selection
-supersedes an earlier pending request. Unavailable storage must not prevent use.
+`en`, `zh-CN`, `ja`, `es` and `ko`. The original decision loaded non-Korean
+catalogs on demand. An amendment on 2026-11-14 bundles all catalogs with the
+application: a running tab can then switch languages after a deployment without
+requesting an obsolete catalog file. Invalid stored values use Korean; failed
+catalog validation retains the current language. A later selection supersedes
+an earlier pending selection. Unavailable storage must not prevent use.
 
 Subscribe React components to the locale store without remounting them. Translate
 authored presentation messages and explicitly opted-in static label records.
@@ -49,7 +51,7 @@ while a task remains open. No deployment-specific language is baked into a separ
 frontend build. Preferences are local to one browser, not synchronized between
 devices, and may be lost when storage is cleared or blocked.
 
-Catalogs increase asset size and require complete key/placeholder coverage.
+Catalogs increase the initial asset size and require complete key/placeholder coverage.
 Luna translations retain source/output provenance and receive semantic review,
 especially for cost origin and incomplete telemetry. The interface does not
 translate model-generated answers, captured prompts or other user content.

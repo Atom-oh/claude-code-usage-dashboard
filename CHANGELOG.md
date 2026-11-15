@@ -15,6 +15,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundle the five interface languages with the application so switching languages
+  does not depend on separate catalog requests or files removed during a rollout.
+
 ### Added
 
 - Mask team names on shared screens and CSV exports, as emails are: two characters plus a
@@ -26,6 +31,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- The Codex efficiency card's expanded whole-range panel no longer shows four blank tiles
+  whenever one request in the range has no collected usage. With recorded completions, it
+  keeps only the HTTP request and session metrics (the cache and reasoning ratios above
+  already use the same responses), explains a withheld tokens-per-request value, and lists
+  its own coverage reasons inside the panel. Strict ratio rules are unchanged.
 - Claude cost no longer shows `backend unknown` for the Claude-login part of a resumed
   session that started on Bedrock. A bare `claude-*` row whose record carried
   `organization.id` resolves to `anthropic` per row (counters, request logs, task traces);
