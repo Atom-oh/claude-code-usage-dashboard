@@ -364,21 +364,24 @@ ledger to equal its version list, so run steps 3-5 only from merged `main`.
    done
    ```
 
-5. Verify every backfilled hour window with the read-only `clickhouse-verify-012.sql` (bound
-   hour-aligned UTC `verifyFrom`/`verifyTo`). It reads raw spans in `[verifyFrom - 1h,
-   verifyTo + 24h)`, so verify only windows whose raw spans are still retained. It returns one row
-   per turn whose first hour is in the window: `differs` (rollup and raw disagree on conversation
-   set, start, end, any span count, models, version, or the turn is missing on one side) and
-   `clipped` (the raw end reaches `verifyTo + 23h`, so the raw range may cut the turn; counted, not
-   compared). Record the number of clipped turns; any other row with `differs = 1` blocks
-   activation. Expired raw rows cannot be reconstructed, so hours before the first backfilled hour
-   are a coverage gap, not an error.
+5. Verify every backfilled day with the read-only `clickhouse-verify-012.sql` (bound
+   hour-aligned UTC `verifyFrom`/`verifyTo`). One call scans raw spans in `[verifyFrom - 24h,
+   verifyTo + 168h)` and rollup rows to `verifyTo + 192h`, so verify only windows whose raw spans
+   are still retained, and use day-wide hour-aligned windows (one call per backfilled day, oldest
+   first), not hour by hour: each call pays the full 192 h scan, so hourly calls would rescan the
+   same week 24 times per day. It returns one row per turn whose first hour is in the window:
+   `differs` (rollup and raw disagree on conversation set, start, end, any span count, models,
+   version, or the turn is missing on one side) and `clipped` (the rollup end reaches
+   `verifyTo + 168h`, so the raw range may cut the turn; counted, not compared). Record the number
+   of clipped turns; they do not block activation. Any other row with `differs = 1` blocks it.
+   Expired raw rows cannot be reconstructed, so hours before the first backfilled hour are a
+   coverage gap, not an error.
 
    Run it as the reader (`otel_reader`, Secret `clickhouse-reader`), not the writer. The reader's
    `readonly` profile may reject `SET param_...` and `ch` passes no flags, so bind the window as
    `clickhouse-client` `--param_` flags the way the migration 010 verify does, with the password
-   passed on stdin as `ch` does. If a window exceeds the reader's `max_execution_time`, verify
-   shorter hour-aligned windows.
+   passed on stdin as `ch` does. If a day exceeds the reader's `max_execution_time`, verify the
+   day in a few hour-aligned segments (each still scans the full bounds).
 
    ```bash
    ch_pw=$(kube get secret clickhouse-reader -o jsonpath='{.data.CH_PASSWORD}' | base64 -d)
