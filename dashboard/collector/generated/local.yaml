@@ -23,7 +23,7 @@ processors:
         value: ${env:EXPERIMENT_GROUP:-unknown}
         action: insert
       - key: user.email
-        value: "${env:CODEX_DEFAULT_USER_EMAIL:-}"
+        value: "${env:CCDASH_BASE_CLAUDE_USER_ID:-}"
         action: insert
 
   filter/metrics:
@@ -85,7 +85,7 @@ processors:
           - delete_key(attributes, "ccdash.transport.backend")
           - delete_key(attributes, "backend") where attributes["backend"] != "bedrock-mantle" and attributes["backend"] != "bedrock-runtime"
           - set(attributes["client"], "codex")
-          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
+          - set(attributes["user.email"], "${env:CCDASH_BASE_CODEX_USER_ID:-}") where "${env:CCDASH_BASE_CODEX_USER_ID:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
           - delete_key(attributes, "experiment.group")
     metric_statements:
       - context: resource
@@ -271,6 +271,30 @@ processors:
           - set(cache["mcp"]["mcp_tool_name"], cache["tool_parameters"]["mcp_tool_name"]) where IsMap(cache["tool_parameters"]) and IsString(cache["tool_parameters"]["mcp_tool_name"])
           - set(attributes["tool_parameters"], String(cache["mcp"])) where Len(cache["mcp"]) > 0
 
+  transform/device_user_mark:
+    error_mode: ignore
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(attributes["ccdash.device_user"], "${env:CCDASH_EPOCH_INDEX}") where start_time_unix_nano >= ${env:CCDASH_EPOCH_SINCE_NS}
+  groupbyattrs/device_user:
+    keys: [ccdash.device_user]
+  transform/device_user:
+    error_mode: ignore
+    metric_statements:
+      - context: resource
+        statements:
+          - set(attributes["user.email"], "${env:CCDASH_EPOCH_USER_ID}") where attributes["ccdash.device_user"] == "${env:CCDASH_EPOCH_INDEX}"
+          - delete_key(attributes, "ccdash.device_user")
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+    trace_statements:
+      - context: resource
+        statements:
+          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+
 exporters:
   otlp_http:
     endpoint: ${env:CCDASH_INGEST_ENDPOINT}
@@ -293,27 +317,27 @@ service:
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, filter/metrics, resource, batch]
+      processors: [memory_limiter, filter/metrics, resource, transform/device_user_mark, groupbyattrs/device_user, transform/device_user, batch]
       exporters: [otlp_http]
     metrics/codex:
       receivers: [otlp]
-      processors: [memory_limiter, filter/metrics_codex, resource/codex_transport, transform/codex_resource, transform/codex_metrics, batch]
+      processors: [memory_limiter, filter/metrics_codex, resource/codex_transport, transform/codex_resource, transform/codex_metrics, transform/device_user_mark, groupbyattrs/device_user, transform/device_user, batch]
       exporters: [otlp_http]
     logs/claude:
       receivers: [otlp]
-      processors: [memory_limiter, filter/logs_claude, transform/scrub_logs, transform/device_log_content, resource, batch]
+      processors: [memory_limiter, filter/logs_claude, transform/scrub_logs, transform/device_log_content, resource, transform/device_user, batch]
       exporters: [otlp_http]
     logs/codex:
       receivers: [otlp]
-      processors: [memory_limiter, filter/logs_codex, resource/codex_transport, transform/codex_resource, transform/codex_logs, transform/device_log_content, batch]
+      processors: [memory_limiter, filter/logs_codex, resource/codex_transport, transform/codex_resource, transform/codex_logs, transform/device_log_content, transform/device_user, batch]
       exporters: [otlp_http]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, filter/traces_claude, filter/claude_trace_content, transform/claude_trace_content, resource, batch]
+      processors: [memory_limiter, filter/traces_claude, filter/claude_trace_content, transform/claude_trace_content, resource, transform/device_user, batch]
       exporters: [otlp_http]
     traces/codex:
       receivers: [otlp]
-      processors: [memory_limiter, filter/traces_codex, resource/codex_transport, transform/codex_resource, transform/codex_traces, batch]
+      processors: [memory_limiter, filter/traces_codex, resource/codex_transport, transform/codex_resource, transform/codex_traces, transform/device_user, batch]
       exporters: [otlp_http]
   telemetry:
     logs:

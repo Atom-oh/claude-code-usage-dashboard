@@ -210,8 +210,10 @@ class Enrollment(unittest.TestCase):
         command = seen["command"]
         self.assertEqual(command[1:4], ["-I", command[2], "install"])
         self.assertTrue(command[2].endswith("ccdash-collector/install.py"))
-        self.assertEqual(command[command.index("--default-user-id") + 1], "alice@example.com")
+        # The approving SSO login's verified email is the telemetry identity.
+        self.assertEqual(command[command.index("--sso-user-id") + 1], "alice@example.com")
         self.assertNotIn("--user-id", command)
+        self.assertNotIn("--default-user-id", command)
         self.assertFalse(seen["work"].exists(), "temporary token and package are removed")
         polls = [request for request in dashboard.requests if request[1].endswith("/enroll/poll")]
         self.assertTrue(all(request[2] == {"Authorization": "Bearer " + POLL} for request in polls))
@@ -226,10 +228,17 @@ class Enrollment(unittest.TestCase):
         for command_part in command:
             self.assertNotIn(secret, command_part)
 
-    def test_user_id_override_replaces_the_approved_default(self):
+    def test_the_sso_email_wins_over_a_typed_user_id(self):
         _, seen = self.run_enroll(Dashboard(["approved"]), user_id="bob@example.com")
+        self.assertEqual(seen["command"][seen["command"].index("--sso-user-id") + 1], "alice@example.com")
+        self.assertNotIn("--user-id", seen["command"])
+        self.assertTrue(any("alice@example.com" in line and "--user-id" in line for line in self.output))
+        # Without a verified email on the login, the typed ID is used.
+        dashboard = Dashboard(["approved"])
+        dashboard.approved["userId"] = None
+        _, seen = self.run_enroll(dashboard, user_id="bob@example.com")
         self.assertEqual(seen["command"][seen["command"].index("--user-id") + 1], "bob@example.com")
-        self.assertNotIn("--default-user-id", seen["command"])
+        self.assertNotIn("--sso-user-id", seen["command"])
 
     def test_without_a_verified_email_the_installer_keeps_its_own_default(self):
         dashboard = Dashboard(["approved"])
@@ -240,6 +249,7 @@ class Enrollment(unittest.TestCase):
         dashboard.approved["userId"] = "bad value; rm"
         _, seen = self.run_enroll(dashboard)
         self.assertNotIn("--default-user-id", seen["command"])
+        self.assertNotIn("--sso-user-id", seen["command"])
 
     def test_failed_installation_explains_the_registered_device(self):
         result, seen = self.run_enroll(Dashboard(["approved"]), status=3)

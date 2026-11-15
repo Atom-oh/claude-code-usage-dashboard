@@ -168,6 +168,22 @@ class Installer(unittest.TestCase):
                 self.module.client_plan(home, "developer")
             self.assertEqual(claude.read_text(), '{"model":"chosen"}')
 
+    def test_identity_history_is_read_strictly_and_legacy_codex_default_is_found(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            good = {"baseClaude": "", "baseCodex": "a@x.io", "epochs": [{"since": 1, "userId": "a@x.io"},
+                                                                     {"since": 2, "userId": "b@x.io"}]}
+            for value, expected in [(good, good), ({**good, "epochs": []}, None),
+                                    ({**good, "epochs": [{"since": 2, "userId": "a"}, {"since": 1, "userId": "b"}]}, None),
+                                    ({**good, "baseCodex": 'x"y'}, None), ("bad", None)]:
+                (root / "state.json").write_text(json.dumps({"identity": value}))
+                self.assertEqual(self.module.installed_identity(root), expected)
+            (root / ".otelcol").mkdir()
+            (root / ".otelcol/env").write_text("OTHER=1\nCODEX_DEFAULT_USER_EMAIL=legacy@x.io\n")
+            self.assertEqual(self.module.legacy_codex_user_id(root), "legacy@x.io")
+            (root / ".otelcol/env").write_text("OTHER=1\n")
+            self.assertEqual(self.module.legacy_codex_user_id(root), "")
+
     def test_launchd_uses_literal_arguments_for_shell_sensitive_paths(self):
         path = Path("/Users/example $(touch nope)/ccdash")
         data = plistlib.loads(self.module.launchd_service(path))

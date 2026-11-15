@@ -231,6 +231,54 @@ class Transactions(unittest.TestCase):
         self.install()
         self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "replacement")
 
+    def test_an_sso_approved_reinstall_moves_to_the_login_email(self):
+        # An older installation recorded another ID; Claude settings carry it too.
+        self.install()
+        first = json.loads((self.root / "state.json").read_text())["identity"]
+        self.assertEqual(first["baseClaude"], "old")
+        self.assertEqual([e["userId"] for e in first["epochs"]], ["old"])
+        self.args.sso_user_id = "alice@example.com"
+        self.install()
+        state = json.loads((self.root / "state.json").read_text())
+        self.assertEqual(state["userId"], "alice@example.com")
+        identity = state["identity"]
+        self.assertEqual([e["userId"] for e in identity["epochs"]], ["old", "alice@example.com"])
+        self.assertLess(identity["epochs"][0]["since"], identity["epochs"][1]["since"])
+        self.assertIn("user.email=alice@example.com", json.loads(self.claude.read_text())["env"]["OTEL_RESOURCE_ATTRIBUTES"])
+        config = (self.root / "config.yaml").read_text()
+        # Logs and traces carry the installed ID; each metric series keeps the ID of the epoch
+        # it started in, and earlier unattributed series keep the first base default.
+        self.assertEqual(config.count('set(attributes["user.email"], "alice@example.com") where "alice@example.com" != ""\n'), 2)
+        for index, epoch in enumerate(identity["epochs"]):
+            self.assertIn('set(attributes["ccdash.device_user"], "%d") where start_time_unix_nano >= %d\n'
+                          % (index, epoch["since"]), config)
+            self.assertIn('set(attributes["user.email"], "%s") where attributes["ccdash.device_user"] == "%d"\n'
+                          % (epoch["userId"], index), config)
+        self.assertIn('value: "old"', config)
+        self.assertEqual(config.count("transform/device_user, batch]"), 6)
+        self.assertEqual(config.count("groupbyattrs/device_user, transform/device_user, batch]"), 2)
+
+    def test_identity_history_survives_successive_reinstalls(self):
+        self.install()
+        self.args.sso_user_id = "alice@example.com"
+        self.install()
+        before = json.loads((self.root / "state.json").read_text())["identity"]
+        # The same identity again: no new epoch and the same base, so no series moves.
+        self.install()
+        same = json.loads((self.root / "state.json").read_text())["identity"]
+        self.assertEqual(same, before)
+        self.assertIn('value: "old"', (self.root / "config.yaml").read_text())
+        # Another account later: its epoch is appended; earlier epochs and the base stay.
+        self.args.sso_user_id = "bob@example.com"
+        self.install()
+        after = json.loads((self.root / "state.json").read_text())["identity"]
+        self.assertEqual(after["epochs"][:2], before["epochs"])
+        self.assertEqual([e["userId"] for e in after["epochs"]], ["old", "alice@example.com", "bob@example.com"])
+        self.assertEqual((after["baseClaude"], after["baseCodex"]), (before["baseClaude"], before["baseCodex"]))
+        config = (self.root / "config.yaml").read_text()
+        self.assertIn('where attributes["ccdash.device_user"] == "1"', config)
+        self.assertIn('set(attributes["user.email"], "alice@example.com") where attributes["ccdash.device_user"] == "1"', config)
+
     def test_without_any_user_id_a_new_installation_uses_the_login_name(self):
         self.args.user_id = None
         self.install()

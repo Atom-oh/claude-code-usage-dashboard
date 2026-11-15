@@ -403,7 +403,7 @@ test("browser enrollment leads with a token-free command and keeps manual tokens
   await screen.findByText("등록한 기기가 없습니다.");
   expect(screen.getByLabelText("설치 명령").textContent).toBe(
     "sudo loginctl enable-linger \"$USER\" &&\ncurl -fsSL 'https://collector.example/api/ingest/install.sh' | sh");
-  expect(screen.getByText(/로그인한 계정의 이메일로 정해지며/)).toBeTruthy();
+  expect(screen.getByText(/승인한 로그인 계정의 이메일로 정해지며, 기존 수집기 위에 다시 설치해도 이 이메일로 바뀝니다/)).toBeTruthy();
   expect(screen.getByRole("heading", { name: "토큰으로 직접 설치 (고급)" })).toBeTruthy();
   expect(screen.getByLabelText("토큰 설치 명령").textContent).toContain("| sh -s -- --token");
   fireEvent.click(screen.getByRole("button", { name: "macOS 선택" }));

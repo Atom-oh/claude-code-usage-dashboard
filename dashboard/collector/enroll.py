@@ -163,7 +163,9 @@ def approved_identity(reply, user_id_override):
     user_id = reply.get("userId")
     if user_id is not None and not (isinstance(user_id, str) and USER_ID.fullmatch(user_id)):
         user_id = None
-    return owner, device, digest, None if user_id_override else user_id
+    # The approving SSO login's verified email is the telemetry identity; an override
+    # applies only when the login has none.
+    return owner, device, digest, user_id
 
 
 def download_package(endpoint, platform, token, expected, http=fetch, sleep=time.sleep):
@@ -353,7 +355,8 @@ def confirm_migration(found, platform, ask, out):
     else:
         out("이 기기에는 이전 방식 수집기(" + str(found["legacy"]) + ")가 설치되어 있어 다시 시작될 수 있습니다.")
     out("전환하면 기존 서비스와 설정을 백업한 뒤 중지하고, 같은 포트에서 새 수집기를 시작합니다. "
-        "실패하면 기존 서비스로 되돌립니다. 기존 수집 사용자 ID는 그대로 유지합니다.")
+        "실패하면 기존 서비스로 되돌립니다. 수집 사용자 ID는 승인한 계정의 이메일로 바뀝니다"
+        "(확인된 이메일이 없으면 기존 ID를 유지합니다).")
     if platform == "linux":
         out("Linux에서는 기존 시스템 서비스를 바꾸려고 sudo를 사용하며, 비밀번호를 물을 수 있습니다.")
     out("Claude Code와 Codex를 먼저 종료해 두세요.")
@@ -369,11 +372,12 @@ def install_command(installer, endpoint, token_file, user_id_override, approved_
     command = [sys.executable, "-I", installer, "install", "--endpoint", endpoint, "--token-file", token_file]
     if migrate:
         command.append("--migrate-legacy")  # confirmed before approval; install.py still verifies it
-    if user_id_override:
+    if approved_user_id:
+        # The approving SSO login wins over a recorded, migrated or typed user ID, so a
+        # reinstall from an older collector moves to the login account.
+        command += ["--sso-user-id", approved_user_id]
+    elif user_id_override:
         command += ["--user-id", user_id_override]
-    elif approved_user_id:
-        # A default only: install.py keeps an existing installation's user ID.
-        command += ["--default-user-id", approved_user_id]
     return command
 
 
@@ -398,6 +402,8 @@ def enroll(args, http=fetch, sleep=time.sleep, run=subprocess.call, browser=open
     reply = wait_for_approval(args.endpoint, request["pollToken"], int(request.get("interval") or 5), 630,
                               http=http, sleep=sleep)
     owner, device, digest, approved_user_id = approved_identity(reply, args.user_id)
+    if approved_user_id and args.user_id and args.user_id != approved_user_id:
+        out("승인한 SSO 계정의 이메일(" + approved_user_id + ")로 수집합니다. --user-id 값은 사용하지 않습니다.")
     token = "ccd1.%s.%s.%s" % (owner, device, secret)
     out("승인되었습니다. 수집기 패키지를 확인하는 중입니다.")
     work = tempfile.mkdtemp(prefix="ccdash-enroll-")
@@ -425,7 +431,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint", required=True, help="dashboard HTTPS /api/ingest URL")
     parser.add_argument("--platform", required=True, choices=("linux", "darwin"))
-    parser.add_argument("--user-id", help="telemetry user ID override (default: approving account's verified email)")
+    parser.add_argument("--user-id", help="telemetry user ID when the approving SSO account has no verified email "
+                                          "(otherwise that email is always used)")
     parser.add_argument("--name", help="device name shown on the dashboard (default: host name)")
     args = parser.parse_args(argv)
     try:
