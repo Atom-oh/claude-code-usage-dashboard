@@ -17,6 +17,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Migration 012 adds a Codex turn rollup (`codex_turns_v1`, with bounded backfill and
+  verify files); no dashboard read uses it yet.
 - Codex task details show retries (`try_run_sampling_request` spans beyond
   `run_sampling_request`, both counted exactly) in the why rules and count `codex.compaction`
   spans as context compactions (Codex 0.161+; earlier versions read as not collected),
