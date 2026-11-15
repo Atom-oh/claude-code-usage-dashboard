@@ -271,10 +271,13 @@ LIMIT ${COMMUNICATION_LIMIT + 1}`,
 }
 
 // walkLineage-shaped parent and links from communication sends (rows of codexCommunicationSql) and
-// turn rows of the conversations involved (the task's own included). A send's child is the
-// receiver's first turn starting in [t, t + COMMUNICATION_CHILD_MS]; the parent is the send to this
-// conversation up to that long before the turn, with the sender's turn running at the send.
-// `limited`: more eligible children than AGENT_LIMIT were found and the rest are not returned.
+// turn rows of the conversations involved (the task's own included). A send is this turn's only
+// when this turn is its conversation's turn running at the send (containingTurn: observed windows
+// of one conversation's turns may overlap); a send whose turn is unresolved links nothing. Its
+// child is the receiver's first turn starting in [t, t + COMMUNICATION_CHILD_MS]; the parent is the
+// send to this conversation up to that long before the turn, with the sender's turn running at
+// the send. Only UUID-shaped turn ids count. `limited`: more eligible children than AGENT_LIMIT
+// were found and the rest are not returned.
 export function communicationLinks(sends, turns, { conversationId, turnId, startMs, endMs }) {
   const valid = sends.filter((x) => IDENT.test(x.sender ?? "") && IDENT.test(x.receiver ?? "")
     && x.sender !== x.receiver && /^(spawn|followup)$/.test(x.kind ?? "") && Number.isFinite(count(x.at_ms)))
@@ -283,7 +286,7 @@ export function communicationLinks(sends, turns, { conversationId, turnId, start
   const links = [], seen = new Set([turnId]);
   let limited = false;
   for (const x of valid) {
-    if (x.sender !== conversationId || x.t < startMs || x.t > endMs) continue;
+    if (x.sender !== conversationId || containingTurn(turns, conversationId, x.t)?.turn_id !== turnId) continue;
     const child = turns.filter((t) => t.conversation_id === x.receiver && TURN_ID.test(t.turn_id ?? "") && starts(t) !== null
       && starts(t) >= x.t && starts(t) <= x.t + COMMUNICATION_CHILD_MS)
       .reduce((a, b) => (!a || starts(b) < starts(a) ? b : a), null);
@@ -296,7 +299,7 @@ export function communicationLinks(sends, turns, { conversationId, turnId, start
   let parent = null;
   for (const x of valid.filter((v) => v.receiver === conversationId && v.t >= startMs - COMMUNICATION_CHILD_MS && v.t <= startMs).reverse()) {
     // This turn must be the conversation's first to start after the send.
-    if (turns.some((t) => t.conversation_id === conversationId && t.turn_id !== turnId && starts(t) !== null
+    if (turns.some((t) => t.conversation_id === conversationId && t.turn_id !== turnId && TURN_ID.test(t.turn_id ?? "") && starts(t) !== null
       && starts(t) >= x.t && starts(t) <= startMs)) continue;
     const owner = containingTurn(turns, x.sender, x.t);
     if (!owner) continue;
@@ -329,11 +332,12 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
     const end = own(l) ? count(own(l).turn.end_ms) : null;
     return end !== null && end >= readToMs - SPAN_SLACK_MS;
   }).map((l) => l.child_turn));
-  if (clipped.size) limited = true;
   const children = links.map((l) => {
     const entry = own(l);
     const folded = entry ? foldCodexTask(entry.turn, entry.linked) : null;
     const start = folded ? count(entry.turn.start_ms) : l.child_start_ms;
+    // Only a clipped turn's own calls and cost are partial; the result is limited below.
+    const partial = limited || clipped.has(l.child_turn);
     return {
       id: idOfTurn.get(l.child_turn) ?? null,
       parent_id: l.depth === 1 ? task.id : idOfTurn.get(l.parent_turn) ?? null,
@@ -343,12 +347,13 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
       duration_ms: folded?.duration_ms ?? null,
       models: folded?.models ?? [],
       llm_calls: folded ? folded.llm_calls : null,
-      llm_calls_partial: folded ? limited : true,
+      llm_calls_partial: folded ? partial : true,
       cost_usd: folded ? folded.cost_usd : null,
-      cost_partial: folded ? folded.cost_partial || limited : true,
+      cost_partial: folded ? folded.cost_partial || partial : true,
       link: linkWindow(start),
     };
   });
+  if (clipped.size) limited = true;
   // Tree order: each subagent turn directly followed by its own subagent turns (siblings keep
   // their start order), so an indented row always sits under the turn that started it.
   const kids = new Map();

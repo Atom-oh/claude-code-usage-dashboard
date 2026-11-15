@@ -28,7 +28,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   shows a known zero subagents instead of not collected.
 - Codex task details link subagent turns from `codex.agent_communication` logs
   (Codex 0.167.1-0.168.0) when the traces link no child of the turn, keeping a traced parent;
-  the detail says these links are inferred from the logs, and more than 50 log-linked
+  a send is a turn's only when that turn is its conversation's turn running at the send, so
+  overlapping turn windows never share a child (an unresolved send links nothing); the detail says these links are inferred from the logs, and more than 50 log-linked
   children mark the result limited.
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex
   `codex.skill_invocation`): calls split into explicit, automatic and nested (Claude only)
