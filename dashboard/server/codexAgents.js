@@ -411,9 +411,10 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   let walked = walkLineage(rows, turn.turnId, conversations);
   limited ||= walked.limited;
   let linksSource = walked.parent || walked.links.length ? "trace" : null, sendsSeen = false;
-  // No trace edge: the communication logs may still name the turn's subagents and parent. One log
-  // read, then one owner-filtered turn read of the conversations they name.
-  if (!linksSource && IDENT.test(turn.conversationId ?? "")) {
+  // No traced child: the communication logs may still name the turn's subagents (and, without a
+  // traced parent, its parent), and a send of the turn rules out a known zero. One log read, then
+  // one owner-filtered turn read of the conversations they name. A traced child adds no reads.
+  if (!walked.links.length && IDENT.test(turn.conversationId ?? "")) {
     const s = codexCommunicationSql(owner, turn.conversationId, turn.startMs, turn.endMs);
     const got = await run(s.sql, s.params);
     if (got.length > COMMUNICATION_LIMIT) limited = true;
@@ -431,7 +432,9 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     const found = communicationLinks(sends, turnRows, { conversationId: turn.conversationId, turnId: turn.turnId,
       startMs: turn.startMs, endMs: turn.endMs });
     limited ||= found.limited;
-    if (found.parent || found.links.length) { walked = { ...walked, parent: found.parent, links: found.links }; linksSource = "log"; }
+    // A traced parent stays; the log's parent is used only when the trace has none.
+    const parent = walked.parent ?? found.parent;
+    if (found.links.length || parent !== walked.parent) { walked = { ...walked, parent, links: found.links }; linksSource = "log"; }
   }
   const conversationIds = [...new Set(walked.links.map((l) => l.child_conversation).filter((c) => IDENT.test(c ?? "")))];
   const parentConversation = walked.parent && IDENT.test(walked.parent.parent_conversation ?? "")

@@ -562,6 +562,29 @@ test("trace links win over log links and issue no communication read", async () 
   assert.equal(seen.filter(s => s.sql.includes("GROUP BY turn_id")).length, 1);
 });
 
+test("a traced parent without traced children still reads the turn's communication sends", async () => {
+  // P was started by C2 (traced); P's own send to sub1 started a turn the traces did not link.
+  const rows = chain("t", 1, C2, P, "root", { parentConv: "up" });
+  const seen = [];
+  const run = commRun(seen, { rows, sends: [send("spawn", "root", "sub1", "2026-11-05T01:00:02Z")],
+    turns: [turn("sub1", C1, "2026-11-05T01:00:03Z"), turn("up", C2, "2026-11-05T00:59:00Z", { end_ms: String(ms("2026-11-05T01:30:00Z")) })] });
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([out.parent.id, out.parent.tool], [`codex:up:${C2}`, "spawn_agent"]);
+  assert.deepEqual(out.children.map(c => [c.id, c.tool]), [[`codex:sub1:${C1}`, "spawn"]]);
+  assert.deepEqual([out.links_source, out.known_zero, agentCount(out)], ["log", false, 1]);
+  assert.equal(seen.filter(s => s.sql.includes("codex.agent_communication")).length, 1);
+  // The send's child turn is missing everywhere: the send still blocks a known zero, and the
+  // traced parent stays.
+  const lost = commRun([], { rows, sends: [send("spawn", "root", "theirs", "2026-11-05T01:00:02Z")], turns: [] });
+  const none = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: lost, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([none.parent.id, none.children.length, none.links_source, none.known_zero, agentCount(none)],
+    [`codex:up:${C2}`, 0, "trace", false, null]);
+  // Without any send in the window, a traced parent and no spawn span is a known zero.
+  const quiet = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to,
+    run: commRun([], { rows, sends: [], turns: [] }), prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([quiet.parent.id, quiet.known_zero, agentCount(quiet)], [`codex:up:${C2}`, true, 0]);
+});
+
 test("a communication tool label is spawn or followup", () => {
   const out = foldAgents({ task: rootTask, links: [link(P, C1, "sub1", { tool_span: "communication:followup", tool_span_id: null, depth: 1 })],
     entries: [], spawnSpanIds: [] });
