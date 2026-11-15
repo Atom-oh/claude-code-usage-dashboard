@@ -856,8 +856,11 @@ skills a minute either side, each capped at the list's reads) and equals its lis
   `send_input` span of the turn, no link, and turn-naming evidence (the rollup row's `names_turn`,
   else a version that names its turn on tool spans, 0.166+).
   `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans (CLI: `multi_agent_v1` `spawn_agent`) and those
-  with no linked turn (null when spans are truncated). `total` is `{llm_calls,
-  llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
+  with no linked turn (null when spans are truncated, the turn's end is unknown or within a
+  minute of the clipped span window, or the rollup row counts more spawn calls than the spans
+  hold). `total` is `{llm_calls,
+  llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks
+  withheld spawn evidence (any of those cases), a
   depth, count, trace, row, read-window or id bound (over 2,000 legacy call, child turn or conversation ids of
   one kind; bound id arrays, rollup and raw turn reads alike, are read in chunks below the HTTP
   form-field limit), or a spent read

@@ -645,6 +645,20 @@ export function foldTaskDetail(task, spanRows, evidence = [], extra = []) {
   return task.client === "codex" ? foldCodexDetail(task, spanRows, extra) : foldClaudeDetail(task, spanRows, evidence, extra);
 }
 
+// The detail's own SPAWN_SPANS span ids, or null with the reason they were withheld (partial
+// evidence: unknown, never a known zero). The spans stop at to + 24h on both paths: a turn still
+// running within a minute of that bound, or of unknown end, may have later spawn calls. On the
+// rollup the turn row is unclipped (`rowCalls`), so spans holding fewer spawn calls than the row
+// counts are partial too. The reason limits the agents read (codexAgents `spawnsWithheld`).
+export function codexSpawnEvidence(rows, { truncated, endMs, toMs, rowCalls = null }) {
+  if (truncated) return { ids: null, withheld: "spans_truncated" };
+  if (endMs === null) return { ids: null, withheld: "turn_end_unknown" };
+  if (endMs + 60000 > toMs + SPAN_SLACK_MS) return { ids: null, withheld: "span_window" };
+  const ids = rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
+  if (rowCalls !== null && rowCalls > ids.length) return { ids: null, withheld: "rollup_spawn_calls" };
+  return { ids, withheld: null };
+}
+
 // `turnsBoundary` gates the Codex turn rollup read (codexTurnsSource.js); `clock` (ms) times the
 // Codex subagent reads' budget (codexAgents.js AGENT_EXTRA_BUDGET_MS) from the detail's start.
 export async function userTaskDetail(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices(),
@@ -705,22 +719,15 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     limitsSql ? run(limitsSql.sql, limitsSql.params) : [], run(skillsSql.sql, skillsSql.params)]);
   const detail = foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
   // Subagent turns linked through the trace's parent-span chain; their own completions price them.
-  let spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
-  // The spans stop at to + 24h on both paths: a turn still running within a minute of that bound
-  // may have later spawn calls (partial evidence: unknown, never a known zero). On the rollup the
-  // turn row is unclipped, so spans holding fewer spawn calls than the row counts are partial too.
-  if (spawnSpanIds !== null) {
-    const rowCalls = rollup ? count(entry.turn.spawn_calls) : null, end = count(entry.turn.end_ms);
-    if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS || (rowCalls !== null && rowCalls > spawnSpanIds.length))
-      spawnSpanIds = null;
-  }
+  const { ids: spawnSpanIds, withheld: spawnsWithheld } = codexSpawnEvidence(rows, { truncated: detail.truncated,
+    endMs: count(entry.turn.end_ms), toMs: to.getTime(), rowCalls: rollup ? count(entry.turn.spawn_calls) : null });
   // Turn-naming evidence: the rollup row's own flag (any span of the turn on 0.166+), as the list
   // reads it; raw rows carry only the kept version.
   const namesTurn = entry.turn.names_turn !== undefined && entry.turn.names_turn !== null
     ? Number(entry.turn.names_turn) > 0 : namesTurnOnTools(entry.turn.app_version);
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
-    traceIds, tracesPartial: detail.truncated, namesTurn }, detail.task, spawnSpanIds, { from, to, run, prices,
+    traceIds, tracesPartial: detail.truncated, spawnsWithheld, namesTurn }, detail.task, spawnSpanIds, { from, to, run, prices,
     turnsBoundary, detailStart, now: clock });
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };

@@ -325,7 +325,8 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
   };
 }
 
-// turn: { turnId, conversationId, startMs, endMs, traceIds, tracesPartial, namesTurn } of the detail's own turn and spans.
+// turn: { turnId, conversationId, startMs, endMs, traceIds, tracesPartial, spawnsWithheld, namesTurn } of the detail's
+// own turn and spans; `spawnsWithheld` (taskTraceDetail.codexSpawnEvidence reason) or partial traces limit the result.
 // On the raw read, a parent turn that started over a day before the lineage window shows its
 // clipped start; on the rollup (lineage start - 7 days at or after `turnsBoundary`) it keeps its
 // true start. One lineage read over the turn's traces, then one turn and one completion read over
@@ -344,7 +345,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds,
     return !spent;
   };
   const traceIds = turn.traceIds.slice(0, LINEAGE_TRACE_LIMIT);
-  let limited = Boolean(turn.tracesPartial) || turn.traceIds.length > traceIds.length;
+  let limited = Boolean(turn.tracesPartial) || Boolean(turn.spawnsWithheld) || turn.traceIds.length > traceIds.length;
   if (!traceIds.length || turn.startMs === null || turn.endMs === null)
     return foldAgents({ task, limited, spawnSpanIds });
   const lineage = codexLineageSql(owner, traceIds, turn.startMs, turn.endMs);

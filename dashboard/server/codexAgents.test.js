@@ -231,6 +231,13 @@ test("without trace ids nothing is read and the result is unknown, and partial t
     { from, to, run: async () => [] });
   assert.equal(partial.limited, true);
   assert.equal(partial.total.cost_partial, true);
+  // Spawn evidence withheld for any reason limits the result too, also when no lineage read runs.
+  for (const endMs of [1, null]) {
+    const withheld = await codexAgents("a", { turnId: P, startMs: 0, endMs, traceIds: ["t"], spawnsWithheld: "turn_end_unknown" },
+      rootTask, null, { from, to, run: async () => [] });
+    assert.deepEqual([withheld.limited, withheld.known_zero, withheld.total.llm_calls_partial, withheld.total.cost_partial],
+      [true, false, true, true], String(endMs));
+  }
 });
 
 test("legacy spans need their call logs and child conversations", () => {

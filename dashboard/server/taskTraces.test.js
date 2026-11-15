@@ -1406,6 +1406,23 @@ test("a raw Codex detail whose spans reach the clipped span window has no spawn 
   // The spans stop at to + 24h: a turn still running there may have spawned later (unknown).
   const clipped = await detailFor("2026-11-05T20:00:00Z", "2026-11-06T23:59:30Z");
   assert.deepEqual([clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents], [null, false, null]);
+  // Withheld spawn evidence limits the agents read: its totals are partial, never complete.
+  assert.deepEqual([clipped.agents.limited, clipped.agents.total.llm_calls_partial, clipped.agents.total.cost_partial],
+    [true, true, true]);
+  assert.deepEqual([whole.agents.limited, whole.agents.total.llm_calls_partial], [false, false]);
+});
+
+test("Codex spawn evidence is withheld with its reason", () => {
+  const { codexSpawnEvidence } = detail;
+  const toMs = to.getTime(), bound = toMs + 24 * 3600000;
+  const spawn = { span_id: "g", span_name: "collaborationspawn_agent" }, other = { span_id: "s", span_name: "exec_command" };
+  const of = (o) => codexSpawnEvidence([spawn, other], { truncated: false, endMs: bound - 120000, toMs, rowCalls: null, ...o });
+  assert.deepEqual(of({}), { ids: ["g"], withheld: null });
+  assert.deepEqual(of({ truncated: true }), { ids: null, withheld: "spans_truncated" });
+  assert.deepEqual(of({ endMs: bound - 30000 }), { ids: null, withheld: "span_window" });
+  assert.deepEqual(of({ endMs: null }), { ids: null, withheld: "turn_end_unknown" });
+  assert.deepEqual(of({ rowCalls: 2 }), { ids: null, withheld: "rollup_spawn_calls" });
+  assert.deepEqual(of({ rowCalls: 1 }), { ids: ["g"], withheld: null });
 });
 
 test("a Codex detail starts the subagent read budget at its own start", async () => {
@@ -1838,6 +1855,35 @@ test("a rollup detail whose spans hold fewer spawn calls than its turn row has n
       spans: [codexSpan("s1", "2026-11-05T20:00:01Z")] }), DEFAULT_CODEX_PRICING, BOUNDARY);
   assert.deepEqual([clipped.task.subagent_calls, clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents],
     [0, null, false, null]);
+});
+
+test("a rollup detail whose turn row counts more spawn calls than its spans limits a priced agents read", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1), child = uuid(7);
+  const lineage = [
+    { trace_id: "tr1", span_id: "g", parent_id: "x", name: "collaborationspawn_agent", conversation: "c1", turn: id, start_ms: "0" },
+    { trace_id: "tr1", span_id: "d", parent_id: "g", name: "dispatch_tool_call_with_state", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "i", parent_id: "d", name: "op.dispatch.inter_agent_communication", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "c", parent_id: "i", name: "session_task.turn", conversation: "", turn: child, start_ms: "0" },
+    { trace_id: "tr1", span_id: "r", parent_id: "c", name: "run_turn", conversation: "sub", turn: child, start_ms: "0" },
+  ];
+  const detailFor = async (spawnCalls) => {
+    const store = storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00.000Z", "2026-11-05T05:00:10.250Z", { spawn_calls: spawnCalls }),
+      rollupRow(child, "2026-11-05T05:00:02.000Z", "2026-11-05T05:00:08.000Z", { conversation_id: "sub" })],
+    completions: [completion("2026-11-05T05:00:01Z"), completion("2026-11-05T05:00:05Z", { conversation_id: "sub" })],
+    spans: [codexSpan("g", "2026-11-05T05:00:01Z", { span_name: "collaborationspawn_agent", trace_id: "tr1",
+      a_tool_name: "collaborationspawn_agent" })] });
+    const run = async (sql, params) => sql.includes("op.dispatch") ? lineage : store(sql, params);
+    return userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, BOUNDARY);
+  };
+  // 2 rollup spawn calls, 1 span returned, 1 priced child: the child's cost is known, the read limited.
+  const short = await detailFor("2");
+  assert.equal(short.agents.children.length, 1);
+  assert.ok(Math.abs(short.agents.children[0].cost_usd - unitCost) < 1e-12);
+  assert.deepEqual([short.agents.spawn_calls, short.agents.limited, short.agents.total.llm_calls_partial,
+    short.agents.total.cost_partial], [null, true, true, true]);
+  // Every spawn call seen: the same child is a complete total.
+  const whole = await detailFor("1");
+  assert.deepEqual([whole.agents.spawn_calls, whole.agents.limited, whole.agents.total.cost_partial], [1, false, false]);
 });
 
 test("a rollup detail takes the turn-naming evidence from the row's names_turn", async () => {
