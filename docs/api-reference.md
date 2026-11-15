@@ -821,7 +821,8 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   ([Codex observability](reference/codex-observability.md)).
   `parent` is `{id, tool, started_at, link}` of the turn that started this one, else null
   (`started_at`/`link` null when the parent's turn row is absent). `children` are up to
-  50 subagent turns, three levels deep, in tree order: `{id, parent_id, depth, tool, started_at,
+  50 subagent turns, three levels deep from traces (one level from the communication-log
+  fallback, never walked further), in tree order: `{id, parent_id, depth, tool, started_at,
   duration_ms, models, llm_calls, llm_calls_partial, cost_usd, cost_partial, link}`: `llm_calls` is the subagent
   turn's model-call span count and `cost_usd` its completion-log estimate, folded like a list row
   (null when its turn row is absent). Each child's `link` `{from, to}` is the UTC hour containing
