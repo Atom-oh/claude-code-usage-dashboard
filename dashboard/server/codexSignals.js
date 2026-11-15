@@ -42,8 +42,9 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
   if (!TYPES.includes(type)) throw new Error("unsupported metric table");
   const queryParams = { ...params(from, to, filters), ...(metricNames ? { signalMetricNames: metricNames } : {}) };
   const histogram = type.endsWith("histogram");
-  const identity = `name, unit, scope, scope_version, scope_attributes, resource, attributes,
-    service_name, resource_schema_url, scope_schema_url, temporality, monotonic`;
+  const identityColumns = ["name", "unit", "scope", "scope_version", "scope_attributes", "resource",
+    "attributes", "service_name", "resource_schema_url", "scope_schema_url", "temporality", "monotonic"];
+  const identity = identityColumns.join(", ");
   const source = `SELECT TimeUnix AS t, StartTimeUnix AS started,
     MetricName AS name, MetricUnit AS unit, ScopeName AS scope, ScopeVersion AS scope_version,
     mapSort(ScopeAttributes) AS scope_attributes, mapSort(ResourceAttributes) AS resource,
@@ -128,21 +129,25 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
         ${metricNames ? "AND MetricName IN {signalMetricNames:Array(String)}" : ""} AND ${scan}
     ),
     cumulative_series AS (
-      SELECT ${identity}, started,
+      SELECT ${identityColumns.map((c) => `any(${c}) AS ${c}`).join(", ")},
+        any(started) AS started,
         countIf(w) AS window_points,
         maxIf(tuple(ts, p), w) AS last_hi, minIf(tuple(-ts, p), w) AS last_lo,
         minIf(tuple(ts, p), w) AS first_lo,
         maxIf(tuple(ts, p), NOT w) AS base_hi, minIf(tuple(-ts, p), NOT w) AS base_lo,
         temporality = 2 AND countIf(NOT w) > 0 AS has_base,
-        countIf(w AND NOT (${valid})) AS invalid_points,
+        countIf(w AND NOT point_valid) AS invalid_points,
         deltaSumTimestampIf(p.2, ts, w) AS rise_2${histogram ? `,
         deltaSumTimestampIf(p.3, ts, w) AS rise_3,
         countIf(w AND sample_count > 0 AND sample_sum = 0) AS sum_ambiguous_points` : ""}
       FROM (
-        SELECT *, toUnixTimestamp64Nano(t) AS ts, t >= {signalFrom:DateTime} AS w, ${payload} AS p
+        SELECT *, toUnixTimestamp64Nano(t) AS ts, t >= {signalFrom:DateTime} AS w, ${payload} AS p,
+          -- Per point: the outer any() aliases shadow identity columns inside aggregates.
+          (${valid}) AS point_valid, cityHash64(${identity}, started) AS series_key
         FROM (${source} AND AggregationTemporality != 1 AND ${scan} AND ${withinScan})
       )
-      GROUP BY ${identity}, started
+      -- A 64-bit key over the full identity groups far faster than the maps themselves.
+      GROUP BY series_key
       HAVING window_points > 0
     ),
     delta_points AS (

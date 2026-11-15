@@ -27,7 +27,9 @@ test("selected metric names constrain window and cumulative baselines without re
       assert.match(sql, /INTERVAL 3 DAY/);
       // Scan budget, cumulative fold, DELTA window and limit marker.
       assert.equal(sql.match(/MetricName IN \{signalMetricNames:Array\(String\)\}/g).length, 4);
-      assert.match(sql, /GROUP BY name, unit, scope[\s\S]*monotonic, started/);
+      // Cumulative series group by a key over the full identity and start.
+      assert.match(sql, /cityHash64\(name, unit, scope, scope_version, scope_attributes, resource, attributes,[\s\S]*monotonic, started\) AS series_key/);
+      assert.match(sql, /GROUP BY series_key/);
     }
     assert.equal(buildMetricQuery(type, from, to).params.signalMetricNames, undefined);
   }

@@ -32,6 +32,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   in SQL to their latest and baseline points, and a stored-row budget bounds the scan.
   The full metric list (Analytics) still reports "limited": its three-day baseline lookback
   alone exceeds the budget.
+- Reliability's Codex turn tiles (duration, TTFT, tool calls, tokens) average the metric
+  groups with known statistics and mark the tile "일부 원본 통계 미확인" when any group is
+  withheld, instead of showing "—" whenever one series lacks a baseline.
 
 ## [1.10.0] - 2026-11-14
 
