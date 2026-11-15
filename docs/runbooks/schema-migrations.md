@@ -316,7 +316,11 @@ set it empty and redeploy; this disables token-economics reads. Retain the table
 Migration 012 adds `codex_turns_v1` and its ingestion view `codex_turns_v1_mv` on `otel_traces`.
 Per `(UserIdentity, TurnHour, TurnId)` the table keeps the turn's start and end, conversation set,
 model-call, retry-try, compaction and spawn-call span states (`uniqExact` of span-id hashes) and
-model sets, so Codex task lists and details read one row per turn instead of scanning spans.
+model sets, so Codex task lists and details read rollup rows instead of scanning spans: one row
+per turn for an in-window UUIDv7 id (spans at most 7 days after and 1 day before the id time),
+while a non-v7 id (one row per span hour), a span outside that window, or mixed identity
+attributes (one turn's spans under different user identities) produce several rows that
+readers merge by turn id.
 `TurnHour` is the UTC hour of a UUIDv7 turn id; a non-v7 id uses its span's hour. States union, so
 repeated delivery, repeated backfill or overlap with the live view cannot change a count. The
 rollup row is unclipped; the raw read clips a turn to the page range. Retention is 90 days
@@ -351,18 +355,27 @@ ledger to equal its version list, so run steps 3-5 only from merged `main`.
    they back up.
 
    ```bash
-   day=$(date -u -d '89 days ago' +%F) end=$(date -u -d tomorrow +%F)
-   while [ "$day" != "$end" ]; do
-     next=$(date -u -d "$day + 1 day" +%F)
+   backfill_day() {
+     local next; next=$(date -u -d "$1 + 1 day" +%F)
      { echo "SET max_threads=1, max_block_size=8192, max_insert_block_size=8192,"
        echo "  min_insert_block_size_rows=0, min_insert_block_size_bytes=0,"
        echo "  max_memory_usage=800000000, max_execution_time=120;"
-       echo "SET param_backfillFrom='$day 00:00:00', param_backfillTo='$next 00:00:00';"
-       cat clickhouse-backfill-012.sql; } | CH_USER=otel_writer CH_SECRET=clickhouse-writer ch || break
-     echo "backfilled $day"
-     day=$next
-   done
+       echo "SET param_backfillFrom='$1 00:00:00', param_backfillTo='$next 00:00:00';"
+       cat clickhouse-backfill-012.sql; } | CH_USER=otel_writer CH_SECRET=clickhouse-writer ch
+   }
+   # A subshell, so a failed day exits non-zero without closing the operator's shell.
+   ( day=$(date -u -d '89 days ago' +%F) end=$(date -u -d tomorrow +%F)
+     while [ "$day" != "$end" ]; do
+       backfill_day "$day" || { echo "backfill failed for $day; retry that day in full" >&2; exit 1; }
+       echo "backfilled $day"
+       day=$(date -u -d "$day + 1 day" +%F)
+     done )
    ```
+
+   The loop's last day is today, still unsettled. Once one hour after installation has settled,
+   rerun that day alone (`backfill_day <that day> || echo "backfill failed" >&2`), and the next
+   day too if that hour crosses midnight UTC, so the backfill reaches installation plus one
+   settled hour; the live view covers everything after.
 
 5. Verify every backfilled day with the read-only `clickhouse-verify-012.sql` (bound
    hour-aligned UTC `verifyFrom`/`verifyTo`). One call scans raw spans in `[verifyFrom - 24h,
