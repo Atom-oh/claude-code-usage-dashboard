@@ -720,7 +720,17 @@ listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
 "observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
 from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
-null (no attribute links a subagent conversation; the detail's `agents` follows the trace). Spans carry no usage: tokens and cost come only from unique
+null (no attribute links a subagent conversation; the detail's `agents` follows the trace).
+`subagent_calls` counts the turn's spawn and follow-up calls (`spawn_agent`, `followup_task`,
+`multi_agent_v1` `spawn_agent`), not subagent conversations; it is null unless the rollup read
+is active (`CODEX_TURNS_READ_FROM` set and the list's start minus 7 days not before it) and the
+turn's Codex version is 0.166 or later, so a null is not collected, never zero, and `0` means no
+call. With the rollup active the list reads the migration 012 turn rollup instead of raw spans;
+its rows equal the raw rows except that a turn running past `to + 24h` shows its true end and a
+context turn its true start (a UUIDv7 turn running more than 7 days past its id also merges its
+id-hour row, so it is listed once, in the bucket of its start, never as a later fragment);
+unset or an earlier range keeps raw reads
+([schema runbook](runbooks/schema-migrations.md#codex-turns-migration-012)). Spans carry no usage: tokens and cost come only from unique
 usage-bearing `response.completed` completions of the same conversation whose event
 time falls in `[start, end + 5s]` (latest-starting turn when several; each completion
 once), priced per completion with the Codex AWS list estimate (`cost_basis:
@@ -747,7 +757,13 @@ either way. Without `userExact` (a shared task link) the owner is resolved: the 
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
 access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`
-(Codex adds `agents` and `activity`), `owner` being the exact identity the task belongs to:
+(Codex adds `agents` and `activity`); `owner` is the exact identity the task belongs to. With
+`CODEX_TURNS_READ_FROM` set, a Codex detail reads the rollup only when its list would (`from`
+minus 7 days at or after the boundary) and its turn id is UUIDv7 with a time at or after the
+boundary and within [`from` - 7 days, `to` + 1 day]. It then reads the turn's own window (later
+same-conversation turns until its end plus 5 s, completions from an hour before it to the list's
+own bound (`to` + 24h, since collector time can lag the event time that links them), spans and
+skills a minute either side, each capped at the list's reads) and equals its list row. Any other detail, and a turn missing from the rollup, reads raw. Fields:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no model-call span).
@@ -844,12 +860,14 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   conversations, ties in one millisecond going to the greatest sender id), else null. `known_zero` is true only with positive evidence of no subagent calls:
   complete spans that do not reach the clipped span window (`to` + 24h), no spawn, follow-up or
   `send_input` span of the turn, no link, no communication send of the conversation in the turn's
-  window, and a version that names its turn on tool spans (0.166+).
+  window, and turn-naming evidence (the rollup row's `names_turn`, else a version that names its
+  turn on tool spans, 0.166+).
   `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans (CLI: `multi_agent_v1` `spawn_agent`) and those
   with no linked turn (null when spans are truncated). `total` is `{llm_calls,
   llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
   depth, count, trace, row, read-window or id bound (over 2,000 legacy call, child turn or conversation ids of
-  one kind; bound id arrays are read in chunks below the HTTP form-field limit), or a spent read
+  one kind; bound id arrays, rollup and raw turn reads alike, are read in chunks below the HTTP
+  form-field limit), or a spent read
   budget: past 12 s from the detail's start no
   read beyond the lineage span read starts (legacy resolution, the communication fallback, the
   subagent turn and completion reads), and the links already found are returned without costs,

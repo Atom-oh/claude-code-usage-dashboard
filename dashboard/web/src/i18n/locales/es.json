@@ -2040,5 +2040,6 @@
   "me7f6707f549f": "Al aprobar, el ID de usuario de recopilación se establece como el correo electrónico de esta cuenta, y los dispositivos que ya tienen un recopilador instalado también cambian a este correo electrónico.",
   "m1167c444c874": "{0} compactaciones{1} (solo se muestran algunas en el gráfico)",
   "mb1c9e46267bb": "Codex ejecuta los subagentes en conversaciones independientes. Las conexiones que no se encuentran mediante trace se infieren a partir de los registros agent_communication de Codex. El primer turno de una conversación receptora que comienza dentro de los 60 segundos posteriores al envío se considera un turno de subagente. Los costes son estimaciones calculadas a partir de los registros de finalización de cada subagente.",
-  "m8aa42f469326": "Recuento vinculado mediante registros agent_communication"
+  "m8aa42f469326": "Recuento vinculado mediante registros agent_communication",
+  "mb914b9145517": "Número de llamadas que crearon un subagente o indicaron a un subagente existente que realizara una tarea de seguimiento (no es el número de subagentes nuevos). Solo se recopila en turnos de Codex de la versión 0.166 o posterior durante los periodos en que los operadores hayan activado la agregación de turnos de Codex; en caso contrario, se muestra como No recopilado."
 }

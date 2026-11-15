@@ -13,6 +13,9 @@ import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, 
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, codexRetries, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions, namesTurnOnTools,
   emitsTurnCompactions } from "./taskTraces.js";
+import { TURN_LOOKBACK_MS, codexTurnsReadFrom, rollupHasTurn, rollupOwnerSql, rollupTurnSql, turnsSourceForList,
+  turnsSourceForTurn } from "./codexTurnsSource.js";
+import { turnHourMs } from "./codexTurnsSchema.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
   llm: ["model", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens", "ttft_ms",
@@ -151,10 +154,11 @@ LIMIT ${SPAN_BOUND}`,
 
 // Codex: the conversation's turns and completions (the complete competitor set for the
 // list's latest-start-wins linking) and the turn's spans in [from - 24h, to + 24h), the
-// list's turn window. Spans that name another conversation are excluded; spans without a
-// conversation id stay, as in the list's turn grouping. trace_id is internal: it keys the
-// subagent lineage read (codexAgents.js) and is never returned.
-export function codexDetailSql(from, to, q, conversationId, turnId) {
+// list's turn window, or in `spanFrom`/`spanTo` (Dates: a rollup detail's turn window). Spans
+// that name another conversation are excluded; spans without a conversation id stay, as in the
+// list's turn grouping. trace_id is internal: it keys the subagent lineage read (codexAgents.js)
+// and is never returned.
+export function codexDetailSql(from, to, q, conversationId, turnId, { spanFrom = null, spanTo = null } = {}) {
   return {
     turns: codexTurnSql(from, to, q, { conversationId }),
     completions: codexCompletionSql(from, to, q, { conversationId }),
@@ -180,10 +184,70 @@ FROM (
 )
 ORDER BY ts DESC, span_id
 LIMIT ${SPAN_BOUND}`,
-      params: { spanFrom: toChDateTime(new Date(from.getTime() - SPAN_SLACK_MS)),
-        spanTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact, turnId, conversationId },
+      params: { spanFrom: toChDateTime(spanFrom ?? new Date(from.getTime() - SPAN_SLACK_MS)),
+        spanTo: toChDateTime(spanTo ?? new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact, turnId, conversationId },
     },
   };
+}
+
+const MINUTE_MS = 60000, HOUR_MS = 3600000;
+const ceilSecond = (ms) => Math.ceil(ms / 1000) * 1000;
+// A rollup detail's reads around its turn window [s, e] (docs/superpowers/specs/2026-11-15-codex-
+// turn-rollup-design.md, "Reads", Detail). Competitors: same-conversation turns starting in
+// [s, e + slack] and before to + 24h; earlier turns cannot win a completion from this one, and
+// linkCompletions links a completion at exactly e + slack, which a turn starting then wins (the
+// bound is inclusive: startTo is exclusive milliseconds, so e + slack + 1). Completions:
+// Timestamp in [max(s - 1h, from), to + 24h): linking uses event.timestamp, while the read bounds
+// the collector Timestamp, which can lag the event by any amount (a device collector buffering
+// offline); the list links every such completion it reads up to to + 24h, so the detail reads to
+// that same bound. Spans and skills: [s - 1 min, min(e + 1 min, to + 24h)). The upper bounds stop
+// at the list's own reads, so a detail never links what its list row did not read. DateTime
+// parameters carry whole seconds: lower bounds round down, upper bounds up, never narrower.
+export function codexTurnWindow(from, to, startMs, endMs) {
+  const cap = to.getTime() + SPAN_SLACK_MS;
+  return {
+    competitors: { startFrom: startMs, startTo: Math.min(endMs + COMPLETION_SLACK_MS + 1, cap) },
+    completions: { logFrom: new Date(Math.max(startMs - HOUR_MS, from.getTime())), logTo: new Date(cap) },
+    spans: { spanFrom: new Date(startMs - MINUTE_MS), spanTo: new Date(Math.min(ceilSecond(endMs + MINUTE_MS), cap)) },
+  };
+}
+
+// First TurnHour a rollup detail reads: the id's hour minus 7 days, so every hour row of the turn
+// merges (a span far from the id's time keeps its own hour), and never after the list's own first
+// hour (from - 7 days). No row of a bucket turn or its competitors lies before that (their id hours
+// are at or after it, span hours after `from`), so the detail merges exactly the list's rows.
+export function codexDetailHourFrom(from, turnId) {
+  return new Date(Math.min(turnHourMs(turnId) - TURN_LOOKBACK_MS, from.getTime() - TURN_LOOKBACK_MS));
+}
+
+// The rollup inputs of a Codex detail: owner, the turn and its competitors, and the completions
+// of its window. Null when the rollup cannot answer (no single owner, no row for the turn): the
+// raw read decides then, so the rollup never makes a detail not found by itself.
+async function rollupCodexInputs(from, to, task, userExact, run) {
+  let owner = userExact;
+  if (owner === null) {
+    // Not conversation-verified: keyed by the id's hour and the turn id only. The turn read below
+    // filters by the link's conversation, so an owner of another conversation finds no row.
+    const resolve = rollupOwnerSql(task.turnId);
+    const owners = await run(resolve.sql, resolve.params);
+    if (owners.length !== 1 || !owners[0].owner) return null;
+    owner = owners[0].owner;
+  }
+  const q = { userExact: owner };
+  const hourFrom = codexDetailHourFrom(from, task.turnId);
+  const own = rollupTurnSql(from, to, q, { conversationId: task.conversationId, turnId: task.turnId, hourFrom });
+  const rows = await run(own.sql, own.params);
+  if (!rollupHasTurn(rows, task.turnId)) return null;
+  const turn = rows.find(r => r.turn_id === task.turnId);
+  const start = count(turn.start_ms), end = count(turn.end_ms);
+  // A turn starting outside [from, to) is not a task of this page: its list row says so too.
+  if (Number(turn.in_bucket) !== 1 || start === null || end === null) throw new NotFoundError();
+  const window = codexTurnWindow(from, to, start, end);
+  const competitorsSql = rollupTurnSql(from, to, q, { conversationId: task.conversationId, hourFrom, ...window.competitors });
+  const completionsSql = codexCompletionSql(from, to, q, { conversationId: task.conversationId, ...window.completions });
+  const [competitors, completions] = await Promise.all([run(competitorsSql.sql, competitorsSql.params),
+    run(completionsSql.sql, completionsSql.params)]);
+  return { owner, turns: [turn, ...competitors.filter(t => t.turn_id !== task.turnId)], completions, spans: window.spans };
 }
 
 // Owner of a Codex turn for a shared link: the identity on the turn's spans of that
@@ -581,9 +645,10 @@ export function foldTaskDetail(task, spanRows, evidence = [], extra = []) {
   return task.client === "codex" ? foldCodexDetail(task, spanRows, extra) : foldClaudeDetail(task, spanRows, evidence, extra);
 }
 
-// `clock` (ms) times the Codex subagent reads' budget (codexAgents.js AGENT_EXTRA_BUDGET_MS) from
-// the detail's start.
-export async function userTaskDetail(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices(), clock = Date.now) {
+// `turnsBoundary` gates the Codex turn rollup read (codexTurnsSource.js); `clock` (ms) times the
+// Codex subagent reads' budget (codexAgents.js AGENT_EXTRA_BUDGET_MS) from the detail's start.
+export async function userTaskDetail(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices(),
+  turnsBoundary = codexTurnsReadFrom, clock = Date.now) {
   const detailStart = clock();
   const { task, userExact } = validateTaskDetailQuery(raw, enabledClients);
   if (task.client === "claude") {
@@ -609,16 +674,21 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     }
     return { ...foldTaskDetail({ client: "claude", ...headFields }, rows, costRows, compactionRows), environment, owner: head.owner };
   }
-  let owner = userExact;
-  if (owner === null) {
+  // The rollup only when the list row is a rollup row too, so detail and list read alike.
+  const rollup = turnsSourceForList(from, turnsBoundary) === "rollup"
+    && turnsSourceForTurn(task.turnId, turnsBoundary, { from, to }) === "rollup"
+    ? await rollupCodexInputs(from, to, task, userExact, run) : null;
+  let owner = rollup?.owner ?? userExact, turns, completions;
+  if (!rollup && owner === null) {
     const resolve = codexOwnerSql(from, to, task.conversationId, task.turnId);
     const owners = await run(resolve.sql, resolve.params);
     if (owners.length !== 1 || !owners[0].owner) throw new NotFoundError();
     owner = owners[0].owner;
   }
   const q = { userExact: owner };
-  const sql = codexDetailSql(from, to, q, task.conversationId, task.turnId);
-  const [turns, completions] = await Promise.all([run(sql.turns.sql, sql.turns.params),
+  const sql = codexDetailSql(from, to, q, task.conversationId, task.turnId, rollup?.spans);
+  if (rollup) ({ turns, completions } = rollup);
+  else [turns, completions] = await Promise.all([run(sql.turns.sql, sql.turns.params),
     run(sql.completions.sql, sql.completions.params)]);
   const limited = turns.length > CODEX_TURN_LIMIT || completions.length > CODEX_COMPLETION_LIMIT;
   const { entries } = linkCompletions(turns.slice(0, CODEX_TURN_LIMIT), completions.slice(0, CODEX_COMPLETION_LIMIT),
@@ -629,22 +699,29 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const turnStart = count(entry.turn.start_ms);
   const limitsSql = turnStart === null ? null
     : codexLimitsSql(q, task.conversationId, turnStart, count(entry.turn.end_ms) ?? turnStart);
-  const skillsSql = codexSkillsSql(from, to, q, task.conversationId, task.turnId);
+  const skillsSql = codexSkillsSql(from, to, q, task.conversationId, task.turnId,
+    rollup ? { logFrom: rollup.spans.spanFrom, logTo: rollup.spans.spanTo } : undefined);
   const [rows, limitRows, skillRows] = await Promise.all([run(sql.spans.sql, sql.spans.params),
     limitsSql ? run(limitsSql.sql, limitsSql.params) : [], run(skillsSql.sql, skillsSql.params)]);
   const detail = foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
   // Subagent turns linked through the trace's parent-span chain; their own completions price them.
   let spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
-  // The spans stop at to + 24h: a turn still running within a minute of that bound may have later
-  // spawn calls (partial evidence: unknown, never a known zero).
+  // The spans stop at to + 24h on both paths: a turn still running within a minute of that bound
+  // may have later spawn calls (partial evidence: unknown, never a known zero). On the rollup the
+  // turn row is unclipped, so spans holding fewer spawn calls than the row counts are partial too.
   if (spawnSpanIds !== null) {
-    const end = count(entry.turn.end_ms);
-    if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS) spawnSpanIds = null;
+    const rowCalls = rollup ? count(entry.turn.spawn_calls) : null, end = count(entry.turn.end_ms);
+    if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS || (rowCalls !== null && rowCalls > spawnSpanIds.length))
+      spawnSpanIds = null;
   }
+  // Turn-naming evidence: the rollup row's own flag (any span of the turn on 0.166+), as the list
+  // reads it; raw rows carry only the kept version.
+  const namesTurn = entry.turn.names_turn !== undefined && entry.turn.names_turn !== null
+    ? Number(entry.turn.names_turn) > 0 : namesTurnOnTools(entry.turn.app_version);
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
-    traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices,
-    detailStart, now: clock });
+    traceIds, tracesPartial: detail.truncated, namesTurn }, detail.task, spawnSpanIds, { from, to, run, prices,
+    turnsBoundary, detailStart, now: clock });
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
   return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, activity, environment: null, owner };

@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T11:05:25.355559+00:00",
-  "source_messages": 2042,
+  "updated_at": "2026-11-15T11:22:05.054169+00:00",
+  "source_messages": 2043,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2042,
-      "bytes": 157193,
-      "sha256": "10acb265f9a7b983b1d99488873dbbdd94766a20e08862d2cee8084aa56989d5"
+      "messages": 2043,
+      "bytes": 157511,
+      "sha256": "905a98130a79daf171ffcde42a06bd2ceb75453e92216069530b25d11bd33ce2"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2042,
-      "bytes": 185827,
-      "sha256": "766935a9fffb7606c3be77e30f52d86b77fac84631473d5e6306300f6327d035"
+      "messages": 2043,
+      "bytes": 186223,
+      "sha256": "9fd35a4c00c8ca7b237c18731a7649daad4d4a9af3db27d43b1679450d1d0a38"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2042,
-      "bytes": 194710,
-      "sha256": "50e24d823aee72bb24c7297eb43d4ffdfd9b90299870b5831091fd4a56dad25e"
+      "messages": 2043,
+      "bytes": 195110,
+      "sha256": "bd8331858c98375dde1d046e5224525aef99b1770cc4d4756ec4e63fd53dbb17"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2042,
-      "bytes": 166981,
-      "sha256": "09cc646ad804cfbd381bcec9a30ff898a4916673d5c965a4da1d3e69ae13443d"
+      "messages": 2043,
+      "bytes": 167305,
+      "sha256": "e081c6602b235a44d46cba7f3e284254646e5b5980bf8951a68780e88d8eb737"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2042,
-      "bytes": 148635,
-      "sha256": "e9687a23defc3e442b4c1742aeb98d869bdb0c56fbc242847cea68239ab32cee"
+      "messages": 2043,
+      "bytes": 148903,
+      "sha256": "2d3e6c54cfe22bd2bc0447bd432dce2bb0eb3cb266d2b4af90abcc001cecab39"
     }
   ],
   "catalog_calls": [
@@ -682,26 +682,29 @@
       "provider": "amazon-bedrock",
       "region": "us-east-1",
       "date": "2026-11-15",
-      "source_sha256": "1b0856cef257916f105189c1a74af98040d9e2397d9eaa22249ec20a4feb67c1",
-      "request_sha256": "44daa7586c25904381bf9bd9ff5157d3960a6108a9e6d2969eb617a7e2603bcf",
-      "output_sha256": "43ce04fab03215ce9da8dcd803609e2bd0faf3c562910a236a67c883c6b08ad0",
+      "source_sha256": "b9997a7927aaf8213ed0b62b6932b9a815cd8beaf04be29f55761f00280d6bfa",
+      "request_sha256": "5137b71ac9b5b9a398bce7c42393fe9d04763a2fbef789cd2c5305df1ad5af9f",
+      "output_sha256": "4005d99befa39907c527bb23f71ab517c648e885c645a666e1a838c036434ca0",
       "usage": {
-        "inputTokens": 465,
-        "outputTokens": 723,
-        "totalTokens": 1188,
+        "inputTokens": 281,
+        "outputTokens": 475,
+        "totalTokens": 756,
         "cacheReadInputTokens": 0,
         "cacheWriteInputTokens": 0
       },
       "stop_reason": "end_turn",
-      "timestamp": "2026-11-15T11:04:35.354601+00:00",
+      "timestamp": "2026-11-15T09:47:00.548531+00:00",
       "keys": [
-        "m1167c444c874",
-        "m8aa42f469326",
-        "mb1c9e46267bb"
+        "mb914b9145517"
       ],
-      "messages": 3,
-      "serialization": "source: the Korean messages as a JSON object (ensure_ascii false); request: the Converse request, sorted keys; output: the text block returned",
-      "attempts": "An identical earlier call in the same session succeeded, but its output was not retained (the reading script failed on the reasoning block); this call's output is the one applied.",
+      "messages": 1,
+      "superseded": {
+        "m5657e573bb06": "subagent-calls tooltip replaced: the value is also not collected outside the Codex turn rollup read, not only before Codex 0.166"
+      },
+      "host_corrections": {
+        "zh-CN": "catalog terms: 管理员 (operators) and 轮次汇总 (turn aggregation), as in the session-turn aggregation messages",
+        "ja": "catalog term 管理者 (operators), as in the session-turn aggregation messages"
+      },
       "verification": "All five catalogs retain nonempty messages and matching positional placeholders."
     }
   ],

@@ -161,8 +161,13 @@ followed within 60 s by a `run_turn` of the receiver.
   - Bucket turns: start in `[from, to)`.
   - Context turns, for linking: rows with `TurnHour` in `[from - 7 days, to + 24h)`, start
     `< to + 24h`, and end + `COMPLETION_SLACK_MS` `>= from`.
-  - A turn longer than 7 days that started before the lookback is missed as context. Its
-    completions count as unattached instead of attached to that turn.
+  - A UUIDv7 turn with a row in that range also merges its id-hour row before the range (one
+    keyed lookup), since spans starting over 7 days after the id keep their own hours. A turn
+    running past its id + 7 days therefore keeps its true start: context on a later page, never
+    a fragment task, and listed once in the bucket of its start. The detail and agents turn
+    reads merge the same rows.
+  - A non-v7 turn (no id hour), or a v7 turn whose first spans precede its id by over a day,
+    that started before the lookback is read from its rows in the range only.
 - **Detail.** The rollup is used when the task turn id is UUIDv7 and its time is
   `>= CODEX_TURNS_READ_FROM`; otherwise raw. With turn window `[s, e]`:
   - Turn row and owner: from the rollup by `TurnHour` (from the id) and `TurnId`. Without
@@ -170,9 +175,10 @@ followed within 60 s by a `run_turn` of the receiver.
   - Competitors: same-conversation turns with start in
     `[s, min(e + COMPLETION_SLACK_MS, to + 24h))`. Earlier turns cannot win a completion from a
     later-starting turn under `linkCompletions`.
-  - Completions: conversation completions with `Timestamp` in
-    `[max(s - 1h, from), min(e + 24h, to + 24h))`. Link time is `event.timestamp` else
-    `Timestamp`, and collector time can lag.
+  - Completions: conversation completions with `Timestamp` in `[max(s - 1h, from), to + 24h)`.
+    Link time is `event.timestamp` else `Timestamp`, and collector time can lag by any amount
+    (a buffering device collector), so the upper bound is the list's own: the list links every
+    such completion it reads.
   - The upper bounds are clamped to the list's own reads (completions `[from, to + 24h)`,
     context turns starting before `to + 24h`). A detail therefore never links what its list row
     did not read, including on one-hour links (`linkWindow`).
