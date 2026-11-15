@@ -24,6 +24,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   an administrator can override it on the settings page. Filters, URLs and API responses
   keep raw values.
 
+### Fixed
+
+- The Codex efficiency card's expanded whole-range panel no longer shows four blank tiles
+  whenever one request in the range has no collected usage. With recorded completions, it
+  keeps only the HTTP request and session metrics (the cache and reasoning ratios above
+  already use the same responses), explains a withheld tokens-per-request value, and lists
+  its own coverage reasons inside the panel. Strict ratio rules are unchanged.
+
 ## [1.10.0] - 2026-11-14
 
 ### Changed
