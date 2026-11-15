@@ -22,6 +22,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   products or services are not, and each version becomes Apache-2.0 two years after
   release. The packaged `APPLICATION_LICENSE` and both `package.json` files match.
 
+### Fixed
+
+- Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
+  read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
+  queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at
+  10GB per query and 20GB per server. 30-day Codex insights queries failed at the old
+  limit.
+
 ## [1.11.0] - 2026-11-15
 
 ### Added

@@ -28,8 +28,9 @@ resource "kubectl_manifest" "claude_code_nodepool" {
     metadata   = { name = "claude-code" }
     spec = {
       disruption = { consolidationPolicy = "WhenEmptyOrUnderutilized", consolidateAfter = "10m" }
-      # 3 × c9g.2xlarge = 24 vCPU / 48GiB, with headroom for one replacement node during drift.
-      limits = { cpu = "32", memory = "64Gi" }
+      # 3 ClickHouse nodes + 1 dashboard node of m8g.2xlarge = 32 vCPU / 128GiB, plus one
+      # replacement node during drift.
+      limits = { cpu = "40", memory = "160Gi" }
       template = {
         metadata = { labels = { "node-type" = "claude-code" } }
         spec = {

@@ -119,7 +119,7 @@ resource "kubectl_manifest" "chi" {
         # 동시에 쏘면 cgroup CPU throttling이 실제로 발생한다(9개 동시 쿼리 발사 시 컨테이너의
         # /sys/fs/cgroup/cpu.stat nr_throttled가 10회 증가 — 커널이 강제로 CPU를 끊은 횟수).
         # Karpenter가 이 nodepool(claude-code)을 관리한다. 노드 타입/limits.cpu는 nodepool.tf와
-        # var.clickhouse_node_instance_type 참고(2026-11-06 c9g.2xlarge로 변경).
+        # var.clickhouse_node_instance_type 참고(2026-11-06 c9g.2xlarge, 2026-11-15 m8g.2xlarge로 변경).
         clusters = [{ name = "replicated", layout = { shardsCount = 1, replicasCount = 3 } }]
         # CHK 서비스 이름은 <chk 이름>-<cluster 이름>이라 "keeper-keeper" (실측 확인: kubectl get svc).
         zookeeper = { nodes = [{ host = "keeper-keeper.${var.k8s_namespace}.svc.cluster.local", port = 2181 }] }
@@ -165,9 +165,19 @@ resource "kubectl_manifest" "chi" {
           "readonly/readonly"                                     = "1"
           "readonly/cancel_http_readonly_queries_on_client_close" = "1"
           "readonly/max_execution_time"                           = "60"
-          "readonly/max_memory_usage"                             = "4000000000"
-          "readonly/max_result_bytes"                             = "104857600"
-          "readonly/max_rows_to_read"                             = "2000000000"
+          # Per query 8GB, all reader queries on one server 15GB: the 24Gi pod limit gives
+          # max_server_memory_usage ≈ 23.2GB (ratio 0.9), leaving room for the ~2.2GiB
+          # steady state and ingest/merges. GROUP BY and ORDER BY spill to disk at 4GB
+          # (half the per-query limit) instead of failing, up to the temporary-data caps.
+          "readonly/max_memory_usage"                   = "8000000000"
+          "readonly/max_memory_usage_for_user"          = "15000000000"
+          "readonly/max_bytes_before_external_group_by" = "4000000000"
+          "readonly/max_bytes_before_external_sort"     = "4000000000"
+          # Spills land on the 100Gi hot volume (33GiB free on 2026-11-15); cap them.
+          "readonly/max_temporary_data_on_disk_size_for_query" = "10000000000"
+          "readonly/max_temporary_data_on_disk_size_for_user"  = "20000000000"
+          "readonly/max_result_bytes"                          = "104857600"
+          "readonly/max_rows_to_read"                          = "2000000000"
         }
         # 콜드 티어링: hot(EBS gp3, 기본 disk) → cold(S3), TTL로 이동. 실제 TTL은 스키마 쪽
         # (ConfigMap clickhouse-schema-replicated)에서 `TTL ... TO VOLUME 'cold'`로 건다.
@@ -223,11 +233,14 @@ resource "kubectl_manifest" "chi" {
               # 3.5-core limit capped it at 4 while bursts of concurrent dashboard queries
               # waited on CPU (measured 2026-11-06: OSCPUWait 4.1s vs 1.6s user time per
               # heavy query, 0.6 core average). Keeper/dashboard keep CPU weight through
-              # their requests. The request (6 of a c9g.2xlarge's 8 vCPUs) also leaves
-              # room for only one ClickHouse pod per node. Memory stays limited.
+              # their requests. The request (6 of an m8g.2xlarge's 8 vCPUs) also leaves
+              # room for only one ClickHouse pod per node. Memory stays limited: 24Gi of
+              # ~29.6Gi allocatable leaves the node's other limits (DaemonSets, Keeper,
+              # dashboard, receiver ≈ 4Gi) uncommitted. The 16Gi request does not fit a
+              # 16GiB node, so restarted replicas schedule only on the new type.
               resources = {
-                requests = { cpu = "6", memory = "6Gi" }
-                limits   = { memory = "13Gi" }
+                requests = { cpu = "6", memory = "16Gi" }
+                limits   = { memory = "24Gi" }
               }
             }]
           }
