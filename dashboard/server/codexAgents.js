@@ -5,6 +5,10 @@
 //     <- dispatch_tool_call_with_state
 //     <- collaboration<tool> (spawn_agent, followup_task, ...: carries the parent's
 //        conversation.id and turn.id)
+// The Codex CLI's multi_agent_v1<tool> spans (spawn_agent, send_input to an idle agent) start the
+// turn through turn input instead:
+//   session_task.turn <- codex.turn_input (the child's conversation.id and turn.id)
+//     <- op.dispatch.turn_input <- dispatch_tool_call_with_state <- multi_agent_v1<tool>
 // The subagent turn's run_turn span carries its conversation.id. No span or log attribute
 // names the parent, so the link is that parent-span chain. It exists only when the traces were
 // collected (Codex trace export, versions emitting collaboration spans): a missing link is
@@ -28,7 +32,12 @@ export const LINEAGE_SPAN_LIMIT = 50000;
 // at most 260 ms); the window opens this far before the task's turn to include it.
 export const LINEAGE_LEAD_MS = 10 * 60 * 1000;
 // Tool spans that start a subagent turn; their count is the denominator for unlinked calls.
-export const SPAWN_SPANS = ["collaborationspawn_agent", "collaborationfollowup_task"];
+export const SPAWN_SPANS = ["collaborationspawn_agent", "collaborationfollowup_task", "multi_agent_v1spawn_agent"];
+// Tool spans that may start a subagent turn. send_input starts one only when the agent is idle,
+// so it links when traced but is not a spawn call.
+const LINK_TOOLS = [...SPAWN_SPANS, "multi_agent_v1send_input"];
+const TOOL_PREFIXES = ["collaboration", "multi_agent_v1"];
+const isTool = (name) => TOOL_PREFIXES.some((p) => (name ?? "").startsWith(p));
 // A legacy call's log time may differ from its turn's span window by clock rounding.
 export const LEGACY_CALL_SLACK_MS = 1000;
 
@@ -41,9 +50,12 @@ export function linkWindow(startMs) {
   return { from: new Date(from).toISOString(), to: new Date(from + LINK_WINDOW_MS).toISOString() };
 }
 
-const CHAIN = ["session_task.turn", "op.dispatch.inter_agent_communication", "dispatch_tool_call_with_state", "run_turn"];
+const CHAIN = ["session_task.turn", "op.dispatch.inter_agent_communication", "op.dispatch.turn_input", "codex.turn_input",
+  "dispatch_tool_call_with_state", "run_turn"];
+// Spans naming a turn's conversation: run_turn, and codex.turn_input on the CLI path.
+const NAMES_CONVERSATION = ["run_turn", "codex.turn_input"];
 const IDENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const TOOL = /^collaboration([a-z][a-z0-9_]{0,63})$/;
+const TOOL = /^(?:collaboration|multi_agent_v1)([a-z][a-z0-9_]{0,63})$/;
 const CALL_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const lineageWindow = (startMs, endMs) => ({ spanFrom: toChDateTime(new Date(startMs - LINEAGE_LEAD_MS)),
@@ -64,7 +76,7 @@ PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
   AND ${EXACT_USER}
 WHERE ResourceAttributes['client'] = 'codex'
   AND TraceId IN {traceIds:Array(String)}
-  AND (SpanName IN (${CHAIN.map((n) => `'${n}'`).join(", ")}) OR startsWith(SpanName, 'collaboration'))
+  AND (SpanName IN (${CHAIN.map((n) => `'${n}'`).join(", ")}) OR ${TOOL_PREFIXES.map((p) => `startsWith(SpanName, '${p}')`).join(" OR ")})
 LIMIT 1 BY TraceId, SpanId
 LIMIT ${LINEAGE_SPAN_LIMIT + 1}`,
     params: { ...lineageWindow(startMs, endMs), userExact: owner, traceIds },
@@ -77,13 +89,13 @@ export function legacyNeeds(rows) {
   const callIds = new Set(), named = new Set(), childTurns = new Set();
   const byId = new Map(rows.map((r) => [`${r.trace_id}/${r.span_id}`, r]));
   for (const r of rows) {
-    if (SPAWN_SPANS.includes(r.name) && !r.turn && CALL_ID.test(r.call_id ?? "")) callIds.add(r.call_id);
-    if (r.name === "run_turn" && r.turn && r.conversation) named.add(r.turn);
+    if (LINK_TOOLS.includes(r.name) && !r.turn && CALL_ID.test(r.call_id ?? "")) callIds.add(r.call_id);
+    if (NAMES_CONVERSATION.includes(r.name) && r.turn && r.conversation) named.add(r.turn);
   }
   for (const r of rows) {
     const p = r.parent_id ? byId.get(`${r.trace_id}/${r.parent_id}`) : null;
     if (r.name === "session_task.turn" && TURN_ID.test(r.turn ?? "") && !named.has(r.turn)
-      && p?.name === "op.dispatch.inter_agent_communication") childTurns.add(r.turn);
+      && ["op.dispatch.inter_agent_communication", "codex.turn_input"].includes(p?.name)) childTurns.add(r.turn);
   }
   return { callIds: [...callIds].sort(), childTurns: [...childTurns].sort() };
 }
@@ -149,7 +161,7 @@ export function resolveLegacy(rows, callLogs, turnConversations, turns) {
   const logs = new Map(callLogs.filter((l) => CALL_ID.test(l.call_id ?? "") && IDENT.test(l.conversation ?? ""))
     .map((l) => [l.call_id, l]));
   const resolved = rows.map((r) => {
-    const log = SPAWN_SPANS.includes(r.name) && !r.turn ? logs.get(r.call_id) : null;
+    const log = LINK_TOOLS.includes(r.name) && !r.turn ? logs.get(r.call_id) : null;
     const owner = log ? containingTurn(turns, log.conversation, count(log.at_ms)) : null;
     return owner ? { ...r, turn: owner.turn_id, conversation: log.conversation } : r;
   });
@@ -172,18 +184,21 @@ export function walkLineage(rows, turnId, conversations = new Map()) {
   const byId = new Map(rows.map((r) => [key(r.trace_id, r.span_id), r]));
   const parentOf = (r, name) => {
     const p = r.parent_id ? byId.get(key(r.trace_id, r.parent_id)) : null;
-    return p && (name === "collaboration" ? p.name.startsWith("collaboration") && p.turn : p.name === name) ? p : null;
+    return p && (name === "tool" ? isTool(p.name) && p.turn : p.name === name) ? p : null;
   };
+  // The dispatch op above a subagent turn: inter-agent communication, or turn input (via codex.turn_input).
+  const dispatchOf = (c) => parentOf(c, "op.dispatch.inter_agent_communication")
+    ?? (() => { const t = parentOf(c, "codex.turn_input"); return t && parentOf(t, "op.dispatch.turn_input"); })();
   const conversationOf = new Map();
-  for (const r of rows) if (r.name === "run_turn" && r.turn && r.conversation && !conversationOf.has(r.turn))
+  for (const r of rows) if (NAMES_CONVERSATION.includes(r.name) && r.turn && r.conversation && !conversationOf.has(r.turn))
     conversationOf.set(r.turn, r.conversation);
-  // Each subagent turn span with its complete chain to a collaboration tool span.
+  // Each subagent turn span with its complete chain to a tool span.
   const edges = [];
   for (const c of rows) {
     if (c.name !== "session_task.turn" || !c.turn) continue;
-    const i = parentOf(c, "op.dispatch.inter_agent_communication");
+    const i = dispatchOf(c);
     const d = i && parentOf(i, "dispatch_tool_call_with_state");
-    const g = d && parentOf(d, "collaboration");
+    const g = d && parentOf(d, "tool");
     if (!g || g.turn === c.turn) continue;
     edges.push({ parent_turn: g.turn, parent_conversation: g.conversation, tool_span: g.name, tool_span_id: g.span_id,
       child_turn: c.turn, child_conversation: conversationOf.get(c.turn) ?? conversations.get(c.turn) ?? "", child_start_ms: count(c.start_ms) });
@@ -304,7 +319,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     const [callLogs, turnConversations] = await Promise.all([callSql ? run(callSql.sql, callSql.params) : [],
       convSql ? run(convSql.sql, convSql.params) : []]);
     const candidates = [...new Set([...callLogs.map((l) => l.conversation), ...turnConversations.map((t) => t.conversation),
-      ...rows.filter((r) => r.name === "run_turn").map((r) => r.conversation)])].filter((c) => IDENT.test(c ?? "")).sort();
+      ...rows.filter((r) => NAMES_CONVERSATION.includes(r.name)).map((r) => r.conversation)])].filter((c) => IDENT.test(c ?? "")).sort();
     if (candidates.length) {
       const s = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: candidates });
       const got = await run(s.sql, s.params);
@@ -314,7 +329,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     }
     ({ rows, conversations } = resolveLegacy(rows, callLogs, turnConversations, turnRows));
     // A legacy call left without a turn may be this turn's: the result is incomplete.
-    if (rows.some((r) => SPAWN_SPANS.includes(r.name) && !r.turn)) limited = true;
+    if (rows.some((r) => LINK_TOOLS.includes(r.name) && !r.turn)) limited = true;
     if (spawnSpanIds !== null) spawnSpanIds = [...new Set([...spawnSpanIds,
       ...rows.filter((r) => SPAWN_SPANS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id)])];
   }

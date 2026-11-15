@@ -197,7 +197,7 @@ test("zero linked subagents is unknown, not zero", () => {
   assert.equal(out.subagents, 0);
   assert.equal(agentCount(out), null);
   assert.equal(agentCount({ subagents: 2 }), 2);
-  assert.deepEqual(SPAWN_SPANS, ["collaborationspawn_agent", "collaborationfollowup_task"]);
+  assert.deepEqual(SPAWN_SPANS, ["collaborationspawn_agent", "collaborationfollowup_task", "multi_agent_v1spawn_agent"]);
 });
 
 test("one lineage read, then one read of every subagent conversation, all for the owner", async () => {
@@ -356,4 +356,50 @@ test("subagent turn and completion reads cover the lineage window, not the whole
   assert.deepEqual([turns.params.spanFrom, turns.params.spanTo], ["2026-11-04 00:50:00", "2026-11-07 01:00:10"]);
   const completions = seen.find(s => s.sql.includes("otel_logs"));
   assert.deepEqual([completions.params.logFrom, completions.params.logTo], ["2026-11-05 00:50:00", "2026-11-07 01:00:10"]);
+});
+
+// The Codex CLI's multi_agent_v1 tools start a subagent turn through turn input:
+//   multi_agent_v1<tool> <- dispatch_tool_call_with_state <- op.dispatch.turn_input
+//   <- codex.turn_input (child conversation and turn) <- session_task.turn
+const turnInputChain = (trace, tag, parentTurn, child, conv, { tool = "multi_agent_v1spawn_agent", at = "0" } = {}) => [
+  span(trace, `g${tag}`, "x", tool, { turn: parentTurn, conversation: "root" }),
+  span(trace, `d${tag}`, `g${tag}`, "dispatch_tool_call_with_state"),
+  span(trace, `o${tag}`, `d${tag}`, "op.dispatch.turn_input"),
+  span(trace, `t${tag}`, `o${tag}`, "codex.turn_input", { turn: child, conversation: conv }),
+  span(trace, `c${tag}`, `t${tag}`, "session_task.turn", { turn: child, start_ms: at }),
+];
+
+test("lineage reads the multi_agent_v1 tools and the turn-input chain", () => {
+  const { sql } = codexLineageSql("kim@x.com", ["t1"], ms("2026-11-05T01:00:00Z"), ms("2026-11-05T02:00:00Z"));
+  for (const name of ["op.dispatch.turn_input", "codex.turn_input"]) assert.ok(sql.includes(`'${name}'`), name);
+  assert.ok(sql.includes("startsWith(SpanName, 'multi_agent_v1')"));
+});
+
+test("the walk links multi_agent_v1 spawn and send_input turns through turn input", () => {
+  const rows = [...turnInputChain("t", 1, P, C1, "sub1", { at: "1" }),
+    ...turnInputChain("t", 2, P, C2, "sub1", { tool: "multi_agent_v1send_input", at: "2" }),
+    // A send_input that only queued input starts no turn: no link.
+    span("t", "g3", "x", "multi_agent_v1send_input", { turn: P, conversation: "root" })];
+  const { links } = walkLineage(rows, P);
+  assert.deepEqual(links.map(l => [l.child_turn, l.child_conversation, l.tool_span]),
+    [[C1, "sub1", "multi_agent_v1spawn_agent"], [C2, "sub1", "multi_agent_v1send_input"]]);
+  const folded = foldAgents({ task: rootTask, links: links.map(l => ({ ...l, depth: 1 })), spawnSpanIds: ["g1"] });
+  assert.deepEqual(folded.children.map(c => c.tool), ["spawn_agent", "send_input"]);
+  assert.deepEqual([folded.spawn_calls, folded.unlinked_calls], [1, 0]);
+});
+
+test("legacy multi_agent_v1 calls are resolved by call id like collaboration calls", () => {
+  const rows = [
+    span("t", "g1", "x", "multi_agent_v1spawn_agent", { call_id: "exec-1" }),
+    span("t", "d1", "g1", "dispatch_tool_call_with_state"),
+    span("t", "o1", "d1", "op.dispatch.turn_input"),
+    span("t", "t1", "o1", "codex.turn_input"),
+    span("t", "c1", "t1", "session_task.turn", { turn: C1 }),
+    span("t", "g2", "x", "multi_agent_v1send_input", { call_id: "exec-2" }),
+  ];
+  assert.deepEqual(legacyNeeds(rows), { callIds: ["exec-1", "exec-2"], childTurns: [C1] });
+  const resolved = resolveLegacy(rows, [{ call_id: "exec-1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) }],
+    [{ turn_id: C1, conversation: "sub1" }], [turn("root", P, "2026-11-05T01:00:00Z")]);
+  assert.deepEqual(walkLineage(resolved.rows, P, resolved.conversations).links.map(l => [l.child_turn, l.child_conversation]),
+    [[C1, "sub1"]]);
 });
