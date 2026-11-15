@@ -284,10 +284,15 @@ function foldUserTime(groups, entries, finishRow) {
 }
 
 export function foldClientMetrics(records, clients, prices = codexPrices(), { modelTime = false, costView = false, compactTime = false } = {}) {
-  // Idle observations have their own bound; they cannot evict usage records
-  // from the existing active-row budget.
-  const idleRows = records.filter(row => row.client === "claude" && Number(row.timeline_only) === 1).length;
-  if (records.length - idleRows > ROW_LIMIT || idleRows > ROW_LIMIT)
+  // Each client's rows and Claude's idle observations have their own bound, matching the
+  // per-query checks: a combined view folds both clients without one evicting the other.
+  // Measured 2026-11-15: 61k rows over 30 days (Claude ~31k, Codex ~31k) took ~33MB heap.
+  const budgets = new Map();
+  for (const row of records) {
+    const key = row.client === "claude" && Number(row.timeline_only) === 1 ? "claude-idle" : row.client;
+    budgets.set(key, (budgets.get(key) ?? 0) + 1);
+  }
+  if ([...budgets.values()].some(rows => rows > ROW_LIMIT))
     throw new ValidationError("too much client data", "narrow the requested date range");
   const totals = accumulator({});
   const byClient = new Map(clients.map((client) => [client, accumulator({ client,

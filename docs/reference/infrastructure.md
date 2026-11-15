@@ -33,8 +33,8 @@ and disables display masking for synthetic seed identities. It does not enable i
 
 [infra/dashboard.tf](../../infra/dashboard.tf) defines two dashboard replicas, preferred
 pod anti-affinity, a disruption budget of one available replica, and rolling updates with
-zero unavailable/one surge. Each container requests 100m CPU and 128Mi, with limits of
-500m CPU and 256Mi. Credentials arrive through Kubernetes Secrets; the service account
+zero unavailable/one surge. Each container requests 100m CPU and 256Mi, with limits of
+500m CPU and 512Mi. Credentials arrive through Kubernetes Secrets; the service account
 uses IRSA for the configured chat model and for `pricing:GetProducts` (AWS Price List rate
 refresh; the action has no resource-level scoping, so its policy resource is `*`).
 
