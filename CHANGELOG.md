@@ -65,6 +65,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   use, education, research and professional services are permitted, competing commercial
   products or services are not, and each version becomes Apache-2.0 two years after
   release. The packaged `APPLICATION_LICENSE` and both `package.json` files match.
+- With `CODEX_TURNS_READ_FROM` set, a Codex task detail whose list row comes from the turn
+  rollup reads the rollup too, over the turn's own window: later same-conversation turns
+  until its end plus 5 s, completions from an hour before it to a day after it, spans and
+  skills a minute either side, each stopping where the list's reads stop. Its values
+  equal its list row; a turn missing from the rollup reads raw. Subagent and parent turns
+  come from the rollup with their true start. Unset keeps raw reads.
 
 ### Fixed
 

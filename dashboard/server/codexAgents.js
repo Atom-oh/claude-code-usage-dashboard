@@ -21,6 +21,7 @@
 import { toChDateTime } from "./clickhouse.js";
 import { EXACT_USER, SPAN_SLACK_MS, CODEX_TURN_LIMIT, CODEX_COMPLETION_LIMIT, TURN_ID, TURN_SPAN, count,
   codexTurnSql, codexCompletionSql, linkCompletions, foldCodexTask } from "./taskTraces.js";
+import { TURN_LOOKBACK_MS, codexTurnsReadFrom, rollupTurnSql, turnsSourceForList } from "./codexTurnsSource.js";
 
 // Subagent levels followed below the task's turn, and subagent turns returned in all.
 export const AGENT_DEPTH = 3;
@@ -373,12 +374,14 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
 }
 
 // turn: { turnId, conversationId, startMs, endMs, traceIds, tracesPartial, namesTurn } of the detail's own turn and spans.
-// A parent turn that started over a day before the lineage window shows its clipped start.
-// One lineage read over the turn's traces, then one turn and one completion read over every
-// subagent conversation found. `detailStart` (ms of `now()`, default: this call) starts the
+// On the raw read, a parent turn that started over a day before the lineage window shows its
+// clipped start; on the rollup (lineage start - 7 days at or after `turnsBoundary`) it keeps its
+// true start. One lineage read over the turn's traces, then one turn and one completion read over
+// every subagent conversation found. `detailStart` (ms of `now()`, default: this call) starts the
 // AGENT_EXTRA_BUDGET_MS clock; a read skipped once it is spent leaves the result limited (no
 // known zero, partial cost) with the links the walk already found.
-export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices, detailStart = null, now = Date.now }) {
+export async function codexAgents(owner, turn, task, spawnSpanIds,
+  { run, prices, turnsBoundary = codexTurnsReadFrom, detailStart = null, now = Date.now }) {
   const started = detailStart ?? now();
   let spent = false;
   // May an optional read start? Once the budget is spent it stays spent, and the result is limited.
@@ -400,6 +403,12 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   // win their completions, read 24h either side) and completions are read for that window only,
   // not the page's whole range.
   const lineageFrom = new Date(turn.startMs - LINEAGE_LEAD_MS), lineageTo = new Date(turn.endMs + SPAN_SLACK_MS);
+  // Turns of other conversations (design "Reads", Agents): from the rollup over hours from the
+  // lineage start minus the list's lookback, unclipped, when that hour is covered; else raw.
+  const hourFrom = new Date(lineageFrom.getTime() - TURN_LOOKBACK_MS);
+  const turnSql = turnsSourceForList(lineageFrom, turnsBoundary) === "rollup"
+    ? (conversationIds) => rollupTurnSql(lineageFrom, lineageTo, q, { conversationIds, hourFrom })
+    : (conversationIds) => codexTurnSql(lineageFrom, lineageTo, q, { conversationIds });
   // Before Codex 0.166: resolve the spans that name no turn or conversation, reading the turns of
   // every conversation involved once, before the walk.
   let conversations = new Map(), turnRows = [];
@@ -413,7 +422,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     const candidates = [...new Set([...callLogs.map((l) => l.conversation), ...turnConversations.map((t) => t.conversation),
       ...rows.filter((r) => NAMES_CONVERSATION.includes(r.name)).map((r) => r.conversation)])].filter((c) => IDENT.test(c ?? "")).sort();
     if (candidates.length && extra()) {
-      const s = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: candidates });
+      const s = turnSql(candidates);
       const got = await run(s.sql, s.params);
       if (got.length > CODEX_TURN_LIMIT) limited = true;
       turnRows = got.slice(0, CODEX_TURN_LIMIT);
@@ -440,7 +449,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     const others = [...new Set(sends.flatMap((x) => [x.sender, x.receiver]).filter((c) => IDENT.test(c ?? "")))].sort();
     const wanted = [...new Set([turn.conversationId, ...others])].filter((c) => !read.has(c));
     if (sends.length && wanted.length && extra()) {
-      const t = codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: wanted });
+      const t = turnSql(wanted);
       const rowsRead = await run(t.sql, t.params);
       if (rowsRead.length > CODEX_TURN_LIMIT) limited = true;
       turnRows = [...turnRows, ...rowsRead.slice(0, CODEX_TURN_LIMIT)];
@@ -460,7 +469,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
   const missing = turnIds.filter((c) => !read.has(c));
   let entries = [];
   if (turnIds.length && extra()) {
-    const turnsSql = missing.length ? codexTurnSql(lineageFrom, lineageTo, q, { conversationIds: missing }) : null;
+    const turnsSql = missing.length ? turnSql(missing) : null;
     const completionsSql = conversationIds.length ? codexCompletionSql(lineageFrom, lineageTo, q, { conversationIds }) : null;
     const [turns, completions] = await Promise.all([turnsSql ? run(turnsSql.sql, turnsSql.params) : [],
       completionsSql ? run(completionsSql.sql, completionsSql.params) : []]);

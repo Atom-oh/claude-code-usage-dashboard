@@ -1435,7 +1435,7 @@ test("a Codex detail starts the subagent read budget at its own start", async ()
     return [];
   };
   const detail = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING,
-    () => t);
+    null, () => t);
   // The lineage read still runs; the subagent turn and completion reads do not.
   assert.ok(seen.some(p => p.traceIds));
   assert.ok(!seen.some(p => p.conversationIds));
@@ -1519,4 +1519,267 @@ test("the rollup list equals the raw list for the same turns and completions", a
   // The completion at 00:00:20 attached to the context turn, so its cost is not unattached.
   const lost = attachCompletions(shapes.slice(1), completions, { ...opts });
   assert.equal(lost.unattached.completions, 2, "without the context turn that completion is unattached");
+});
+
+// ── Rollup detail (CODEX_TURNS_READ_FROM): the turn's own window ────────
+const { turnHourMs } = await import("./codexTurnsSchema.js");
+const { codexDetailHourFrom } = detail;
+const BOUNDARY = new Date("2026-10-01T00:00:00Z");
+const DAY_MS = 24 * 3600000;
+const v7 = (iso, n = 0) => {
+  const hex = Date.parse(iso).toString(16).padStart(12, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8)}-7000-8000-${String(n).padStart(12, "0")}`;
+};
+const chMs = (text) => Date.parse(text.replace(" ", "T") + "Z");
+// A rollup row (codexTurnsSource.rollupTurnSql shape) of owner "a", conversation c1.
+const rollupRow = (id, at, endAt, extra = {}) => ({ turn_id: id, conversation_id: "c1", started_at: at.slice(0, 19) + "Z",
+  start_ms: String(ms(at)), end_ms: String(ms(endAt)), sampling_calls: "2", legacy_calls: "0", sampling_tries: "0",
+  compactions: "0", app_version: "0.169.0", llm_calls: "2", sampling_span: "codex.sampling",
+  models: ["openai.gpt-6-astra"], spawn_calls: "0", names_turn: 1, ...extra });
+// A store-like fake for owner "a": every turn and completion read honours its bound window, so a
+// read narrowed wrongly changes the result. Raw turn reads return `rawTurns` unclipped.
+const storeRun = ({ turns = [], rawTurns = [], completions = [], spans = [], seen = [], rollupOwners } = {}) =>
+  async (sql, params) => {
+    seen.push({ sql, params });
+    const owned = params.userExact === undefined || params.userExact === "a";
+    const conv = (r) => (params.conversationId === undefined || r.conversation_id === params.conversationId)
+      && (params.conversationIds === undefined || params.conversationIds.includes(r.conversation_id));
+    const bucket = (r) => ({ ...r, in_bucket: +r.start_ms >= chMs(params.from) && +r.start_ms < chMs(params.to) ? 1 : 0 });
+    if (sql.includes("codex_turns_v1") && sql.includes("GROUP BY owner"))
+      return rollupOwners ?? (turns.some(r => r.turn_id === params.turnId) ? [{ owner: "a" }] : []);
+    if (sql.includes("codex_turns_v1")) {
+      if (!owned) return [];
+      return turns.filter(r => {
+        const hour = turnHourMs(r.turn_id, +r.start_ms), s = +r.start_ms, e = +r.end_ms;
+        if (hour < chMs(params.hourFrom) || hour >= chMs(params.hourTo) || !conv(r)) return false;
+        if (params.turnId !== undefined) return r.turn_id === params.turnId;
+        if (params.startFrom !== undefined || params.startTo !== undefined)
+          return (params.startFrom === undefined || s >= params.startFrom) && (params.startTo === undefined || s < params.startTo);
+        return s < chMs(params.spanTo) && e + COMPLETION_SLACK >= chMs(params.from);
+      }).map(bucket);
+    }
+    if (sql.includes("otel_traces") && sql.includes("GROUP BY owner"))
+      return rawTurns.some(r => r.turn_id === params.turnId && r.conversation_id === params.conversationId) ? [{ owner: "a" }] : [];
+    if (sql.includes("otel_traces") && sql.includes("GROUP BY turn_id")) return owned ? rawTurns.filter(conv).map(bucket) : [];
+    if (sql.includes("codex.sse_event"))
+      return owned ? completions.filter(c => conv(c) && +c.timestamp_ms >= chMs(params.logFrom) && +c.timestamp_ms < chMs(params.logTo)) : [];
+    if (sql.includes("count() OVER ()")) return owned ? spans : [];
+    return [];
+  };
+const COMPLETION_SLACK = 5000;
+const codexSpan = (id, at, extra = {}) => ({ span_id: id, parent_id: "", span_name: "codex.sampling", start_ms: String(ms(at)),
+  duration_ms: "1000", trace_id: "tr-rollup", a_model: "openai.gpt-6-astra", total_spans: "1", ...extra });
+const readOf = (seen, pick) => seen.find(s => pick(s));
+const rawTurnRead = (s) => s.sql.includes("otel_traces") && s.sql.includes("GROUP BY turn_id");
+
+test("a rollup Codex detail starts the subagent read budget at its own start", async () => {
+  const { AGENT_EXTRA_BUDGET_MS } = await import("./codexAgents.js");
+  const id = v7("2026-11-05T05:00:00Z", 1), child = uuid(7);
+  const lineage = [
+    { trace_id: "tr1", span_id: "g", parent_id: "x", name: "collaborationspawn_agent", conversation: "c1", turn: id, start_ms: "0" },
+    { trace_id: "tr1", span_id: "d", parent_id: "g", name: "dispatch_tool_call_with_state", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "i", parent_id: "d", name: "op.dispatch.inter_agent_communication", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "c", parent_id: "i", name: "session_task.turn", conversation: "", turn: child, start_ms: "0" },
+    { trace_id: "tr1", span_id: "r", parent_id: "c", name: "run_turn", conversation: "sub", turn: child, start_ms: "0" },
+  ];
+  let t = 5000;
+  const seen = [];
+  const store = storeRun({ seen, turns: [rollupRow(id, "2026-11-05T05:00:00.000Z", "2026-11-05T05:00:10.250Z"),
+    rollupRow(child, "2026-11-05T05:00:02.000Z", "2026-11-05T05:00:08.000Z", { conversation_id: "sub" })],
+  completions: [completion("2026-11-05T05:00:05Z", { conversation_id: "sub" })] });
+  const run = async (sql, params) => {
+    if (sql.includes("op.dispatch")) { seen.push({ sql, params }); return lineage; }
+    if (sql.includes("count() OVER ()")) {
+      seen.push({ sql, params });
+      // The base detail reads take the whole budget.
+      t = 5000 + AGENT_EXTRA_BUDGET_MS;
+      return [codexSpan("g", "2026-11-05T05:00:01Z", { span_name: "collaborationspawn_agent", trace_id: "tr1",
+        a_tool_name: "collaborationspawn_agent" })];
+    }
+    return store(sql, params);
+  };
+  const detail = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING,
+    BOUNDARY, () => t);
+  assert.ok(seen.some(s => s.sql.includes("codex_turns_v1")), "the detail reads the rollup");
+  // The lineage read still runs; the subagent turn and completion reads do not.
+  assert.ok(seen.some(s => s.params.traceIds));
+  assert.ok(!seen.some(s => s.params.conversationIds));
+  assert.deepEqual(detail.agents.children.map(c => [c.id, c.cost_usd]), [[`codex:sub:${child}`, null]]);
+  assert.deepEqual([detail.task.subagents, detail.agents.limited, detail.agents.total.cost_partial], [1, true, true]);
+});
+
+test("on the rollup path the Codex detail reads its turn's own window", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const row = rollupRow(id, "2026-11-05T05:00:00.000Z", "2026-11-05T05:00:10.250Z");
+  const seen = [];
+  const run = storeRun({ turns: [row], spans: [codexSpan("s1", "2026-11-05T05:00:01Z")], seen,
+    completions: [completion("2026-11-05T05:00:02Z")] });
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(out.task.id, `codex:c1:${id}`);
+  assert.equal(out.task.llm_calls, 2);
+  assert.ok(Math.abs(out.task.cost_usd - unitCost) < 1e-12);
+  assert.ok(!seen.some(rawTurnRead), "no raw turn read");
+  const s = ms("2026-11-05T05:00:00Z"), e = ms("2026-11-05T05:00:10.250Z");
+  // Turn row: from the id's hour minus 7 days, never after the list's first hour (from - 7 days),
+  // every hour row of the turn merged, owner and conversation bound.
+  const own = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.turnId !== undefined);
+  assert.deepEqual([own.params.turnId, own.params.conversationId, own.params.userExact, own.params.hourFrom],
+    [id, "c1", "a", "2026-10-29 00:00:00"]);
+  assert.equal(+codexDetailHourFrom(from, v7("2026-11-01T05:30:00Z")), Date.parse("2026-10-25T05:00:00Z"), "id hour - 7 days");
+  assert.equal(+codexDetailHourFrom(new Date("2026-11-01T00:00:00Z"), v7("2026-11-12T05:30:00Z")), Date.parse("2026-10-25T00:00:00Z"),
+    "a late id on a long page: the list's first hour");
+  // Competitors: start in [s, min(e + slack, to + 24h)).
+  const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
+  assert.deepEqual([competitors.params.startFrom, competitors.params.startTo, competitors.params.conversationId,
+    competitors.params.userExact, competitors.params.hourFrom, competitors.params.turnId], [s, e + 5000, "c1", "a", "2026-10-29 00:00:00", undefined]);
+  // Completions: [max(s - 1h, from), min(e + 24h, to + 24h)), upper bound rounded up to the second.
+  const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+  assert.deepEqual([completions.params.logFrom, completions.params.logTo, completions.params.conversationId, completions.params.userExact],
+    ["2026-11-05 04:00:00", "2026-11-06 05:00:11", "c1", "a"]);
+  // Spans and skills: [s - 1 min, min(e + 1 min, to + 24h)).
+  const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
+  assert.deepEqual([spanRead.params.spanFrom, spanRead.params.spanTo, spanRead.params.turnId, spanRead.params.userExact],
+    ["2026-11-05 04:59:00", "2026-11-05 05:01:11", id, "a"]);
+  const skills = readOf(seen, x => x.sql.includes("codex.skill_invocation"));
+  assert.deepEqual([skills.params.logFrom, skills.params.logTo, skills.params.turnId, skills.params.conversationId, skills.params.userExact],
+    ["2026-11-05 04:59:00", "2026-11-05 05:01:11", id, "c1", "a"]);
+  // The window values are bound parameters, never SQL text.
+  for (const x of [own, competitors, completions, spanRead, skills])
+    assert.ok(!x.sql.includes(id) && !x.sql.includes("2026-") && !x.sql.includes("'a'"), x.sql.slice(0, 60));
+});
+
+test("the Codex detail keeps its raw reads unless both the list and the turn read the rollup", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const row = rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z");
+  const raw = { ...row, spawn_calls: undefined, names_turn: undefined };
+  const cases = [
+    ["gate unset", from, to, id, null],
+    ["list lookback before the boundary", from, to, id, new Date("2026-10-30T00:00:00Z")],
+    ["non-v7 turn id", from, to, U1, BOUNDARY],
+  ];
+  for (const [label, pageFrom, pageTo, turnId, boundary] of cases) {
+    const seen = [];
+    const run = storeRun({ turns: [{ ...row, turn_id: turnId }], rawTurns: [{ ...raw, turn_id: turnId }], seen,
+      spans: [codexSpan("s1", "2026-11-05T05:00:01Z")] });
+    const out = await userTaskDetail(pageFrom, pageTo, { id: `codex:c1:${turnId}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, boundary);
+    assert.equal(out.task.id, `codex:c1:${turnId}`, label);
+    assert.ok(!seen.some(x => x.sql.includes("codex_turns_v1") && x.params.turnId !== undefined), `${label}: no rollup detail read`);
+    assert.ok(seen.some(rawTurnRead), `${label}: raw turn read`);
+    const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
+    assert.deepEqual([spanRead.params.spanFrom, spanRead.params.spanTo], ["2026-11-04 00:00:00", "2026-11-07 00:00:00"], label);
+    const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+    assert.deepEqual([completions.params.logFrom, completions.params.logTo], ["2026-11-05 00:00:00", "2026-11-07 00:00:00"], label);
+    const skills = readOf(seen, x => x.sql.includes("codex.skill_invocation"));
+    assert.deepEqual([skills.params.logFrom, skills.params.logTo], ["2026-11-04 00:00:00", "2026-11-07 00:00:00"], label);
+  }
+});
+
+test("a rollup miss falls back to the raw detail and never answers not found by itself", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const raw = { ...rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z"), spawn_calls: undefined, names_turn: undefined };
+  // No rollup row for the turn (lost row, or a conversation the merged set lacks): raw read.
+  const seen = [];
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ rawTurns: [raw], seen }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(out.task.id, `codex:c1:${id}`);
+  assert.ok(seen.some(x => x.sql.includes("codex_turns_v1") && x.params.turnId === id));
+  assert.ok(seen.some(rawTurnRead));
+  // A shared link whose rollup owner read finds no owner: the raw owner read decides.
+  const shared = [];
+  const link = await userTaskDetail(from, to, { id: `codex:c1:${id}` }, both, storeRun({ rawTurns: [raw], seen: shared }),
+    DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(link.owner, "a");
+  assert.ok(shared.some(x => x.sql.includes("codex_turns_v1") && x.sql.includes("GROUP BY owner")));
+  assert.ok(shared.some(x => x.sql.includes("otel_traces") && x.sql.includes("GROUP BY owner")));
+  // Two rollup owners: ambiguous there, so raw decides too (here: one owner, the link opens).
+  const two = await userTaskDetail(from, to, { id: `codex:c1:${id}` }, both,
+    storeRun({ rawTurns: [raw], rollupOwners: [{ owner: "a" }, { owner: "b" }] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(two.owner, "a");
+  // Nowhere: not found.
+  const err = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, storeRun({}), DEFAULT_CODEX_PRICING, BOUNDARY)
+    .then(() => null, e => e);
+  assert.ok(err instanceof NotFoundError);
+  // A shared link resolved by the rollup reads everything for that owner.
+  const resolved = [];
+  const viaRollup = await userTaskDetail(from, to, { id: `codex:c1:${id}` }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z")], seen: resolved }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  assert.equal(viaRollup.owner, "a");
+  assert.ok(!resolved.some(x => x.sql.includes("otel_traces") && x.sql.includes("GROUP BY owner")));
+  assert.ok(resolved.filter(x => x.params.userExact !== undefined).every(x => x.params.userExact === "a"));
+});
+
+test("a rollup turn that starts before the page is not a detail of this page", async () => {
+  const id = v7("2026-11-04T23:59:00Z", 1);
+  const seen = [];
+  const run = storeRun({ turns: [rollupRow(id, "2026-11-04T23:59:00Z", "2026-11-05T00:10:00Z")], seen });
+  const err = await userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING, BOUNDARY)
+    .then(() => null, e => e);
+  assert.ok(err instanceof NotFoundError);
+  assert.ok(!seen.some(rawTurnRead), "an out-of-bucket rollup row is an answer, not a miss");
+});
+
+test("the rollup detail equals its rollup list row", async () => {
+  const opt = { userExact: "a", client: "codex" };
+  const check = async (label, pageFrom, pageTo, turns, completions, id, extra = () => {}) => {
+    const list = await userTasks(pageFrom, pageTo, opt, both, storeRun({ turns, completions }), DEFAULT_CODEX_PRICING, BOUNDARY);
+    const seen = [];
+    const detail = await userTaskDetail(pageFrom, pageTo, { id: `codex:c1:${id}`, userExact: "a" }, both,
+      storeRun({ turns, completions, seen, spans: [codexSpan("s1", new Date(+turns.find(t => t.turn_id === id).start_ms + 1000).toISOString())] }),
+      DEFAULT_CODEX_PRICING, BOUNDARY);
+    assert.ok(!seen.some(rawTurnRead), `${label}: rollup detail`);
+    const row = list.tasks.find(t => t.id === `codex:c1:${id}`);
+    assert.ok(row, `${label}: listed`);
+    const key = t => ({ llm_calls: t.llm_calls, models: t.models, cost_usd: t.cost_usd, cost_partial: t.cost_partial,
+      tokens: t.tokens, duration_ms: t.duration_ms, started_at: t.started_at, subagent_calls: t.subagent_calls });
+    assert.deepEqual(key(detail.task), key(row), label);
+    extra({ list, row, detail, seen });
+  };
+  // (a) A later same-conversation turn starting within the slack wins the completion after its start.
+  const a = v7("2026-11-05T05:00:00Z", 1), aNext = v7("2026-11-05T05:00:12Z", 2), aBefore = v7("2026-11-05T04:59:00Z", 3);
+  await check("normal turn", from, to, [
+    rollupRow(aBefore, "2026-11-05T04:59:00Z", "2026-11-05T05:00:30Z"),
+    rollupRow(a, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z"),
+    rollupRow(aNext, "2026-11-05T05:00:12Z", "2026-11-05T05:00:20Z", { llm_calls: "1" }),
+  ], [completion("2026-11-05T05:00:05Z"), completion("2026-11-05T05:00:13Z"),
+    completion("2026-11-05T05:00:06Z", { model: "openai.gpt-6.1-sol", cost_usd: undefined, input_token_count: "" })], a,
+  ({ row, detail }) => {
+    assert.equal(row.subagent_calls, 0);
+    assert.equal(detail.task.subagents, 0, "known zero: no spawn spans, complete, 0.166+");
+    assert.equal(detail.agents.known_zero, true);
+    assert.equal(row.tokens.observed_tokens !== null, true);
+  });
+  // (b) A turn running past to + 24h: unclipped end; the window stops at to + 24h like the list.
+  const b = v7("2026-11-05T20:00:00Z", 4), bLate = v7("2026-11-07T00:30:00Z", 5);
+  await check("turn ending after to + 24h", from, to, [
+    rollupRow(b, "2026-11-05T20:00:00Z", "2026-11-07T02:00:00Z", { spawn_calls: "2" }),
+    rollupRow(bLate, "2026-11-07T00:30:00Z", "2026-11-07T00:50:00Z"),
+  ], [completion("2026-11-05T20:00:05Z"), completion("2026-11-06T23:00:00Z"),
+    // Collector time before to + 24h, event time after the later turn's start: only a read of that
+    // turn (beyond the list's context) would take it away.
+    completion("2026-11-07T00:45:00Z", { timestamp_ms: String(ms("2026-11-06T23:59:59Z")) }),
+    completion("2026-11-07T01:00:00Z")], b,
+  ({ row, seen }) => {
+    assert.equal(row.duration_ms, ms("2026-11-07T02:00:00Z") - ms("2026-11-05T20:00:00Z"));
+    assert.equal(row.llm_calls, 2);
+    assert.equal(row.subagent_calls, 2);
+    const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
+    assert.equal(competitors.params.startTo, +to + DAY_MS);
+    const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+    assert.equal(completions.params.logTo, "2026-11-07 00:00:00");
+    const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
+    assert.equal(spanRead.params.spanTo, "2026-11-07 00:00:00");
+  });
+  // (c) A one-hour link window: completions start at the window, never s - 1h before it.
+  const hourFrom = new Date("2026-11-05T05:00:00Z"), hourTo = new Date("2026-11-05T06:00:00Z");
+  const c = v7("2026-11-05T05:00:00Z", 6), cNext = v7("2026-11-05T05:00:05Z", 7), cPrev = v7("2026-11-05T04:59:50Z", 8);
+  await check("one-hour link window", hourFrom, hourTo, [
+    rollupRow(cPrev, "2026-11-05T04:59:50Z", "2026-11-05T05:00:30Z"),
+    rollupRow(c, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z"),
+    rollupRow(cNext, "2026-11-05T05:00:05Z", "2026-11-05T05:00:20Z"),
+  ], [completion("2026-11-05T04:59:55Z"), completion("2026-11-05T05:00:02Z"), completion("2026-11-05T05:00:07Z")], c,
+  ({ row, seen }) => {
+    assert.ok(Math.abs(row.cost_usd - unitCost) < 1e-12, "one completion: the later turn wins 05:00:07");
+    const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
+    assert.equal(completions.params.logFrom, "2026-11-05 05:00:00");
+  });
 });

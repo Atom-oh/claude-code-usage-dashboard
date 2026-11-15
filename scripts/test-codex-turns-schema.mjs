@@ -11,7 +11,10 @@ import {
   TURNS_ROLLUP_TABLE, codexTurnsBackfillSql, codexTurnsSchemaSql, namesTurnOnToolsSql, turnHourSql, turnHourMs,
 } from "../dashboard/server/codexTurnsSchema.js";
 import { codexTurnSql, namesTurnOnTools } from "../dashboard/server/taskTraces.js";
-import { rollupOwnerSql, rollupTurnSql } from "../dashboard/server/codexTurnsSource.js";
+import { TURN_LOOKBACK_MS, rollupOwnerSql, rollupTurnSql } from "../dashboard/server/codexTurnsSource.js";
+import { codexDetailHourFrom, codexDetailSql, codexTurnWindow } from "../dashboard/server/taskTraceDetail.js";
+import { codexCompletionSql } from "../dashboard/server/taskTraces.js";
+import { codexSkillsSql } from "../dashboard/server/codexActivity.js";
 import { SPAWN_SPANS } from "../dashboard/server/codexAgents.js";
 
 const container = process.argv[2];
@@ -34,12 +37,19 @@ const check = (actual, expected, label) => { assert.deepEqual(actual, expected, 
 
 execute(`CREATE DATABASE claude_code;
 CREATE TABLE claude_code.otel_traces (
-  Timestamp DateTime64(9), TraceId String, SpanId String, SpanName LowCardinality(String),
+  Timestamp DateTime64(9), TraceId String, SpanId String, ParentSpanId String, SpanName LowCardinality(String),
   ResourceAttributes Map(LowCardinality(String), String), SpanAttributes Map(LowCardinality(String), String),
   Duration Int64,
   UserEmail LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
   EndUserId LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id']
-) ENGINE = MergeTree ORDER BY (SpanName, Timestamp);`);
+) ENGINE = MergeTree ORDER BY (SpanName, Timestamp);
+CREATE TABLE claude_code.otel_logs (
+  Timestamp DateTime64(9), ResourceAttributes Map(LowCardinality(String), String),
+  LogAttributes Map(LowCardinality(String), String),
+  UserEmail LowCardinality(String) MATERIALIZED ResourceAttributes['user.email'],
+  EndUserId LowCardinality(String) MATERIALIZED ResourceAttributes['enduser.id'],
+  EventName LowCardinality(String) MATERIALIZED LogAttributes['event.name']
+) ENGINE = MergeTree ORDER BY (EventName, Timestamp);`);
 execute(codexTurnsSchemaSql());
 execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} REMOVE TTL`);
 // Background merges would fold the fixture's separate inserts nondeterministically (the T5 and
@@ -272,9 +282,106 @@ function listContext() {
   check([Number(long.start_ms), Number(long.end_ms)], [Date.parse("2026-10-15T12:00:00.000Z"), Date.parse("2026-10-18T00:00:20.000Z") + 1],
     "a turn that starts 3 days before from is read whole, not clipped");
 }
+// The rollup detail's reads over its turn window (taskTraceDetail.codexTurnWindow) and the agents'
+// rollup turn read, on a page (2026-10-21) the backfill and verify phases below never touch.
+function detailWindow() {
+  const pageFrom = new Date("2026-10-21T00:00:00Z"), pageTo = new Date("2026-10-22T00:00:00Z");
+  const userF = "turns-f@example.test", q = { userExact: userF };
+  const f = (name, turn, time, opts = {}) => span(name, turn, time, { user: userF, model: sol, conversation: "conv-detail", ...opts });
+  const d0 = v7("2026-10-21T04:59:00.000Z", 20), d = v7("2026-10-21T05:00:00.000Z", 21), d2 = v7("2026-10-21T05:00:12.000Z", 22);
+  const d3 = v7("2026-10-21T05:00:16.000Z", 23), other = v7("2026-10-21T05:00:13.000Z", 24);
+  const long = v7("2026-10-21T20:00:00.000Z", 25), late = v7("2026-10-23T00:30:00.000Z", 26);
+  // A v7 id more than a day after its first span: that span keeps its own hour (two hour rows).
+  const multi = v7("2026-10-22T23:00:00.000Z", 27);
+  // On a 10-day page: an id over 7 days after the turn's first span (that span's own hour row).
+  const lateId = v7("2026-10-30T05:00:00.000Z", 28);
+  insert([
+    f("codex.sampling", d0, "2026-10-21T04:59:00.000Z"),
+    f("codex.sampling", d, "2026-10-21T05:00:00.000Z"), f("codex.sampling", d, "2026-10-21T05:00:08.000Z", { duration: 2000000000 }),
+    f("codex.sampling", d2, "2026-10-21T05:00:12.000Z"), f("codex.sampling", d3, "2026-10-21T05:00:16.000Z"),
+    f("codex.sampling", other, "2026-10-21T05:00:13.000Z", { conversation: "conv-other" }),
+    f("codex.sampling", long, "2026-10-21T20:00:00.000Z"), f("codex.sampling", long, "2026-10-22T23:00:00.000Z"),
+    f("shell", long, "2026-10-23T02:00:00.000Z"),
+    f("codex.sampling", late, "2026-10-23T00:30:00.000Z"),
+    f("codex.sampling", multi, "2026-10-21T05:30:00.000Z", { conversation: "conv-m" }),
+    f("codex.sampling", multi, "2026-10-22T22:30:00.000Z", { conversation: "conv-m" }),
+    f("codex.sampling", lateId, "2026-10-21T06:00:00.000Z", { conversation: "conv-m2" }),
+    f("codex.sampling", lateId, "2026-10-30T04:30:00.000Z", { conversation: "conv-m2" }),
+  ]);
+  const log = (time, attributes, user = userF) => ({ Timestamp: ts(time), ResourceAttributes: { client: "codex", "user.email": user },
+    LogAttributes: attributes });
+  const completed = (time, conversation = "conv-detail", user = userF) => log(time, { "event.name": "codex.sse_event",
+    "event.kind": "response.completed", "conversation.id": conversation, input_token_count: "100", output_token_count: "20",
+    "event.timestamp": time }, user);
+  const skill = (time, name) => log(time, { "event.name": "codex.skill_invocation", "conversation.id": "conv-detail", "turn.id": d,
+    "skill.name": name, "skill.invocation_type": "explicit", "skill.scope": "user" });
+  execute("INSERT INTO claude_code.otel_logs FORMAT JSONEachRow\n" + [
+    completed("2026-10-21T03:59:59.000Z"), completed("2026-10-21T04:00:00.000Z"), completed("2026-10-21T05:00:05.000Z"),
+    completed("2026-10-22T05:00:09.000Z"), completed("2026-10-22T05:00:10.000Z"), completed("2026-10-22T23:59:59.000Z"),
+    completed("2026-10-23T00:00:00.000Z"), completed("2026-10-21T05:00:05.000Z", "conv-other"),
+    completed("2026-10-21T05:00:05.000Z", "conv-detail", userA),
+    skill("2026-10-21T04:58:59.000Z", "skill-early"), skill("2026-10-21T05:00:03.000Z", "skill-in"),
+    skill("2026-10-21T05:01:09.000Z", "skill-in"), skill("2026-10-21T05:01:10.000Z", "skill-late"),
+  ].map(value => JSON.stringify(value)).join("\n"));
+  const hourFrom = id => codexDetailHourFrom(pageFrom, id);
+  const turnRow = (id, conversationId = "conv-detail") =>
+    asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId, turnId: id, hourFrom: hourFrom(id) })).map(strip);
+  const raw = conversationId => asRows(codexTurnSql(pageFrom, pageTo, q, { conversationId }));
+  const times = list => list.map(r => new Date(Number(r.timestamp_ms)).toISOString()).sort();
+  // Turn D: its row equals the raw row; competitors, completions, spans and skills by window.
+  const [dRow] = turnRow(d);
+  check(dRow, raw("conv-detail").find(r => r.turn_id === d), "detail turn row equals the raw codexTurnSql row");
+  const dWin = codexTurnWindow(pageFrom, pageTo, Number(dRow.start_ms), Number(dRow.end_ms));
+  check(asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-detail", hourFrom: hourFrom(d), ...dWin.competitors }))
+    .map(r => r.turn_id), [d, d2], "competitors: same conversation, start in [s, e + 5 s)");
+  check(times(asRows(codexCompletionSql(pageFrom, pageTo, q, { conversationId: "conv-detail", ...dWin.completions }))),
+    ["2026-10-21T04:00:00.000Z", "2026-10-21T05:00:05.000Z", "2026-10-22T05:00:09.000Z"], "completions: [s - 1h, e + 24h)");
+  const dSpans = asRows(codexDetailSql(pageFrom, pageTo, q, "conv-detail", d, dWin.spans).spans);
+  check([dSpans.length, dSpans[0].total_spans], [2, "2"], "spans of the turn in [s - 1 min, e + 1 min)");
+  check(asRows(codexSkillsSql(pageFrom, pageTo, q, "conv-detail", d, { logFrom: dWin.spans.spanFrom, logTo: dWin.spans.spanTo })),
+    [{ name: "skill-in", invocation: "explicit", scope: "user", calls: "2" }], "skills in the span window");
+  // Turn L runs past to + 24h: unclipped row; every window stops at to + 24h like the list.
+  const [lRow] = turnRow(long);
+  check([lRow.start_ms, lRow.end_ms, lRow.in_bucket], [String(Date.parse("2026-10-21T20:00:00Z")),
+    String(Date.parse("2026-10-23T02:00:00Z") + 1), 1], "long turn: unclipped end");
+  const lWin = codexTurnWindow(pageFrom, pageTo, Number(lRow.start_ms), Number(lRow.end_ms));
+  check(asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-detail", hourFrom: hourFrom(long), ...lWin.competitors }))
+    .map(r => r.turn_id), [long], "long turn: a competitor starting at or after to + 24h is not read");
+  check(times(asRows(codexCompletionSql(pageFrom, pageTo, q, { conversationId: "conv-detail", ...lWin.completions }))),
+    ["2026-10-22T05:00:09.000Z", "2026-10-22T05:00:10.000Z", "2026-10-22T23:59:59.000Z"], "long turn: completions stop at to + 24h");
+  check(asRows(codexDetailSql(pageFrom, pageTo, q, "conv-detail", long, lWin.spans).spans).length, 2,
+    "long turn: spans stop at to + 24h");
+  // Turn M: two hour rows merge from id hour - 7 days; pinned to the id hour it would start late.
+  check(rows(`SELECT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${multi}' ORDER BY hour`),
+    [{ hour: "2026-10-21 05:00:00" }, { hour: "2026-10-22 23:00:00" }], "multi-row v7 turn keeps two hour rows");
+  check(turnRow(multi, "conv-m"), raw("conv-m").filter(r => r.turn_id === multi), "multi-row turn: merged row equals raw");
+  check(asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-m", turnId: multi })).map(r => [r.in_bucket, r.llm_calls]),
+    [[0, "1"]], "pinned to the id hour only the later row is read");
+  // The late id on a 10-day page: the detail merges the same hour rows as the list; id hour - 7 days
+  // alone would miss the first span's row.
+  const longTo = new Date("2026-10-31T00:00:00Z");
+  const lateRead = from => asRows(rollupTurnSql(pageFrom, longTo, q, { conversationId: "conv-m2", turnId: lateId, hourFrom: from })).map(strip);
+  check(lateRead(codexDetailHourFrom(pageFrom, lateId)), asRows(rollupTurnSql(pageFrom, longTo, q)).map(strip)
+    .filter(r => r.turn_id === lateId).map(r => ({ ...r, conversation_id: "conv-m2" })), "late id: detail row equals the list row");
+  check(lateRead(new Date(turnHourMs(lateId) - TURN_LOOKBACK_MS)).map(r => r.started_at), ["2026-10-30T04:30:00Z"],
+    "late id: id hour - 7 days alone misses the first span's row");
+  check(lateRead(codexDetailHourFrom(pageFrom, lateId)).map(r => [r.started_at, r.llm_calls]), [["2026-10-21T06:00:00Z", "2"]],
+    "late id: both rows merge");
+  // A link's conversation outside the turn's set: no row (the detail then reads raw).
+  check(turnRow(d, "conv-other"), [], "another conversation finds no turn row");
+  // Agents: subagent/parent turns by conversation from the lineage start minus 7 days, unclipped.
+  const lineageFrom = new Date("2026-10-18T00:00:00Z"), lineageTo = new Date("2026-10-19T00:00:00Z");
+  const agentRead = asRows(rollupTurnSql(lineageFrom, lineageTo, { userExact: userE },
+    { conversationIds: ["conv-ctx-14", "none"], hourFrom: new Date(+lineageFrom - TURN_LOOKBACK_MS) }));
+  check(agentRead.map(r => [r.turn_id, r.conversation_id, Number(r.start_ms)]),
+    [[ctxLong.turn, "conv-ctx-14", Date.parse("2026-10-15T12:00:00Z")]], "agents: a parent turn started 3 days before keeps its start");
+  check(asRows(codexTurnSql(lineageFrom, lineageTo, { userExact: userE }, { conversationIds: ["conv-ctx-14"] }))
+    .map(r => Number(r.start_ms)), [Date.parse("2026-10-18T00:00:20Z")], "agents: the raw read clips that start");
+}
 const live = parity("live view");
 filters();
 listContext();
+detailWindow();
 const byId = Object.fromEntries(live[userA].map(r => [r.turn_id, r]));
 check(Object.keys(byId).sort(), [t1, t2, t3, t4, t5, t8].sort(), "user A turns");
 check([byId[t1].llm_calls, byId[t1].legacy_calls, byId[t1].sampling_tries, byId[t1].compactions,

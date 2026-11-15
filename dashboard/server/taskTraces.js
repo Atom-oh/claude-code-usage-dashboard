@@ -430,9 +430,10 @@ export const emitsTurnCompactions = (version) => codexAtLeast(version, 161);
 // `identity` names it so the fold attaches it at most once. PREWHERE reads only promoted
 // columns (event, time, exact user); the map-derived checks repeat in WHERE. Only
 // allowlisted attributes leave the database. `conversationId` (task detail) keeps one conversation,
-// `conversationIds` several.
-export function codexCompletionSql(from, to, q, { conversationId = null, conversationIds = null } = {}) {
-  const params = { logFrom: toChDateTime(from), logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)),
+// `conversationIds` several. `logFrom`/`logTo` (Dates) replace the window (a rollup detail's turn window).
+export function codexCompletionSql(from, to, q, { conversationId = null, conversationIds = null, logFrom = null,
+  logTo = null } = {}) {
+  const params = { logFrom: toChDateTime(logFrom ?? from), logTo: toChDateTime(logTo ?? new Date(to.getTime() + SPAN_SLACK_MS)),
     userExact: q.userExact };
   if (conversationId !== null) params.conversationId = conversationId;
   if (conversationIds !== null) params.conversationIds = conversationIds;

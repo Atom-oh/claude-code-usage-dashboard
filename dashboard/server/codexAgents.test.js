@@ -286,7 +286,7 @@ const legacyRun = (seen, { rows, logs, conversations, turns, completions = [] })
   if (sql.includes("op.dispatch")) return rows;
   if (sql.includes("codex.tool_result")) return logs;
   if (sql.includes("{turnIds:Array(String)}")) return conversations;
-  if (sql.includes("GROUP BY turn_id")) return turns.filter(t => params.conversationIds.includes(t.conversation_id));
+  if (sql.includes("GROUP BY turn_id") || sql.includes("codex_turns_v1")) return turns.filter(t => params.conversationIds.includes(t.conversation_id));
   if (sql.includes("otel_logs")) return completions;
   throw new Error("unexpected SQL");
 };
@@ -490,7 +490,7 @@ const commRun = (seen, { rows = [], sends = [], turns = [], completions = [] }) 
   seen.push({ sql, params });
   if (sql.includes("op.dispatch")) return rows;
   if (sql.includes("codex.agent_communication")) return sends;
-  if (sql.includes("GROUP BY turn_id")) return turns.filter(t => params.conversationIds.includes(t.conversation_id));
+  if (sql.includes("GROUP BY turn_id") || sql.includes("codex_turns_v1")) return turns.filter(t => params.conversationIds.includes(t.conversation_id));
   if (sql.includes("otel_logs")) return completions;
   throw new Error("unexpected SQL");
 };
@@ -679,3 +679,86 @@ test("a budget not spent leaves results and reads unchanged", async () => {
   }
 });
 
+test("on the rollup a parent turn started 3 days before the subagent keeps its true start", async () => {
+  const parentStart = "2026-11-02T01:00:00Z", parentEnd = String(ms("2026-11-05T02:00:00Z"));
+  const runWith = (seen) => async (sql, params) => {
+    seen.push({ sql, params });
+    if (sql.includes("op.dispatch")) return chain("t", 9, uuid(9), P, "self", { parentConv: "up" });
+    if (sql.includes("codex_turns_v1"))
+      return params.conversationIds.includes("up") ? [turn("up", uuid(9), parentStart, { end_ms: parentEnd })] : [];
+    // The raw read starts a day before the lineage window: the parent's start is clipped there.
+    if (sql.includes("GROUP BY turn_id")) return [turn("up", uuid(9), "2026-11-04T00:50:00Z", { end_ms: parentEnd })];
+    if (sql.includes("otel_logs")) return [];
+    throw new Error("unexpected SQL");
+  };
+  const turnInfo = { turnId: P, conversationId: "self", startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const seen = [];
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run: runWith(seen), prices: DEFAULT_CODEX_PRICING,
+    turnsBoundary: new Date("2026-10-01T00:00:00Z") });
+  assert.equal(out.parent.id, `codex:up:${uuid(9)}`);
+  assert.equal(out.parent.started_at, parentStart);
+  assert.deepEqual(out.parent.link, { from: "2026-11-02T01:00:00.000Z", to: "2026-11-02T02:00:00.000Z" });
+  const reads = seen.filter(s => s.sql.includes("codex_turns_v1"));
+  assert.equal(reads.length, 1);
+  // Hours from the lineage start (turn start - 10 min) minus the list's 7-day lookback.
+  assert.deepEqual([reads[0].params.conversationIds, reads[0].params.hourFrom, reads[0].params.userExact],
+    [["up"], "2026-10-29 00:00:00", "kim@x.com"]);
+  assert.ok(!reads[0].sql.includes("kim@x.com") && !reads[0].sql.includes("'up'"));
+  assert.ok(!seen.some(s => s.sql.includes("GROUP BY turn_id")), "no raw turn read");
+  // Lineage start - 7 days before the boundary: today's raw read and its clipped start.
+  const rawSeen = [];
+  const raw = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run: runWith(rawSeen), prices: DEFAULT_CODEX_PRICING,
+    turnsBoundary: new Date("2026-10-29T01:00:00Z") });
+  assert.equal(raw.parent.started_at, "2026-11-04T00:50:00Z");
+  assert.ok(!rawSeen.some(s => s.sql.includes("codex_turns_v1")));
+  assert.equal(rawSeen.filter(s => s.sql.includes("GROUP BY turn_id")).length, 1);
+});
+
+test("on the rollup the legacy and communication turn reads use it too", async () => {
+  const boundary = new Date("2026-10-01T00:00:00Z");
+  const seen = [];
+  const run = commRun(seen, { sends: [send("spawn", "root", "sub1", "2026-11-05T01:00:02Z")],
+    turns: [turn("sub1", C1, "2026-11-05T01:00:03Z"), turn("root", P, "2026-11-05T01:00:00Z")],
+    completions: [completion("sub1", "2026-11-05T01:00:05Z")] });
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING, turnsBoundary: boundary });
+  assert.deepEqual(out.children.map(c => c.id), [`codex:sub1:${C1}`]);
+  const rollupReads = seen.filter(s => s.sql.includes("codex_turns_v1"));
+  assert.equal(rollupReads.length, 1);
+  assert.deepEqual(rollupReads[0].params.conversationIds, ["root", "sub1"]);
+  assert.ok(!seen.some(s => s.sql.includes("otel_traces") && s.sql.includes("GROUP BY turn_id")));
+  // A legacy turn's candidate conversations: one rollup turn read before the walk.
+  const legacySeen = [];
+  const legacy = await codexAgents("kim@x.com", { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"),
+    traceIds: ["t"] }, rootTask, [], { from, to, prices: DEFAULT_CODEX_PRICING, turnsBoundary: boundary, run: legacyRun(legacySeen, {
+    rows: legacyChain("t", 1, C1), logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z")] }) });
+  assert.deepEqual(legacy.children.map(c => c.id), [`codex:sub1:${C1}`]);
+  const legacyReads = legacySeen.filter(s => s.sql.includes("codex_turns_v1"));
+  assert.deepEqual(legacyReads.map(s => s.params.conversationIds), [["root", "sub1"]]);
+  assert.ok(!legacySeen.some(s => s.sql.includes("otel_traces") && s.sql.includes("GROUP BY turn_id") && !s.sql.includes("{turnIds")));
+});
+
+test("on the rollup a spent budget skips the rollup turn reads like the raw ones", async () => {
+  const boundary = new Date("2026-10-01T00:00:00Z");
+  const inner = commRun([], { sends: [send("spawn", "root", "sub1", "2026-11-05T01:00:02Z")],
+    turns: [turn("sub1", C1, "2026-11-05T01:00:03Z"), turn("root", P, "2026-11-05T01:00:00Z")],
+    completions: [completion("sub1", "2026-11-05T01:00:05Z")] });
+  // Spent after the communication log read: the rollup turn read is skipped.
+  const b = budgetRun(inner, (sql) => sql.includes("codex.agent_communication"));
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: b.run, prices: DEFAULT_CODEX_PRICING,
+    turnsBoundary: boundary, detailStart: b.detailStart, now: b.now });
+  assert.ok(!b.seen.some(s => s.includes("codex_turns_v1")));
+  assert.deepEqual([out.children.length, out.limited, out.known_zero], [0, true, false]);
+  // A legacy turn's candidate conversations: spent after the call-log reads, no rollup turn read.
+  const legacy = legacyRun([], { rows: legacyChain("t", 1, C1),
+    logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z")] });
+  const mid = budgetRun(legacy, (sql) => sql.includes("codex.tool_result"));
+  const half = await codexAgents("kim@x.com", { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"),
+    traceIds: ["t"] }, rootTask, [], { from, to, run: mid.run, prices: DEFAULT_CODEX_PRICING, turnsBoundary: boundary,
+    detailStart: mid.detailStart, now: mid.now });
+  assert.ok(!mid.seen.some(s => s.includes("codex_turns_v1")));
+  assert.deepEqual([half.limited, half.known_zero], [true, false]);
+});
