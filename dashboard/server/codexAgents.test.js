@@ -386,6 +386,25 @@ test("subagent turn and completion reads cover the lineage window, not the whole
   assert.deepEqual([completions.params.logFrom, completions.params.logTo], ["2026-11-05 00:50:00", "2026-11-07 01:00:10"]);
 });
 
+test("a subagent turn ending within a day of the reads' bound has partial calls and cost and limits the result", async () => {
+  // Reads end 24h after the lineage window (the task's end + 24h): 2026-11-07 01:00:10.
+  const readTo = ms("2026-11-07T01:00:10Z");
+  const fold = async (endMs) => {
+    const run = legacyRun([], { rows: chain("t", 1, P, C1, "sub1"), logs: [], conversations: [],
+      turns: [turn("sub1", C1, "2026-11-05T01:00:02Z", { end_ms: String(endMs) })],
+      completions: [completion("sub1", "2026-11-05T01:00:05Z")] });
+    const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+    return codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  };
+  const clipped = await fold(readTo - 10000);
+  assert.deepEqual([clipped.children[0].llm_calls, clipped.children[0].llm_calls_partial, clipped.children[0].cost_partial],
+    [2, true, true]);
+  assert.deepEqual([clipped.limited, clipped.total.llm_calls_partial, clipped.total.cost_partial], [true, true, true]);
+  // A subagent turn that ended a day before the bound was read whole.
+  const whole = await fold(readTo - 24 * 3600000 - 1);
+  assert.deepEqual([whole.children[0].llm_calls_partial, whole.children[0].cost_partial, whole.limited], [false, false, false]);
+});
+
 // The Codex CLI's multi_agent_v1 tools start a subagent turn through turn input:
 //   multi_agent_v1<tool> <- dispatch_tool_call_with_state <- op.dispatch.turn_input
 //   <- codex.turn_input (child conversation and turn) <- session_task.turn
