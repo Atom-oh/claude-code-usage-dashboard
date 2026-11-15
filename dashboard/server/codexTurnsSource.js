@@ -55,6 +55,10 @@ export function rollupHasTurn(rows, turnId) {
 const floorHour = ms => Math.floor(ms / HOUR_MS) * HOUR_MS;
 // An id hour a DateTime parameter can carry (a garbage v7 time may not be).
 const MAX_ID_HOUR_MS = Date.UTC(2100, 0, 1);
+// SQL of the id hour of a UUIDv7 TurnId (as turnHourMs without a span), when representable.
+const V7_SQL = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+const ID_MS_SQL = "toInt64(reinterpretAsUInt64(reverse(unhex(concat(substring(TurnId, 1, 8), substring(TurnId, 10, 4))))))";
+const ID_HOUR_SQL = `toStartOfHour(toDateTime(intDiv(${ID_MS_SQL}, 1000), 'UTC'))`;
 const idHourOf = turnId => {
   const hour = turnId === null ? null : turnHourMs(turnId);
   return hour !== null && hour >= 0 && hour < MAX_ID_HOUR_MS ? hour : null;
@@ -64,6 +68,12 @@ const idHourOf = turnId => {
 // rows (a non-v7 or >7-day turn spans several). Unclipped.
 // - Hours: TurnHour in [hourFrom, hourTo), by default [from - 7 days, to + 24h); with `turnId` of
 //   a UUIDv7 id (representable time) and no `hourFrom`, exactly the id's hour.
+// - Over a range, a UUIDv7 turn with a row in it also merges its id-hour row before `hourFrom`
+//   (one keyed lookup): a span starting over 7 days after the id keeps its own hour, so without
+//   that row a turn running past its id + 7 days would merge as a fragment starting in the page,
+//   a task of the wrong bucket. With it the turn keeps its true start (context there) and is
+//   listed once, in the bucket of its start. Rows after `hourTo` stay out (the end clips there).
+//   A non-v7 id, or a v7 turn whose first spans precede its id by over a day, has no such key.
 // - Without `turnId`, `startFrom` or `startTo` (the list), a turn qualifies as context when it
 //   starts before to + 24h and its end + COMPLETION_SLACK_MS reaches `from`. Those options
 //   replace that rule: `turnId` picks one turn, `startFrom`/`startTo` (ms) bound the merged start
@@ -94,6 +104,17 @@ export function rollupTurnSql(from, to, q, { conversationId = null, conversation
   if (turnId !== null) params.turnId = turnId;
   if (startFrom !== null) { params.startFrom = startFrom; where.push("start_ms >= {startFrom:Int64}"); }
   if (startTo !== null) { params.startTo = startTo; where.push("start_ms < {startTo:Int64}"); }
+  const range = "TurnHour >= {hourFrom:DateTime} AND TurnHour < {hourTo:DateTime}";
+  // Representable v7 id hours before the range of the turns with a row in it.
+  const idHours = pinned ? "" : `
+            OR (TurnHour, TurnId) IN (
+                SELECT ${ID_HOUR_SQL}, TurnId
+                FROM claude_code.${TURNS_ROLLUP_TABLE}
+                PREWHERE UserIdentity = {userExact:String}
+                  AND ${range}${turnId === null ? "" : "\n                  AND TurnId = {turnId:String}"}
+                WHERE match(TurnId, '${V7_SQL}') AND ${ID_MS_SQL} < ${MAX_ID_HOUR_MS}
+                  AND ${ID_HOUR_SQL} < {hourFrom:DateTime}
+                GROUP BY TurnId)`;
   if (turnId === null && startFrom === null && startTo === null)
     where.push("min_start < {spanTo:DateTime}",
       `end_ms + ${COMPLETION_SLACK_MS} >= toUnixTimestamp({from:DateTime}) * 1000`);
@@ -117,8 +138,8 @@ export function rollupTurnSql(from, to, q, { conversationId = null, conversation
             groupUniqArrayMerge(LegacyModels) AS legacy_models, uniqExactMerge(SpawnCalls) AS spawn_calls,
             max(NamesTurnOnTools) AS names_turn
         FROM claude_code.${TURNS_ROLLUP_TABLE}
-        PREWHERE UserIdentity = {userExact:String}
-          AND TurnHour >= {hourFrom:DateTime} AND TurnHour < {hourTo:DateTime}${turnId === null ? "" : "\n          AND TurnId = {turnId:String}"}
+        PREWHERE UserIdentity = {userExact:String}${turnId === null ? "" : "\n          AND TurnId = {turnId:String}"}
+        WHERE (${range}${idHours})
         GROUP BY TurnId
     )${where.length ? `\n    WHERE ${where.join("\n      AND ")}` : ""}
     ORDER BY in_bucket DESC, start_ms ASC, turn_id ASC

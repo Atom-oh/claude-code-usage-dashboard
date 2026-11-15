@@ -726,7 +726,9 @@ null (no attribute links a subagent conversation; the detail's `agents` follows 
 is active (`CODEX_TURNS_READ_FROM` set and the list's start minus 7 days not before it) and the
 turn's Codex version is 0.166 or later, so a null is not collected, never zero, and `0` means no
 call. With the rollup active the list reads the migration 012 turn rollup instead of raw spans;
-its rows equal the raw rows except that a turn running past `to + 24h` shows its true end;
+its rows equal the raw rows except that a turn running past `to + 24h` shows its true end and a
+context turn its true start (a UUIDv7 turn running more than 7 days past its id also merges its
+id-hour row, so it is listed once, in the bucket of its start, never as a later fragment);
 unset or an earlier range keeps raw reads
 ([schema runbook](runbooks/schema-migrations.md#codex-turns-migration-012)). Spans carry no usage: tokens and cost come only from unique
 usage-bearing `response.completed` completions of the same conversation whose event

@@ -11,7 +11,7 @@ import {
   TURNS_ROLLUP_TABLE, codexTurnsBackfillSql, codexTurnsSchemaSql, namesTurnOnToolsSql, turnHourSql, turnHourMs,
 } from "../dashboard/server/codexTurnsSchema.js";
 import { codexTurnSql, namesTurnOnTools } from "../dashboard/server/taskTraces.js";
-import { TURN_LOOKBACK_MS, rollupOwnerSql, rollupTurnSql } from "../dashboard/server/codexTurnsSource.js";
+import { TURN_LOOKBACK_MS, rollupOwnerSql, rollupTurnSql, turnsSourceForTurn } from "../dashboard/server/codexTurnsSource.js";
 import { codexDetailHourFrom, codexDetailSql, codexTurnWindow } from "../dashboard/server/taskTraceDetail.js";
 import { attachCompletions, codexCompletionSql, foldCodexTask, linkCompletions } from "../dashboard/server/taskTraces.js";
 import { DEFAULT_CODEX_PRICING } from "../dashboard/server/codexPricing.js";
@@ -450,10 +450,76 @@ function detailWindow() {
   check(asRows(codexTurnSql(lineageFrom, lineageTo, { userExact: userG }, { conversationIds: ["conv-ctx-14"] }))
     .map(r => Number(r.start_ms)), [Date.parse("2026-10-18T00:00:20Z")], "agents: the raw read clips that start");
 }
+// A UUIDv7 turn running more than 7 days past its id (user H, pages the other phases never read):
+// spans starting after id + 7 days keep their own hours, so a later page's hour range holds those
+// rows without the id-hour row. The turn is listed once, in the bucket of its start; on the later
+// page it is context with its true start, never a fragment task.
+function longV7Turn() {
+  const userH = "turns-h@example.test", q = { userExact: userH }, prices = DEFAULT_CODEX_PRICING;
+  const h = (name, turn, time, opts = {}) => span(name, turn, time, { user: userH, model: sol, conversation: "conv-long", ...opts });
+  const long = v7("2026-11-01T10:00:00.000Z", 40), near = v7("2026-11-09T11:50:00.000Z", 41);
+  // A v7 id 20 days before its only span: every row of that turn has its span's hour.
+  const farId = v7("2026-10-20T00:00:00.000Z", 42);
+  insert([
+    h("codex.sampling", long, "2026-11-01T10:00:00.000Z"),
+    h("codex.sampling", long, "2026-11-09T12:00:00.000Z"), h("shell", long, "2026-11-09T12:30:00.000Z"),
+    h("codex.sampling", near, "2026-11-09T11:50:00.000Z", { duration: 30 * 60 * 1e9 }),
+    h("codex.sampling", farId, "2026-11-09T13:00:00.000Z", { conversation: "conv-far-id" }),
+  ]);
+  const completedH = time => ({ Timestamp: ts(time), ResourceAttributes: { client: "codex", "user.email": userH },
+    LogAttributes: { "event.name": "codex.sse_event", "event.kind": "response.completed", "conversation.id": "conv-long",
+      input_token_count: "100", output_token_count: "20", "event.timestamp": time } });
+  // 12:10 lies in both turns (the later-starting near turn wins it); 12:25 only in the long turn.
+  execute("INSERT INTO claude_code.otel_logs FORMAT JSONEachRow\n"
+    + [completedH("2026-11-09T12:10:00.000Z"), completedH("2026-11-09T12:25:00.000Z")].map(v => JSON.stringify(v)).join("\n"));
+  check(rows(`SELECT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${long}' GROUP BY hour ORDER BY hour`),
+    [{ hour: "2026-11-01 10:00:00" }, { hour: "2026-11-09 12:00:00" }], "long v7 turn: id-hour row and a later span-hour row");
+  const list = (pageFrom, pageTo) => {
+    const turns = asRows(rollupTurnSql(pageFrom, pageTo, q));
+    return { turns, ...attachCompletions(turns, asRows(codexCompletionSql(pageFrom, pageTo, q)), { prices, from: pageFrom, to: pageTo }) };
+  };
+  const detail = (pageFrom, pageTo, id, conversationId) => {
+    const hourFrom = codexDetailHourFrom(pageFrom, id);
+    const [own] = asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId, turnId: id, hourFrom }));
+    const win = codexTurnWindow(pageFrom, pageTo, Number(own.start_ms), Number(own.end_ms));
+    const competitors = asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId, hourFrom, ...win.competitors }));
+    const completions = asRows(codexCompletionSql(pageFrom, pageTo, q, { conversationId, ...win.completions }));
+    const entry = linkCompletions([own, ...competitors.filter(t => t.turn_id !== id)], completions, { prices }).entries
+      .find(e => e.turn.turn_id === id);
+    return foldCodexTask(entry.turn, entry.linked);
+  };
+  // The later page: the long turn is context from its true start; near wins 12:10, the long turn 12:25.
+  const laterFrom = new Date("2026-11-09T00:00:00Z"), laterTo = new Date("2026-11-10T00:00:00Z");
+  const later = list(laterFrom, laterTo);
+  const longRow = later.turns.find(r => r.turn_id === long);
+  check([longRow.in_bucket, longRow.started_at, Number(longRow.end_ms), longRow.llm_calls],
+    [0, "2026-11-01T10:00:00Z", Date.parse("2026-11-09T12:30:00.000Z") + 1, "2"], "later page: the long turn merges whole as context");
+  check(later.tasks.map(t => t.id).sort(), [`codex:conv-far-id:${farId}`, `codex:conv-long:${near}`].sort(),
+    "later page: no fragment task; the far-id turn keeps its span hours and is listed");
+  const nearTask = later.tasks.find(t => t.id === `codex:conv-long:${near}`);
+  check(nearTask.tokens.observed_tokens, 120, "later page: the near turn wins the completion inside it");
+  check(later.unattached.completions, 0, "later page: the long turn's completion is attached to it, not unattached");
+  check(detail(laterFrom, laterTo, near, "conv-long"), nearTask, "later page: the near turn's detail equals its list row");
+  check(turnsSourceForTurn(long, new Date("2026-10-01T00:00:00Z"), { from: laterFrom, to: laterTo }), "raw",
+    "later page: the long turn's id is before the lookback, never a rollup detail");
+  // The page of its start: listed once, clipped at to + 24h like raw; the detail equals the row.
+  const startFrom = new Date("2026-11-01T00:00:00Z"), startTo = new Date("2026-11-02T00:00:00Z");
+  const first = list(startFrom, startTo);
+  check(first.turns.map(strip), asRows(codexTurnSql(startFrom, startTo, q)), "start page: the long turn row equals the raw row");
+  const longTask = first.tasks.find(t => t.id === `codex:conv-long:${long}`);
+  check([first.tasks.length, longTask.started_at], [1, "2026-11-01T10:00:00Z"], "start page: listed once, at its start");
+  check(detail(startFrom, startTo, long, "conv-long"), longTask, "start page: the detail equals its list row");
+  // Agents: the lineage read keeps the long turn's true start.
+  const lineageFrom = new Date("2026-11-09T11:00:00Z"), lineageTo = new Date("2026-11-09T13:00:00Z");
+  check(asRows(rollupTurnSql(lineageFrom, lineageTo, q, { conversationIds: ["conv-long"],
+    hourFrom: new Date(+lineageFrom - TURN_LOOKBACK_MS) })).map(r => [r.turn_id, r.started_at]).sort(),
+  [[long, "2026-11-01T10:00:00Z"], [near, "2026-11-09T11:50:00Z"]].sort(), "agents: the long turn keeps its true start");
+}
 const live = parity("live view");
 filters();
 listContext();
 detailWindow();
+longV7Turn();
 const byId = Object.fromEntries(live[userA].map(r => [r.turn_id, r]));
 check(Object.keys(byId).sort(), [t1, t2, t3, t4, t5, t8].sort(), "user A turns");
 check([byId[t1].llm_calls, byId[t1].legacy_calls, byId[t1].sampling_tries, byId[t1].compactions,

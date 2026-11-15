@@ -102,6 +102,26 @@ test("the default hour range is the list lookback; a v7 id pins its own hour", (
   assert.equal(explicit.params.hourTo, "2026-10-22 00:00:00");
 });
 
+test("a read over an hour range also merges the id-hour row of a UUIDv7 turn keyed before it", () => {
+  // A span starting over 7 days after its v7 id keeps its own hour, so a turn's later rows can lie
+  // in the range while its id-hour row (and true start) lies before it. Every read over a range
+  // looks that row up by (TurnHour, TurnId), owner bound, so such a turn merges whole.
+  const list = rollupTurnSql(from, to, q);
+  const range = "TurnHour >= {hourFrom:DateTime} AND TurnHour < {hourTo:DateTime}";
+  assert.ok(list.sql.split(range).length - 1 >= 2, "the range bounds both the rows and the id-hour lookup");
+  assert.match(list.sql, /\(TurnHour, TurnId\) IN \(/);
+  assert.match(list.sql, /match\(TurnId, '\^\[0-9a-fA-F\]\{8\}-/);
+  assert.ok(list.sql.split("UserIdentity = {userExact:String}").length - 1 >= 2, "the lookup is owner bound");
+  assert.doesNotMatch(list.sql, /synthetic@example/);
+  for (const options of [{ conversationIds: ["c1"], hourFrom: new Date("2026-10-01T00:00:00Z") },
+    { conversationId: "c1", startFrom: 1, startTo: 2, hourFrom: new Date("2026-10-01T00:00:00Z") },
+    { conversationId: "c1", turnId: v7(Date.parse("2026-10-20T12:34:56Z")), hourFrom: new Date("2026-10-13T12:00:00Z") }])
+    assert.match(rollupTurnSql(from, to, q, options).sql, /\(TurnHour, TurnId\) IN \(/, JSON.stringify(options));
+  // Pinned to one id hour: that row is the read.
+  const pinned = rollupTurnSql(from, to, q, { turnId: v7(Date.parse("2026-10-20T12:34:56Z")) });
+  assert.doesNotMatch(pinned.sql, /\(TurnHour, TurnId\) IN/);
+});
+
 test("the owner read is keyed by the id's hour, without a user filter", () => {
   const id = v7(Date.parse("2026-10-20T12:34:56Z"));
   const { sql, params } = rollupOwnerSql(id);
