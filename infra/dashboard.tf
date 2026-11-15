@@ -539,9 +539,11 @@ resource "kubernetes_deployment_v1" "dashboard" {
               }
             }
           }
+          # 512Mi: a combined Claude+Codex fold may hold two full row budgets (2 × 50k);
+          # 61k rows measured ~33MB heap on 2026-11-15, peak pod RSS was ~108MB at 256Mi.
           resources {
-            requests = { cpu = "100m", memory = "128Mi" }
-            limits   = { cpu = "500m", memory = "256Mi" }
+            requests = { cpu = "100m", memory = "256Mi" }
+            limits   = { cpu = "500m", memory = "512Mi" }
           }
         }
         dynamic "volume" {

@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Overview, Usage, Users, Reliability and Analytics no longer fail over 30 days with
+  "too much client data": the 50,000-row bound now applies to each client instead of
+  Claude and Codex combined, and the dashboard pod memory limit rises from 256Mi to
+  512Mi for the larger combined fold.
+
 ## [1.11.0] - 2026-11-15
 
 ### Added

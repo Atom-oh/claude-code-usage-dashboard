@@ -150,6 +150,15 @@ test("idle markers do not consume the active-row budget and both classes remain 
   assert.throws(() => foldClientMetrics(Array(50001).fill(marker), ["claude"]), /too much client data/);
 });
 
+test("each client has its own active-row budget in a combined fold", () => {
+  const claude = { ...event, client: "claude" }, codex = { ...event, client: "codex" };
+  // 2026-11-15: 30 days held ~31k Claude and ~31k Codex rows, under each budget but not the sum.
+  const both = foldClientMetrics([...Array(50000).fill(claude), ...Array(50000).fill(codex)], ["claude", "codex"]);
+  assert.equal(both.totals.observed_records, 100000);
+  assert.throws(() => foldClientMetrics([...Array(50001).fill(codex), claude], ["claude", "codex"]), /too much client data/);
+  assert.throws(() => foldClientMetrics([...Array(50001).fill(claude), codex], ["claude", "codex"]), /too much client data/);
+});
+
 test("one fold supplies matching totals, model/user rows and time series", () => {
   const out = foldClientMetrics([
     event,
