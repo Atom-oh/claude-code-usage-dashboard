@@ -2028,5 +2028,14 @@
   "mfeee7328687a": "Explicit = called directly by the user, Automatic = selected by the agent, Nested = called by another skill (Claude only).",
   "m3e6ef8517161": "Explicit = called directly by the user, Automatic = selected by the agent.",
   "m67438422c844": "No events means none were recorded, not zero.",
-  "m2ef1e0a0f43a": "Could not read the skill records of {0}; shown as not collected."
+  "m2ef1e0a0f43a": "Could not read the skill records of {0}; shown as not collected.",
+  "m230bfa94fe54": "Open {0} calendar",
+  "meeabcb446f68": "Done selecting {0}",
+  "mbfa42cf6a12e": "Hour",
+  "mca4a187881db": "Minute",
+  "m1fd639e1ec96": "Second",
+  "m77f9e6084937": "Previous month",
+  "m4c33c6a0b753": "Next month",
+  "m83e222c2fb52": "Select date",
+  "m49e86c3288d4": "Unavailable"
 }

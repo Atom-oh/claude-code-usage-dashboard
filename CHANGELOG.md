@@ -40,6 +40,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Use a localized React calendar with an explicit completion control for each
+  date or time selection; keep second precision and apply the range separately.
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
   read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
   queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at

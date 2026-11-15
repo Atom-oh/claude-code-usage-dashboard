@@ -194,6 +194,103 @@ test("exact browser-local times reach the API and survive a shared link, includi
   expect(screen.getByLabelText("종료 시각").value).toMatch(/^2026-09-02T09:00(?::00)?$/);
 });
 
+test("finishing each time picker preserves the draft until the whole range is applied", async () => {
+  stubFetch();
+  mount("/cost?group=bedrock", cfg());
+  fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+  fireEvent.click(screen.getByRole("button", { name: "날짜·시간", exact: true }));
+  const before = loc.search;
+  const start = screen.getByLabelText("시작 시각");
+  const end = screen.getByLabelText("종료 시각");
+  fireEvent.change(start, { target: { value: "2026-09-01T09:15:30" } });
+  fireEvent.click(screen.getByRole("button", { name: "시작 시각 달력 열기" }));
+  expect(screen.getByRole("combobox", { name: "시작 시각 초" }).value).toBe("30");
+  fireEvent.change(screen.getByRole("combobox", { name: "시작 시각 시" }), { target: { value: "09" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "시작 시각 분" }), { target: { value: "15" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "시작 시각 초" }), { target: { value: "30" } });
+  fireEvent.click(screen.getByRole("button", { name: "시작 시각 선택 완료" }));
+  expect(start.value).toMatch(/^2026-09-01T09:15:30(?:\.000)?$/);
+  expect(loc.search).toBe(before);
+  fireEvent.change(end, { target: { value: "2026-09-02T09:00:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "종료 시각 달력 열기" }));
+  fireEvent.click(screen.getByRole("button", { name: "종료 시각 선택 완료" }));
+  expect(loc.search).toBe(before);
+  fireEvent.click(screen.getByRole("button", { name: "적용", exact: true }));
+  await waitFor(() => {
+    const params = new URLSearchParams(loc.search);
+    expect(params.get("from")).toBe("2026-09-01T00:15:30.000Z");
+    expect(params.get("to")).toBe("2026-09-02T00:00:00.000Z");
+    expect(params.get("group")).toBe("bedrock");
+  });
+});
+
+test("Escape closes the calendar and returns focus without dismissing the range editor", () => {
+  stubFetch();
+  const { container } = mount("/cost", cfg());
+  fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+  fireEvent.click(screen.getByRole("button", { name: "날짜·시간", exact: true }));
+  const opener = screen.getByRole("button", { name: "시작 시각 달력 열기" });
+  fireEvent.click(opener);
+  const day = container.querySelector(".react-datepicker__day--selected");
+  expect(day).not.toBeNull();
+  day.focus();
+  fireEvent.keyDown(day, { key: "Escape" });
+  expect(screen.queryByRole("button", { name: "시작 시각 선택 완료" })).toBeNull();
+  expect(document.activeElement).toBe(opener);
+  expect(screen.getByRole("button", { name: "적용", exact: true })).toBeTruthy();
+});
+
+test("calendar day selection keeps UTC boundaries and an inclusive final date", async () => {
+  stubFetch();
+  const { container } = mount("/cost", cfg());
+  fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+  const start = screen.getByLabelText("시작일");
+  fireEvent.change(start, { target: { value: "2026-09-01" } });
+  fireEvent.change(screen.getByLabelText("종료일"), { target: { value: "2026-09-04" } });
+  fireEvent.click(screen.getByRole("button", { name: "시작일 달력 열기" }));
+  const day = container.querySelector(".react-datepicker__day--002:not(.react-datepicker__day--outside-month)");
+  expect(day).not.toBeNull();
+  fireEvent.click(day);
+  fireEvent.click(screen.getByRole("button", { name: "시작일 선택 완료" }));
+  expect(start.value).toBe("2026-09-02");
+  fireEvent.click(screen.getByRole("button", { name: "적용", exact: true }));
+  await waitFor(() => {
+    const params = new URLSearchParams(loc.search);
+    expect(params.get("from")).toBe("2026-09-02T00:00:00.000Z");
+    expect(params.get("to")).toBe("2026-09-05T00:00:00.000Z");
+  });
+});
+
+test("a nonexistent local time is rejected after using the calendar", async () => {
+  const previousZone = process.env.TZ;
+  process.env.TZ = "America/New_York";
+  try {
+    stubFetch();
+    mount("/cost", cfg());
+    fireEvent.click(screen.getByRole("button", { name: "기간 직접 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "날짜·시간", exact: true }));
+    const start = screen.getByLabelText("시작 시각");
+    const end = screen.getByLabelText("종료 시각");
+    const before = loc.search;
+    fireEvent.change(start, { target: { value: "2026-03-08T02:30:00" } });
+    fireEvent.change(end, { target: { value: "2026-03-08T04:30:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "시작 시각 달력 열기" }));
+    fireEvent.click(screen.getByRole("button", { name: "시작 시각 선택 완료" }));
+    fireEvent.click(screen.getByRole("button", { name: "적용", exact: true }));
+    expect(screen.getByRole("alert").textContent).toContain("유효한 날짜와 시각");
+    expect(loc.search).toBe(before);
+    fireEvent.change(start, { target: { value: "2026-03-08T03:30:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "적용", exact: true }));
+    await waitFor(() => {
+      const params = new URLSearchParams(loc.search);
+      expect(params.get("from")).toBe("2026-03-08T07:30:00.000Z");
+      expect(params.get("to")).toBe("2026-03-08T08:30:00.000Z");
+    });
+  } finally {
+    process.env.TZ = previousZone;
+  }
+});
+
 test("exact time selection retains minutes and seconds and rejects empty, reversed or oversized ranges", async () => {
   stubFetch();
   mount("/cost", cfg({ rangeCapDays: 7 }));

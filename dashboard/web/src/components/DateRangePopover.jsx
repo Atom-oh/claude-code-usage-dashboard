@@ -1,33 +1,108 @@
 import { localizedMessage, messageText, translate, useLocale } from "../i18n/index.js";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { CalendarDays } from "lucide-react";
+import DatePicker from "react-datepicker";
+import { ko, enUS, ja, zhCN, es } from "date-fns/locale";
+import "react-datepicker/dist/react-datepicker.css";
 import { useRange } from "../RangeContext.jsx";
 import { useConfig } from "../ConfigContext.jsx";
 import { BROWSER_TIME_ZONE } from "../clientPresentation.js";
 import { SegmentedControl } from "./SegmentedControl.jsx";
 
 const ymdUtc = (d) => d.toISOString().slice(0, 10);
+const pad = (n) => String(n).padStart(2, "0");
+const ymdLocal = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const calendarLocale = { ko, en: enUS, ja, "zh-CN": zhCN, es };
+const calendarHeader = { ko: "yyyy년 M월", en: "LLLL yyyy", ja: "yyyy年M月", "zh-CN": "yyyy年M月", es: "LLLL yyyy" };
+const calendarDay = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return null;
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(year, month - 1, day, 12);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
+};
 const localDateTime = (d) => {
-  const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
+function PickerField({ id, label, value, setValue, mode, locale, active, onOpen, onDone, trigger, maxDay, onKeyDown }) {
+  const labelId = `${id}-label`;
+  const time = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.0+)?)?$/.exec(value);
+  const timeParts = [time?.[2] || "00", time?.[3] || "00", time?.[4] || "00"];
+  const setPart = (index, next) => {
+    if (!time) return;
+    const parts = [...timeParts];
+    parts[index] = next;
+    setValue(`${time[1]}T${parts.join(":")}`);
+  };
+  const changeDay = (date) => {
+    if (!date) return;
+    const suffix = mode === "time" ? `T${timeParts.join(":")}` : "";
+    setValue(`${ymdLocal(date)}${suffix}`);
+  };
+  return <div className="flex flex-col gap-1 text-[12px] text-ink-500">
+    <label id={labelId} htmlFor={id}>{label}</label>
+    <div className="flex min-w-0 items-center gap-2">
+      <input id={id} type={mode === "time" ? "datetime-local" : "date"}
+        step={mode === "time" ? 1 : undefined} value={value}
+        max={mode === "time" ? localDateTime(new Date()) : maxDay}
+        onChange={(event) => setValue(event.target.value)} onKeyDown={onKeyDown}
+        className="range-picker-input min-w-0 flex-1 rounded-md border border-ink-200 bg-white px-2 py-1 text-sm focus:border-brand-500 focus:outline-none" />
+      <button ref={trigger} type="button" onClick={onOpen} aria-expanded={active}
+        aria-label={translate("m230bfa94fe54", [label])}
+        className="shrink-0 rounded-md border border-ink-200 bg-white p-2 text-ink-600 hover:bg-ink-50">
+        <CalendarDays size={15} aria-hidden="true" />
+      </button>
+    </div>
+    {active && <div className="rounded-md border border-ink-200 bg-white p-2" role="group" aria-label={label}>
+      <DatePicker inline selected={calendarDay(value)} onChange={changeDay}
+        locale={calendarLocale[locale]} dateFormatCalendar={calendarHeader[locale]}
+        maxDate={mode === "date" ? calendarDay(maxDay) : new Date()}
+        previousMonthAriaLabel={translate("m77f9e6084937")} nextMonthAriaLabel={translate("m4c33c6a0b753")}
+        chooseDayAriaLabelPrefix={translate("m83e222c2fb52")} disabledDayAriaLabelPrefix={translate("m49e86c3288d4")} />
+      {mode === "time" && <div className="mt-2 flex gap-2">
+        {[["mbfa42cf6a12e", 24], ["mca4a187881db", 60], ["m1fd639e1ec96", 60]].map(([key, limit], index) => {
+          const partId = `${id}-${index}`;
+          return <div className="min-w-0 flex-1" key={key}>
+            <label id={`${partId}-label`} htmlFor={partId} className="block">{translate(key)}</label>
+            <select id={partId} aria-labelledby={`${labelId} ${partId}-label`} value={timeParts[index]}
+              disabled={!time} onChange={(event) => setPart(index, event.target.value)}
+              className="w-full rounded-md border border-ink-200 bg-white px-2 py-1 text-sm">
+              {Array.from({ length: limit }, (_, n) => <option key={n} value={pad(n)}>{pad(n)}</option>)}
+            </select>
+          </div>;
+        })}
+      </div>}
+      <div className="mt-2 flex justify-end">
+        <button type="button" onClick={() => { onDone(); trigger.current?.focus(); }}
+          className="rounded-md bg-brand-600 px-3 py-1 text-sm text-white hover:bg-brand-700">
+          {translate("meeabcb446f68", [label])}
+        </button>
+      </div>
+    </div>}
+  </div>;
+}
+
 export function DateRangePopover() {
-  const _locale = useLocale();
+  const locale = useLocale();
   const { from, to, custom, mode, setRange } = useRange();
   const { rangeCapDays } = useConfig();
   const [open, setOpen] = useState(false);
   const [inputMode, setInputMode] = useState("date");
+  const [activePicker, setActivePicker] = useState(null);
   const [fromStr, setFromStr] = useState("");
   const [toStr, setToStr] = useState("");
   const [err, setErr] = useState("");
   const wrapRef = useRef(null);
   const popoverRef = useRef(null);
-  const [offset, setOffset] = useState(0);
+  const fromTrigger = useRef(null);
+  const toTrigger = useRef(null);
+  const [position, setPosition] = useState({ left: 16, top: 16 });
   const fromId = useId();
   const toId = useId();
 
   const fillInputs = (nextMode) => {
+    setActivePicker(null);
     setInputMode(nextMode);
     const start = mode === "custom" ? custom.from : from;
     const end = mode === "custom" ? custom.to : to;
@@ -44,15 +119,17 @@ export function DateRangePopover() {
   useLayoutEffect(() => {
     if (!open) return;
     const align = () => {
-      const right = wrapRef.current.getBoundingClientRect().right;
-      const width = popoverRef.current.getBoundingClientRect().width;
-      const left = Math.max(16, Math.min(right - width, window.innerWidth - width - 16));
-      setOffset(left - (right - width));
+      const anchor = wrapRef.current.getBoundingClientRect();
+      const panel = popoverRef.current.getBoundingClientRect();
+      const left = Math.max(16, Math.min(anchor.right - panel.width, window.innerWidth - panel.width - 16));
+      const top = Math.max(16, Math.min(anchor.bottom + 4, window.innerHeight - panel.height - 16));
+      setPosition((old) => old.left === left && old.top === top ? old : { left, top });
     };
     align();
     window.addEventListener("resize", align);
-    return () => window.removeEventListener("resize", align);
-  }, [open]);
+    window.addEventListener("scroll", align, true);
+    return () => { window.removeEventListener("resize", align); window.removeEventListener("scroll", align, true); };
+  }, [open, activePicker, locale]);
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +137,13 @@ export function DateRangePopover() {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
     };
     const onKey = (e) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        if (activePicker) {
+          (activePicker === "from" ? fromTrigger : toTrigger).current?.focus();
+          setActivePicker(null);
+        }
+        else setOpen(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -68,7 +151,7 @@ export function DateRangePopover() {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, activePicker]);
 
   const apply = () => {
     if (inputMode === "time") {
@@ -131,8 +214,6 @@ export function DateRangePopover() {
   };
 
   const maxDay = ymdUtc(new Date());
-  const inputCls = "text-sm px-2 py-1 rounded-md border border-ink-200 bg-white focus:border-brand-500 focus:outline-none";
-
   return (
     <div className="relative" ref={wrapRef}>
       <button
@@ -146,37 +227,19 @@ export function DateRangePopover() {
         <CalendarDays size={14} />
       </button>
       {open && (
-        <div ref={popoverRef} style={{ transform: `translateX(${offset}px)` }}
-          className="absolute right-0 top-full mt-1 z-20 w-[min(24rem,calc(100vw-2rem))] bg-card border border-ink-100 rounded-lg shadow-card p-3">
+        <div ref={popoverRef} style={position} role="group" aria-label={translate("md8eef220eac1")}
+          className="fixed z-20 max-h-[calc(100vh-2rem)] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-ink-100 bg-card p-3 shadow-card">
           <div className="flex flex-col gap-2">
             <SegmentedControl options={[{ value: "date", label: translate("m09f76a1b7a67") }, { value: "time", label: translate("m2e988f0ffe70") }]}
               value={inputMode} onChange={fillInputs} />
-            <label className="flex flex-col gap-1 text-[12px] text-ink-500" htmlFor={fromId}>
-              {inputMode === "time" ? translate("m65bdaefd24da") : translate("mf86e346d4251")}
-              <input
-                id={fromId}
-                type={inputMode === "time" ? "datetime-local" : "date"}
-                step={inputMode === "time" ? 1 : undefined}
-                value={fromStr}
-                max={inputMode === "time" ? localDateTime(new Date()) : maxDay}
-                onChange={(e) => setFromStr(e.target.value)}
-                onKeyDown={onKeyDownInput}
-                className={inputCls}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-[12px] text-ink-500" htmlFor={toId}>
-              {inputMode === "time" ? translate("m26c25fca2668") : translate("m9e586213e334")}
-              <input
-                id={toId}
-                type={inputMode === "time" ? "datetime-local" : "date"}
-                step={inputMode === "time" ? 1 : undefined}
-                value={toStr}
-                max={inputMode === "time" ? localDateTime(new Date()) : maxDay}
-                onChange={(e) => setToStr(e.target.value)}
-                onKeyDown={onKeyDownInput}
-                className={inputCls}
-              />
-            </label>
+            <PickerField id={fromId} label={translate(inputMode === "time" ? "m65bdaefd24da" : "mf86e346d4251")}
+              value={fromStr} setValue={setFromStr} mode={inputMode} locale={locale} maxDay={maxDay}
+              active={activePicker === "from"} onOpen={() => setActivePicker(activePicker === "from" ? null : "from")}
+              onDone={() => setActivePicker(null)} trigger={fromTrigger} onKeyDown={onKeyDownInput} />
+            <PickerField id={toId} label={translate(inputMode === "time" ? "m26c25fca2668" : "m9e586213e334")}
+              value={toStr} setValue={setToStr} mode={inputMode} locale={locale} maxDay={maxDay}
+              active={activePicker === "to"} onOpen={() => setActivePicker(activePicker === "to" ? null : "to")}
+              onDone={() => setActivePicker(null)} trigger={toTrigger} onKeyDown={onKeyDownInput} />
             <p className="text-[11px] text-ink-400">{inputMode === "time"
               ? translate("mcf496d8bac9f", [BROWSER_TIME_ZONE])
               : translate("m27d9b76bd2ec")}</p>

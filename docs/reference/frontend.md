@@ -148,7 +148,9 @@ it does not change SQL filtering.
 [RangeContext.jsx](../../dashboard/web/src/RangeContext.jsx) supports presets, current UTC
 month, and custom ranges from UTC calendar dates, exact browser-local dates and times
 (second precision), or drag zoom. Exact end times are exclusive; calendar selections
-include the selected last day. Presets use hourly buckets for
+include the selected last day. React Date Picker supplies the localized calendar;
+each field's completion control closes that selection, while Apply commits the range.
+Presets use hourly buckets for
 at most two days, daily otherwise; calendar ranges use the same rule. Exact times and drag zoom choose
 from a resolution ladder targeting at most 96 buckets, with minute buckets limited to
 four-hour windows. Month mode uses daily buckets.
