@@ -478,10 +478,10 @@ test("the parent is the sender's turn running when a send within 60 s before the
 
 test("a send without a receiver turn of the owner does not link", () => {
   const sends = [send("spawn", "root", "other", "2026-11-05T01:00:02Z")];
-  assert.deepEqual(communicationLinks(sends, [], own), { parent: null, links: [] });
+  assert.deepEqual(communicationLinks(sends, [], own), { parent: null, links: [], limited: false });
   // Receiver turns outside the window or before the send do not link either.
   const turns = [turn("other", C1, "2026-11-05T01:01:03Z"), turn("other", C2, "2026-11-05T01:00:01Z")];
-  assert.deepEqual(communicationLinks(sends, turns, own), { parent: null, links: [] });
+  assert.deepEqual(communicationLinks(sends, turns, own), { parent: null, links: [], limited: false });
   assert.deepEqual(communicationLinks([send("spawn", "root", "other", "2026-11-05T02:00:00Z")],
     [turn("other", C1, "2026-11-05T02:00:01Z")], own).links, []);
 });
@@ -495,6 +495,20 @@ const commRun = (seen, { rows = [], sends = [], turns = [], completions = [] }) 
   throw new Error("unexpected SQL");
 };
 const commTurn = { turnId: P, conversationId: "root", startMs: T0, endMs: T1, traceIds: ["t"], namesTurn: true };
+
+test("more eligible log-linked children than AGENT_LIMIT keep the first ones and flag the result limited", async () => {
+  const n = AGENT_LIMIT + 1;
+  const sends = Array.from({ length: n }, (_, i) => ({ kind: "spawn", sender: "root", receiver: `sub${i}`, at_ms: String(T0 + i * 100) }));
+  const turns = Array.from({ length: n }, (_, i) => turn(`sub${i}`, uuid(100 + i), new Date(T0 + i * 100 + 50).toISOString()));
+  const found = communicationLinks(sends, turns, own);
+  assert.deepEqual([found.links.length, found.limited, found.links.at(-1).child_conversation], [AGENT_LIMIT, true, `sub${AGENT_LIMIT - 1}`]);
+  // Exactly AGENT_LIMIT eligible children are complete.
+  assert.equal(communicationLinks(sends.slice(0, AGENT_LIMIT), turns, own).limited, false);
+  const run = commRun([], { sends, turns });
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([out.links_source, out.children.length, out.limited, out.total.cost_partial, out.known_zero],
+    ["log", AGENT_LIMIT, true, true, false]);
+});
 
 test("an unlinked send_input call of the turn blocks a known zero", async () => {
   // send_input is no spawn call, but it may have started a subagent turn the traces did not link.

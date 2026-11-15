@@ -258,19 +258,21 @@ LIMIT ${COMMUNICATION_LIMIT + 1}`,
 // turn rows of the conversations involved (the task's own included). A send's child is the
 // receiver's first turn starting in [t, t + COMMUNICATION_CHILD_MS]; the parent is the send to this
 // conversation up to that long before the turn, with the sender's turn running at the send.
+// `limited`: more eligible children than AGENT_LIMIT were found and the rest are not returned.
 export function communicationLinks(sends, turns, { conversationId, turnId, startMs, endMs }) {
   const valid = sends.filter((x) => IDENT.test(x.sender ?? "") && IDENT.test(x.receiver ?? "")
     && x.sender !== x.receiver && /^(spawn|followup)$/.test(x.kind ?? "") && Number.isFinite(count(x.at_ms)))
     .map((x) => ({ ...x, t: count(x.at_ms) })).sort((a, b) => a.t - b.t);
   const starts = (t) => count(t.start_ms);
   const links = [], seen = new Set([turnId]);
+  let limited = false;
   for (const x of valid) {
     if (x.sender !== conversationId || x.t < startMs || x.t > endMs) continue;
     const child = turns.filter((t) => t.conversation_id === x.receiver && TURN_ID.test(t.turn_id ?? "") && starts(t) !== null
       && starts(t) >= x.t && starts(t) <= x.t + COMMUNICATION_CHILD_MS)
       .reduce((a, b) => (!a || starts(b) < starts(a) ? b : a), null);
     if (!child || seen.has(child.turn_id)) continue;
-    if (links.length >= AGENT_LIMIT) break;
+    if (links.length >= AGENT_LIMIT) { limited = true; break; }
     seen.add(child.turn_id);
     links.push({ parent_turn: turnId, parent_conversation: conversationId, tool_span: `communication:${x.kind}`,
       tool_span_id: null, child_turn: child.turn_id, child_conversation: x.receiver, child_start_ms: starts(child), depth: 1 });
@@ -286,7 +288,7 @@ export function communicationLinks(sends, turns, { conversationId, turnId, start
       child_turn: turnId, child_conversation: conversationId, child_start_ms: startMs, depth: 1 };
     break;
   }
-  return { parent, links };
+  return { parent, links, limited };
 }
 
 // Summed known values with a partial flag; all unknown is null.
@@ -428,7 +430,8 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     }
     const found = communicationLinks(sends, turnRows, { conversationId: turn.conversationId, turnId: turn.turnId,
       startMs: turn.startMs, endMs: turn.endMs });
-    if (found.parent || found.links.length) { walked = { ...walked, ...found }; linksSource = "log"; }
+    limited ||= found.limited;
+    if (found.parent || found.links.length) { walked = { ...walked, parent: found.parent, links: found.links }; linksSource = "log"; }
   }
   const conversationIds = [...new Set(walked.links.map((l) => l.child_conversation).filter((c) => IDENT.test(c ?? "")))];
   const parentConversation = walked.parent && IDENT.test(walked.parent.parent_conversation ?? "")
