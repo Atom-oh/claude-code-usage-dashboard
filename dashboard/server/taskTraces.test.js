@@ -1737,3 +1737,43 @@ test("a rollup detail whose spans hold fewer spawn calls than its turn row has n
   assert.deepEqual([clipped.task.subagent_calls, clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents],
     [0, null, false, null]);
 });
+
+test("a raw detail whose spans reach the clipped span window has no spawn evidence", async () => {
+  const raw = (id, at, endAt) => ({ turn_id: id, conversation_id: "c1", started_at: at.slice(0, 19) + "Z",
+    start_ms: String(ms(at)), end_ms: String(ms(endAt)), sampling_calls: "2", legacy_calls: "0", sampling_tries: "0",
+    compactions: "0", app_version: "0.169.0", llm_calls: "2", sampling_span: "codex.sampling", models: ["openai.gpt-6-astra"] });
+  const detailFor = (id, at, endAt) => userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ rawTurns: [raw(id, at, endAt)], spans: [codexSpan("s1", new Date(ms(at) + 1000).toISOString())] }),
+    DEFAULT_CODEX_PRICING, null);
+  // Inside the span window: no spawn span is a known zero on 0.166+.
+  const whole = await detailFor(U1, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z");
+  assert.deepEqual([whole.agents.spawn_calls, whole.agents.known_zero, whole.task.subagents], [0, true, 0]);
+  // The raw spans stop at to + 24h: a turn still running there may have spawned later (unknown).
+  const clipped = await detailFor(U2, "2026-11-05T20:00:00Z", "2026-11-06T23:59:30Z");
+  assert.deepEqual([clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents], [null, false, null]);
+});
+
+test("a rollup detail takes the turn-naming evidence from the row's names_turn", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const detailFor = (extra) => userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z", extra)],
+      spans: [codexSpan("s1", "2026-11-05T05:00:01Z")] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  // The row says no span named the turn although its kept version is 0.166+: no known zero, as the list.
+  const unnamed = await detailFor({ names_turn: 0 });
+  assert.deepEqual([unnamed.task.subagent_calls, unnamed.agents.known_zero, unnamed.task.subagents], [null, false, null]);
+  // A row naming the turn without a version string still has the evidence.
+  const named = await detailFor({ names_turn: 1, app_version: "" });
+  assert.deepEqual([named.task.subagent_calls, named.agents.known_zero, named.task.subagents], [0, true, 0]);
+});
+
+test("a rollup detail gates compactions on the row's version", async () => {
+  const id = v7("2026-11-05T05:00:00Z", 1);
+  const detailFor = (extra) => userTaskDetail(from, to, { id: `codex:c1:${id}`, userExact: "a" }, both,
+    storeRun({ turns: [rollupRow(id, "2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z", { legacy_calls: "2", ...extra })],
+      spans: [codexSpan("s1", "2026-11-05T05:00:01Z")] }), DEFAULT_CODEX_PRICING, BOUNDARY);
+  const old = await detailFor({ compactions: "0", app_version: "0.160.1" });
+  assert.deepEqual([old.context.compactions, old.context.compactions_total], [null, null]);
+  // The row counts 3; the bounded spans show none of them: the total stays the row's.
+  const known = await detailFor({ compactions: "3", app_version: "0.161.0" });
+  assert.deepEqual([known.context.compactions.length, known.context.compactions_total, known.context.compactions_partial], [0, 3, true]);
+});

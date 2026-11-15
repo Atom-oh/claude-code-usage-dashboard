@@ -702,16 +702,21 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const detail = foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
   // Subagent turns linked through the trace's parent-span chain; their own completions price them.
   let spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
-  // On the rollup the turn row is unclipped but the spans stop at to + 24h: spawn calls read from
-  // clipped spans, or fewer than the row counts, are partial evidence (unknown, never a known zero).
-  if (rollup && spawnSpanIds !== null) {
-    const rowCalls = count(entry.turn.spawn_calls), end = count(entry.turn.end_ms);
+  // The spans stop at to + 24h on both paths: a turn still running within a minute of that bound
+  // may have later spawn calls (partial evidence: unknown, never a known zero). On the rollup the
+  // turn row is unclipped, so spans holding fewer spawn calls than the row counts are partial too.
+  if (spawnSpanIds !== null) {
+    const rowCalls = rollup ? count(entry.turn.spawn_calls) : null, end = count(entry.turn.end_ms);
     if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS || (rowCalls !== null && rowCalls > spawnSpanIds.length))
       spawnSpanIds = null;
   }
+  // Turn-naming evidence: the rollup row's own flag (any span of the turn on 0.166+), as the list
+  // reads it; raw rows carry only the kept version.
+  const namesTurn = entry.turn.names_turn !== undefined && entry.turn.names_turn !== null
+    ? Number(entry.turn.names_turn) > 0 : namesTurnOnTools(entry.turn.app_version);
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
-    traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices, turnsBoundary });
+    traceIds, tracesPartial: detail.truncated, namesTurn }, detail.task, spawnSpanIds, { from, to, run, prices, turnsBoundary });
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
   return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, activity, environment: null, owner };

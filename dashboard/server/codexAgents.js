@@ -298,8 +298,9 @@ function knownSum(values) {
 
 // Pure fold. links: walkLineage links; entries: linkCompletions entries of the subagent
 // conversations; task: the detail's own folded task; spawnSpanIds: the task's own SPAWN_SPANS
-// span ids (null when the detail's spans were truncated).
-export function foldAgents({ task, parent = null, links = [], entries = [], limited = false, spawnSpanIds = null, namesTurn = false, linksSource = null, sendsSeen = false }) {
+// span ids (null when the detail's spans were truncated); toolSpanIds: the turn's own lineage spans
+// of any tool that may start a subagent turn (spawn, follow-up, send_input).
+export function foldAgents({ task, parent = null, links = [], entries = [], limited = false, spawnSpanIds = null, namesTurn = false, linksSource = null, sendsSeen = false, toolSpanIds = [] }) {
   const parentId = parent ? taskId(parent.parent_conversation, parent.parent_turn) : null;
   const byTurn = new Map(entries.map((e) => [e.turn.turn_id, e]));
   const idOfTurn = new Map(links.map((l) => [l.child_turn, taskId(l.child_conversation, l.child_turn)]));
@@ -353,8 +354,10 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
     limited,
     // Positive evidence of no subagent calls: spans read complete, no call, and a version that
     // names its turn on tool spans (a missing call there is a real absence, not a missing tag),
+    // no unlinked tool span of the turn (a send_input may have started a turn the traces missed)
     // and no communication send of the turn's conversation in its window.
-    known_zero: spawnSpanIds !== null && spawnSpanIds.length === 0 && !limited && links.length === 0 && Boolean(namesTurn) && !sendsSeen,
+    known_zero: spawnSpanIds !== null && spawnSpanIds.length === 0 && !limited && links.length === 0 && Boolean(namesTurn)
+      && toolSpanIds.every((id) => linkedSpawns.has(id)) && !sendsSeen,
     total: { llm_calls: calls.value, llm_calls_partial: calls.partial || limited,
       cost_usd: cost.value, cost_partial: cost.partial || limited || Boolean(task.cost_partial)
         || children.some((c) => c.cost_partial) },
@@ -451,7 +454,9 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { run, prices
     const allTurns = [...turnRows.filter((t) => wanted.has(t.conversation_id)), ...turns.slice(0, CODEX_TURN_LIMIT)];
     entries = linkCompletions(allTurns, completions.slice(0, CODEX_COMPLETION_LIMIT), { prices }).entries;
   }
-  return foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds, namesTurn: turn.namesTurn, linksSource, sendsSeen });
+  const toolSpanIds = rows.filter((r) => LINK_TOOLS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id);
+  return foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds, namesTurn: turn.namesTurn,
+    linksSource, sendsSeen, toolSpanIds });
 }
 
 // A linked count, or a zero only with positive evidence (`known_zero`); otherwise unknown (no
