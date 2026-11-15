@@ -344,7 +344,6 @@ function ToolTable({ rows, reliability = false, stale = false }) {
 
 // Skills invoked per client (/api/clients/skills) with how each was invoked. Codex has no
 // nested kind ("—"); a client with no recorded skill event shows none recorded, never zero.
-const SKILL_ROW_LIMIT = 200;
 function SkillTable({ api, clients }) {
   const _locale = useLocale();
   if (!api) return null;
@@ -357,8 +356,13 @@ function SkillTable({ api, clients }) {
   const byClient = (api.data?.by_client || []).filter((row) => clients.includes(row.client));
   const rows = byClient.flatMap((row) => (row.skills || []).map((skill) => ({ client: row.client, ...skill })));
   const limited = byClient.filter((row) => row.skills_limited);
+  // A client whose read came back malformed (skills null) is unavailable, not "none recorded".
+  const unknown = byClient.filter((row) => !Array.isArray(row.skills));
+  const unknownNote = unknown.length > 0 && <p className="text-[12px] text-warning-text">
+    {translate("m2ef1e0a0f43a", [unknown.map((row) => clientName(row.client)).join(", ")])}</p>;
   if (!rows.length) return <Card title={title} subtitle={subtitle}>
-    <p className="text-sm text-ink-500">{translate("m1dc80ccab047")}</p></Card>;
+    {unknown.length < byClient.length && <p className="text-sm text-ink-500">{translate("m1dc80ccab047")}</p>}
+    {unknownNote}</Card>;
   return <>
     <ResultTable title={title} subtitle={subtitle}
       columns={[CLIENT, { key: "skill", label: translate("m2a84c94ce347"), render: text }, number("calls", translate("m7ed9c4cb0ba9")),
@@ -366,7 +370,8 @@ function SkillTable({ api, clients }) {
         ...(claude ? [number("nested", translate("m8aa7e241cf79"))] : []), number("users", translate("m1ac6e422b7dc")), number("sessions", translate("me600d4f5926e"))]}
       rows={rows} exportName="clients_skills" stale={api.stale} />
     {limited.length > 0 && <p className="-mt-4 text-[12px] text-warning-text">
-      {translate("m06eb37c1299f", [SKILL_ROW_LIMIT])} ({limited.map((row) => clientName(row.client)).join(", ")})</p>}
+      {translate("m06eb37c1299f", [api.data?.skill_limit ?? "—"])} ({limited.map((row) => clientName(row.client)).join(", ")})</p>}
+    {unknownNote && <div className="-mt-4">{unknownNote}</div>}
   </>;
 }
 

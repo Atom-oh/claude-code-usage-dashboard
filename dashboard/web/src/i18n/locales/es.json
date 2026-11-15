@@ -2027,5 +2027,6 @@
   "mdc7506793fcd": "Los skills de Codex se cuentan mediante el evento codex.skill_invocation.",
   "mfeee7328687a": "Explícito = invocado directamente por el usuario, Automático = seleccionado por el agente, Anidado = invocado por otro skill (solo Claude).",
   "m3e6ef8517161": "Explícito = invocado directamente por el usuario, Automático = seleccionado por el agente.",
-  "m67438422c844": "Si no hay ningún evento, no se registró; no se cuenta como 0."
+  "m67438422c844": "Si no hay ningún evento, no se registró; no se cuenta como 0.",
+  "m2ef1e0a0f43a": "No se pudieron leer los registros de skill de {0}; se muestran como no recopilados."
 }

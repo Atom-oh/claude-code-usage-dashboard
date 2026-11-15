@@ -45,6 +45,9 @@ const db = http.createServer(async(req,res)=>{
     rows=[{effort:'high',model:'claude-sonnet-5',backend:selected||'bedrock-runtime',
       reported_cost:selected==='anthropic'?3:2,input_tokens:49,output_tokens:30,
       cost_counter_rows:1,observed_usage_rows:1}];
+  } else if(sql.includes('skill_events')) {
+    dataQueries++;
+    rows=[{skill:sql.includes('codex_events')?'codex-skill':'claude-skill',calls:2,explicit:1,automatic:1,nested:0,users:1,sessions:1}];
   } else if(sql.includes('codex_events') || sql.includes('claude_events')) {
     dataQueries++;
     rows=[{kind:'prompt',top:1,tool_key:'',events:sql.includes('codex_events')?3:1},
@@ -225,6 +228,25 @@ test("shared productivity rows gate clients and filters before queries and isola
   assert.equal(both[1].body.by_client[0].prompts, 1);
   assert.equal(both[2].dataQueries, 1);
   assert.equal(both[3].dataQueries, 0);
+});
+
+test("skill usage validates filters before queries and keys its cache by client and filters", async () => {
+  const base = `/api/clients/skills?${range}`;
+  const rows = await scenario(true, true, [`${base}&unauth=1`, `${base}&client=claude`, `${base}&client=codex`,
+    `${base}&client=codex&backend=bedrock-mantle`, `${base}&client=codex&userExact=a%40x.invalid`, `${base}&client=codex`,
+    `${base}&group=bedrock`, `${base}&client=other`]);
+  assert.equal(rows[0].status, 401);
+  assert.equal(rows[0].dataQueries, 0);
+  assert.equal(rows[1].cache, "no-store");
+  assert.deepEqual(rows.slice(1, 6).map((row) => row.body.by_client.map((r) => [r.client, r.skills[0].skill])),
+    [[["claude", "claude-skill"]], [["codex", "codex-skill"]], [["codex", "codex-skill"]], [["codex", "codex-skill"]],
+      [["codex", "codex-skill"]]]);
+  // A different client, backend or exact user is its own entry; the same view is served from cache.
+  assert.deepEqual(rows.slice(1, 6).map((row) => row.dataQueries), [1, 1, 1, 1, 0]);
+  for (const row of rows.slice(6)) {
+    assert.equal(row.status, 400);
+    assert.equal(row.dataQueries, 0);
+  }
 });
 
 test("token economics route validates filters before queries and gates unbackfilled windows", async () => {

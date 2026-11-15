@@ -10,6 +10,8 @@ test("both skill reads count each delivered event once and map invocation kinds"
     assert.match(sql, /SELECT DISTINCT Timestamp, mapSort\(ResourceAttributes\) AS r, mapSort\(LogAttributes\) AS a/);
     assert.match(sql, /countIf\(kind = 'explicit'\) AS explicit/);
     assert.match(sql, new RegExp(`LIMIT ${SKILL_ROW_LIMIT + 1}`));
+    // Events without a skill name are kept (as one unnamed row), not dropped.
+    assert.doesNotMatch(sql, /WHERE skill != ''/);
   }
   assert.match(claude, /EventName IN \('skill_activated', 'claude_code\.skill_activated'\)/);
   assert.match(claude, /'user-slash', 'explicit'.*'claude-proactive', 'automatic'/s);
@@ -37,7 +39,12 @@ test("a client's skills keep labels and counts; Codex has no nested kind", () =>
   const claude = foldClientSkills("claude", rows);
   assert.deepEqual(claude.skills[0], { skill: "superpowers:brainstorming", calls: 5, explicit: 1, automatic: 3, nested: 1, users: 2, sessions: 4 });
   assert.equal(claude.skills[1].skill, null);
-  assert.deepEqual(claude.totals, { skills: 2, calls: 6, explicit: 1, automatic: 4, nested: 1 });
+  // Named skills count; the unnamed row stays in the call totals.
+  assert.deepEqual(claude.totals, { skills: 1, calls: 6, explicit: 1, automatic: 4, nested: 1 });
+  // Events without a usable name fold into one unnamed row, whose distinct counts become unknown.
+  const folded = foldClientSkills("claude", [rows[1], { ...rows[1], skill: "" }, rows[0]]);
+  assert.deepEqual(folded.skills.map((r) => [r.skill, r.calls, r.users, r.sessions]),
+    [[null, 2, null, null], ["superpowers:brainstorming", 5, 2, 4]]);
   const codex = foldClientSkills("codex", rows);
   assert.equal(codex.skills[0].nested, null);
   assert.equal(codex.totals.nested, null);
@@ -59,6 +66,7 @@ test("clientSkills reads each selected client once over the overview's effective
   };
   const out = await clientSkills(from, to, { client: "all" }, ["claude", "codex"], undefined, run);
   assert.deepEqual(out.clients, ["claude", "codex"]);
+  assert.equal(out.skill_limit, SKILL_ROW_LIMIT);
   assert.equal(seen.length, 2);
   assert.deepEqual(out.by_client[0], { client: "claude", skills: [], skills_limited: false,
     totals: { skills: 0, calls: 0, explicit: 0, automatic: 0, nested: 0 } });

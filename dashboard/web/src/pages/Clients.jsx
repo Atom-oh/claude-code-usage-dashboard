@@ -85,10 +85,15 @@ export default function Clients({ page = "overview" }) {
   // and active-time counters), so on Productivity an empty overview waits for the productivity
   // response and shows the sections when it has observations.
   const productivityPage = page === "productivity" && effortBounds.from;
+  // Skill events are not overview usage rows: on Usage an empty overview still shows the skill
+  // table when skills were recorded, and a failed skills request as its error.
+  const usagePage = page === "usage" && effortBounds.from;
+  const skillsObserved = (skills.data?.by_client || []).some((row) => row.skills === null || row.skills?.length > 0);
   // A failed productivity request is shown as an error in its sections, never as "no data".
   const pageEmpty = empty && !(productivityPage && (productivity.loading || productivity.error
-    || hasProductivityObservations(productivity.data)));
-  const productivityPending = empty && productivityPage && productivity.loading;
+    || hasProductivityObservations(productivity.data)))
+    && !(usagePage && (skills.loading || skills.error || skillsObserved));
+  const productivityPending = empty && ((productivityPage && productivity.loading) || (usagePage && skills.loading));
   const breakdowns = page === "cost" ? <CostBreakdowns clients={clients} data={data}
     loading={loading} error={error} empty={empty} claudeEffort={claudeEffort} codexEffort={codexEffort} /> : null;
 

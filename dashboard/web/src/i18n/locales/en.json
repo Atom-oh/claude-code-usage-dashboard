@@ -2027,5 +2027,6 @@
   "mdc7506793fcd": "Codex skills are counted using the codex.skill_invocation event.",
   "mfeee7328687a": "Explicit = called directly by the user, Automatic = selected by the agent, Nested = called by another skill (Claude only).",
   "m3e6ef8517161": "Explicit = called directly by the user, Automatic = selected by the agent.",
-  "m67438422c844": "No events means none were recorded, not zero."
+  "m67438422c844": "No events means none were recorded, not zero.",
+  "m2ef1e0a0f43a": "Could not read the skill records of {0}; shown as not collected."
 }

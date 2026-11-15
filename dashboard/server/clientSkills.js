@@ -34,7 +34,6 @@ SELECT skill,
     uniqExactIf(user, user != '') AS users,
     uniqExactIf(session, session != '') AS sessions
 FROM skill_events
-WHERE skill != ''
 GROUP BY skill
 ORDER BY calls DESC, skill
 LIMIT ${SKILL_ROW_LIMIT + 1}`;
@@ -76,18 +75,28 @@ export function codexSkillsUsageSql(from, to, filters = {}) {
 }
 
 // One client's rows: [{ skill, calls, explicit, automatic, nested, users, sessions }]. Codex has
-// no nested kind (null). A skill name that is not label-shaped is withheld (null); a malformed
-// count stays null. A malformed (non-array) response is null (unknown), not an empty list; a
+// no nested kind (null). Events without a label-shaped name (none, or free text) are kept in one
+// unnamed row (skill null) so they stay in the counts; when several raw names fold into it, its
+// distinct users and sessions are unknown (null). A malformed count stays null. A malformed (non-array) response is null (unknown), not an empty list; a
 // failed read fails the request.
 export function foldClientSkills(client, rows) {
   if (!Array.isArray(rows)) return { client, skills: null, skills_limited: false, totals: null };
-  const skills = rows.slice(0, SKILL_ROW_LIMIT).map((r) => ({
-    skill: label(r.skill), calls: count(r.calls), explicit: count(r.explicit), automatic: count(r.automatic),
-    nested: client === "codex" ? null : count(r.nested), users: count(r.users), sessions: count(r.sessions),
-  }));
+  const add = (a, b) => (a === null || b === null ? null : a + b);
+  const skills = [];
+  let unnamed = null;
+  for (const r of rows.slice(0, SKILL_ROW_LIMIT)) {
+    const row = { skill: label(r.skill), calls: count(r.calls), explicit: count(r.explicit), automatic: count(r.automatic),
+      nested: client === "codex" ? null : count(r.nested), users: count(r.users), sessions: count(r.sessions) };
+    if (row.skill !== null) { skills.push(row); continue; }
+    if (!unnamed) { unnamed = row; skills.push(row); continue; }
+    for (const key of ["calls", "explicit", "automatic", "nested"])
+      unnamed[key] = client === "codex" && key === "nested" ? null : add(unnamed[key], row[key]);
+    unnamed.users = null;
+    unnamed.sessions = null;
+  }
   const sum = (key) => skills.reduce((total, s) => total === null || s[key] === null ? null : total + s[key], 0);
   return { client, skills, skills_limited: rows.length > SKILL_ROW_LIMIT,
-    totals: { skills: skills.length, calls: sum("calls"), explicit: sum("explicit"), automatic: sum("automatic"),
+    totals: { skills: skills.filter((s) => s.skill !== null).length, calls: sum("calls"), explicit: sum("explicit"), automatic: sum("automatic"),
       nested: client === "codex" ? null : sum("nested") } };
 }
 
@@ -102,7 +111,7 @@ export async function clientSkills(from, to, raw, enabledClients, externalSignal
     return (signal) => run(sql.sql, sql.params, signal);
   });
   const results = await clientQueryBatch(jobs, externalSignal);
-  return { clients: filters.clients,
+  return { clients: filters.clients, skill_limit: SKILL_ROW_LIMIT,
     by_client: filters.clients.map((client, i) => foldClientSkills(client, Array.isArray(results[i]) ? results[i] : null)),
     effective_range: { from: from.toISOString(), to: to.toISOString(), requested_to: requestedTo.toISOString() } };
 }

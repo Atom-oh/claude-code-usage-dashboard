@@ -317,7 +317,7 @@ function routeCacheKey(path, query) {
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
       || path === "/api/clients/productivity" || path === "/api/clients/activity"
-      || path === "/api/clients/token-economics") {
+      || path === "/api/clients/token-economics" || path === "/api/clients/skills") {
     const filters = validateClientFilters(query, path === "/api/codex/insights" ? ["codex"]
       : path === "/api/clients/claude-effort" ? ["claude"] : clientConfig.enabledClients);
     const normalized = { from: query.from, to: query.to,
@@ -342,7 +342,8 @@ function routeCacheKey(path, query) {
         const { from, to } = parseRange(query, RANGE_OPTS);
         const w = tokenEconomicsWindow(from, to, filters.clients, query.intervalHours);
         return { effectiveFrom: w.from.toISOString(), effectiveTo: w.to.toISOString(), bucketSeconds: String(w.bucketSeconds) };
-      })() : path === "/api/clients/productivity" || path === "/api/clients/activity" ? (() => {
+      })() : path === "/api/clients/productivity" || path === "/api/clients/activity"
+        || path === "/api/clients/skills" ? (() => {
         const { from, to } = parseRange(query, RANGE_OPTS);
         return { effectiveTo: effectiveClientEnd(from, to, filters.clients).toISOString() };
       })() : {}) };

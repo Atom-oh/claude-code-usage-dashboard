@@ -789,6 +789,28 @@ test("productivity-only evidence shows the productivity sections instead of the 
   expect(document.querySelector("[data-shared-client-panels]")).toBeNull();
 });
 
+test("recorded skill events show the Usage skill table even when the overview is empty", async () => {
+  const window = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" };
+  const zero = { ...codexUsage, client: "claude", cost_basis: "client_reported",
+    tokens: 0, observed_tokens: 0, cost_usd: 0, sessions: 0, users: 0, observed_records: 0 };
+  const empty = clientOverview({ clients: ["claude"], observed_records: 0, totals: zero, by_client: [zero],
+    by_model: [], by_user: [], tools: [], timeseries: [], effective_range: window });
+  const skillsBody = (skills) => ({ clients: ["claude"], skill_limit: 200, effective_range: window,
+    by_client: [{ client: "claude", skills, skills_limited: false, totals: null }] });
+  let skills = { status: 200, body: skillsBody([{ skill: "superpowers:brainstorming", calls: 2, explicit: 0, automatic: 2,
+    nested: 0, users: 1, sessions: 1 }]) };
+  const other = (u) => u.pathname === "/api/clients/skills" ? skills.body : undefined;
+  mount({ enabledClients: ["claude"], entry: "/usage?client=claude", response: empty, other });
+  const table = await screen.findByText("스킬 사용", { exact: true });
+  expect(table.closest("[data-shared-client-panels]")).not.toBeNull();
+  expect(screen.getByText("superpowers:brainstorming")).toBeTruthy();
+  cleanup();
+  skills = { status: 200, body: skillsBody([]) };
+  mount({ enabledClients: ["claude"], entry: "/usage?client=claude", response: empty, other });
+  expect(await screen.findByText("선택한 기간에 데이터가 없습니다.")).toBeTruthy();
+  expect(document.querySelector("[data-shared-client-panels]")).toBeNull();
+});
+
 test("Productivity folds the Codex efficiency block into Cost and keeps the scope card", async () => {
   const { fetchMock } = mount({ enabledClients: ["claude", "codex"], entry: "/productivity" });
   expect(await screen.findByText("5 · 권한 결정 · 도구별")).toBeTruthy();

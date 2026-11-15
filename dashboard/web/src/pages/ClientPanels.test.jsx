@@ -821,7 +821,7 @@ function mountSkills(skills, clients = ["claude", "codex"]) {
 }
 
 test("Usage lists each client's skills with explicit, automatic and nested calls", () => {
-  mountSkills({ loading: false, error: null, stale: false, data: { by_client: [
+  mountSkills({ loading: false, error: null, stale: false, data: { skill_limit: 200, by_client: [
     { client: "claude", skills_limited: false, skills: [
       { skill: "superpowers:brainstorming", calls: 32, explicit: 0, automatic: 25, nested: 7, users: 3, sessions: 23 }] },
     { client: "codex", skills_limited: true, skills: [
@@ -853,4 +853,12 @@ test("a Codex-only skill table has no nested column and names only Codex's event
   expect(within(table).queryByRole("columnheader", { name: /중첩/ })).toBeNull();
   expect(table.textContent).toContain("codex.skill_invocation");
   expect(table.textContent).not.toContain("skill_activated");
+});
+
+test("a client whose skill read is unknown is marked not collected, not none recorded", () => {
+  mountSkills({ loading: false, error: null, stale: false, data: { skill_limit: 200, by_client: [
+    { client: "claude", skills: null, skills_limited: false, totals: null }] } }, ["claude"]);
+  const table = card("스킬 사용");
+  expect(table.textContent).toContain("Claude Code의 스킬 기록을 읽지 못해 미수집으로 표시합니다.");
+  expect(table.textContent).not.toContain("이 기간에 기록된 스킬 이벤트가 없습니다.");
 });
