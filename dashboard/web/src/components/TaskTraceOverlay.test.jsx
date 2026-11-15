@@ -398,6 +398,16 @@ test("context chart: Codex compactions without token counts are counted and draw
   expect(section.querySelectorAll("[data-compaction]").length).toBe(2);
 });
 
+test("context chart: a truncated Codex detail states the turn's full compaction count", async () => {
+  body = codexDetail();
+  body.context = { ...body.context, compactions_total: 7, compactions_partial: true, compactions: [
+    { start_ms: 1000, pre_tokens: null, post_tokens: null, trigger: null, success: null }] };
+  mount({ taskId: CODEX_ID });
+  const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
+  expect(within(section).getByRole("list", { name: "컨텍스트 요약" }).textContent).toMatch(/컴팩션 7회/);
+  expect(section.querySelectorAll("[data-compaction]").length).toBe(1);
+});
+
 test("context chart: unknown compaction link and missing tokens are disclosed, absent context hides it", async () => {
   body = claudeDetail();
   body.context = { ...body.context, compactions: null, missing: 2,

@@ -411,11 +411,18 @@ export function codexRetries(turn) {
   return runs > 0 && tries !== null && tries >= runs ? tries - runs : null;
 }
 
-// Codex 0.166 and later name the turn on tool spans; compare major.minor numerically.
-export function namesTurnOnTools(version) {
+// A Codex version at or after 0.<minor>, comparing major.minor numerically; no version is not.
+function codexAtLeast(version, minor) {
   const m = /^(\d+)\.(\d+)/.exec(String(version ?? ""));
-  return m !== null && (Number(m[1]) > 0 || Number(m[2]) >= 166);
+  return m !== null && (Number(m[1]) > 0 || Number(m[2]) >= minor);
 }
+
+// Codex 0.166 and later name the turn on tool spans.
+export const namesTurnOnTools = (version) => codexAtLeast(version, 166);
+
+// Codex 0.161 and later emit turn-tagged codex.compaction spans (none observed on 0.154-0.160.1
+// beside over 30,000 run spans), so only there is a turn without one a known zero.
+export const emitsTurnCompactions = (version) => codexAtLeast(version, 161);
 
 // Usage-bearing completions of the exact user in [from, to + 24h). One unique event is a
 // (Timestamp, sorted resource map, sorted log map), as logSelection() defines it, hashed once

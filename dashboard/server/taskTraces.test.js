@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
   sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId, COST_CANDIDATES,
-  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES, codexRetries, namesTurnOnTools, foldCodexTask } from "./taskTraces.js";
+  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES, codexRetries, namesTurnOnTools, emitsTurnCompactions, foldCodexTask } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -1353,25 +1353,40 @@ test("namesTurnOnTools reads versions numerically", () => {
   for (const v of ["0.165.0", "0.99.9", "", null, undefined]) assert.equal(namesTurnOnTools(v), false, String(v));
 });
 
+test("emitsTurnCompactions reads versions numerically: Codex 0.161 and later", () => {
+  for (const v of ["0.161.0", "0.161.0-alpha.1", "0.169.0", "1.0.0"]) assert.equal(emitsTurnCompactions(v), true, v);
+  for (const v of ["0.160.1", "0.154.0", "0.99.9", "", null, undefined]) assert.equal(emitsTurnCompactions(v), false, String(v));
+});
+
 test("codex detail reports retries and compactions from the turn row", () => {
   const sp = (id, name, at) => ({ span_id: id, parent_id: "", span_name: name, start_ms: String(ms(at)),
     duration_ms: "10", a_model: "", a_tool_name: "", a_aborted: "", total_spans: "2" });
   const rows = [sp("c2", "codex.compaction", "2026-11-05T01:00:06Z"), sp("c1", "codex.compaction", "2026-11-05T01:00:02Z")];
   const run = (o, r = rows) => foldTaskDetail({ client: "codex", turn: turn({ legacy_calls: "3", sampling_tries: "5",
-    compactions: "2", ...o }), linked: [] }, r, []);
+    compactions: "2", app_version: "0.161.0", ...o }), linked: [] }, r, []);
   const ok = run({});
   assert.equal(ruleMap(ok).retries, 2);
   assert.deepEqual(ok.context.compactions.map(c => c.start_ms), [2000, 6000]);
   assert.deepEqual(ok.context.compactions[0], { start_ms: 2000, pre_tokens: null, post_tokens: null, trigger: null, success: null });
+  assert.equal(ok.context.compactions_total, 2);
   assert.equal(ok.context.compactions_partial, false);
   const none = run({ legacy_calls: "0" });
   assert.ok(!("retries" in ruleMap(none)));
   assert.equal(none.context.compactions, null);
+  assert.equal(none.context.compactions_total, null);
   assert.deepEqual(run({ compactions: "0" }, []).context.compactions, []);
-  // Truncated span list: the turn row counts more compactions than the rows show.
+  assert.equal(run({ compactions: "0" }, []).context.compactions_total, 0);
+  // Truncated span list: the turn row counts more compactions than the rows show; the total is the row's.
   const partial = run({ compactions: "4" });
   assert.equal(partial.context.compactions.length, 2);
+  assert.equal(partial.context.compactions_total, 4);
   assert.equal(partial.context.compactions_partial, true);
+  // Codex before 0.161 emits no turn-tagged compaction spans: unknown, never a known zero.
+  for (const v of ["0.160.1", "0.154.0", ""]) {
+    const old = run({ compactions: "0", app_version: v }, []);
+    assert.deepEqual([old.context.compactions, old.context.compactions_total, "compactions_partial" in old.context],
+      [null, null, false], v);
+  }
 });
 
 test("the Codex list reads the rollup behind the gate and keeps raw otherwise", async () => {
