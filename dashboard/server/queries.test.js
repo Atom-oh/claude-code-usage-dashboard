@@ -191,7 +191,14 @@ test("range() skips hour-alignment entirely when raw=true, even for long histori
 test("incFlat falls back to the raw table for spans under the 4h minute-bucket threshold", () => {
   const sub = incFlat("", 30 * 60000); // 30분 span
   assert.match(sub, /FROM claude_code\.otel_metrics_sum\b/);
-  assert.doesNotMatch(sub, /otel_metrics_sum_hourly/);
+  // The window itself is raw and exact from `from`; the rollup only supplies the
+  // three-day cumulative lookback for complete hours before from's hour, so the raw scan
+  // is at most from's hour plus the window (production: ~6 s → ~0.2 s, identical results).
+  assert.match(sub, /WHERE TimeUnix >= toStartOfHour\(\{from:DateTime\}\) AND TimeUnix < \{to:DateTime\}/);
+  assert.match(sub, /FROM claude_code\.otel_metrics_sum_hourly\s+WHERE hour >= toStartOfHour\(\{from:DateTime\}\) - INTERVAL 3 DAY AND hour < toStartOfHour\(\{from:DateTime\}\)\s+AND AggregationTemporality = 2/);
+  assert.match(sub, /maxIf\(Value, TimeUnix < \{from:DateTime\}\) AS raw_baseline, max\(Value\) AS raw_current/);
+  assert.match(sub, /sumIf\(Value, TimeUnix >= \{from:DateTime\}\) AS raw_delta/);
+  assert.doesNotMatch(sub, /TimeUnix >= \{from:DateTime\} - INTERVAL/);
   const midBand = incFlat("", 3 * 3600000); // 3시간 span(1h~4h 밴드, 리뷰가 처음 잡아낸 회귀)
   assert.match(midBand, /FROM claude_code\.otel_metrics_sum\b/);
   const normal = incFlat("", 6 * 3600000); // 6시간 span → 4시간 초과, rollup
@@ -494,6 +501,12 @@ test("minute buckets skip the first-observation CTE", async () => {
   assert.deepEqual(params, { intervalMinutes: 15 });
   assert.ok(!sql.includes("model_cost_first_observations"), "raw path must not build the CTE");
   assert.ok(sql.includes("countIf(1 AND m.MetricName = 'claude_code.cost.usage') AS report_obs"), "raw path counts every cost sample as observed");
+  // Minute buckets read raw rows only from from's hour; a cumulative series' earlier value
+  // comes from the hourly rollup as one first-ordered pseudo-bucket, which lagInFrame uses
+  // as the first real bucket's baseline (the outer WHERE t >= from drops it).
+  assert.match(sql, /SELECT toDateTime\(0\) AS t, SeriesKey AS sk[\s\S]*?max\(max_value\) AS cum\s+FROM claude_code\.otel_metrics_sum_hourly\s+WHERE hour >= toStartOfHour\(\{from:DateTime\}\) - INTERVAL 3 DAY AND hour < toStartOfHour\(\{from:DateTime\}\)\s+AND AggregationTemporality = 2/);
+  assert.match(sql, /FROM claude_code\.otel_metrics_sum\s+WHERE TimeUnix >= toStartOfHour\(\{from:DateTime\}\) AND TimeUnix < \{to:DateTime\}/);
+  assert.ok(!/TimeUnix >= \{from:DateTime\} - INTERVAL/.test(sql), "no raw three-day lookback scan");
 });
 
 // The fold rejects more than MODEL_COST_ROW_LIMIT rows, so the query fetches one extra row to

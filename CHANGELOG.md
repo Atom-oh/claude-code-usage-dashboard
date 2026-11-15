@@ -51,6 +51,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Claude detail views over windows of four hours or less no longer time out: the raw path
+  read three days of raw counter rows to find cumulative baselines (about 6 s per query on
+  production, over the 25 s load budget when a page issues several). It now reads raw rows
+  only from the window's start hour and takes earlier baselines from the hourly rollup;
+  with a complete rollup the result is the same (identical on production windows, about 0.2 s).
 - Device collectors keep their identity history across uninstall and reinstall, and
   schedule renewal before the Collector starts so a failed install rolls back before any
   telemetry is exported under a new identity.
