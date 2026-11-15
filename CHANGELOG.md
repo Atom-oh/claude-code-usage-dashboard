@@ -56,8 +56,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   production, over the 25 s load budget when a page issues several). It now reads raw rows
   only from the window's start hour and takes earlier baselines from the hourly rollup;
   with a complete rollup the result is the same (identical on production windows, about 0.2 s).
-- Prepare five-language dashboard captures and use English and Korean screenshots
-  in those public guides, with matching control names and synthetic provenance.
+- Device collectors keep their identity history across uninstall and reinstall, and
+  schedule renewal before the Collector starts so a failed install rolls back before any
+  telemetry is exported under a new identity.
+- Show dashboard screenshots in the selected language throughout the public
+  guides, with matching control names and synthetic capture provenance.
 - Use a localized React calendar with an explicit completion control for each
   date or time selection; keep second precision and apply the range separately.
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the

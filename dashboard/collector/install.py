@@ -851,7 +851,9 @@ def install(args, home, user, uid, root, unit):
     # nothing for Claude, its CODEX_DEFAULT_USER_EMAIL for Codex) and opens an epoch; later
     # installs append one only when the ID changes. A new epoch starts after every replaced
     # Collector stopped, so no exported series can count as started in it.
-    history = installed_identity(root) if reinstall and not legacy else None
+    # Read the history whenever this package recorded one, as for the recorded ID: an
+    # uninstall keeps state.json, and a later reinstall continues the same epochs.
+    history = installed_identity(root) if not legacy else None
     if history is None:
         if legacy:
             base_claude, base_codex = "", legacy_codex_user_id(home)
@@ -958,10 +960,13 @@ def install(args, home, user, uid, root, unit):
                     copy_atomic(source, path, prepared_states[path][0])
                 clients_attempted = True
                 configurator.apply(changes)
+                # Schedule renewal before the Collector starts: once it exports under a new
+                # identity epoch, a rollback would put that epoch's series back under the
+                # previous identity. Only a legacy migration's health wait follows the start.
+                service_command(renewal[-1], "start", uid, RENEW_LABEL)
                 service_command(unit, "start", uid)
                 if legacy:
                     wait_for_local_collector(unit, uid)
-                service_command(renewal[-1], "start", uid, RENEW_LABEL)
             except BaseException:
                 try:
                     # A failed start may already have launched the new process.

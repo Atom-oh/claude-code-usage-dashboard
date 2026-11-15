@@ -110,6 +110,32 @@ class Transactions(unittest.TestCase):
         return {str(path): (path.read_bytes(), path.stat().st_mode & 0o777)
                 for path in [*paths, self.unit, *renewal]}
 
+    def test_renewal_is_scheduled_before_the_collector_starts(self):
+        # A failed renewal schedule rolls back before any new-epoch telemetry is exported.
+        self.install()
+        self.commands.clear()
+        self.args.sso_user_id = "alice@example.com"
+        self.renewal_failure = True
+        with self.assertRaisesRegex(ValueError, "renewal schedule failure"):
+            self.install()
+        renewal = next(i for i, c in enumerate(self.commands)
+                       if "enable" in c and any(str(p).startswith("ccdash-collector-renew") for p in c))
+        starts = [i for i, c in enumerate(self.commands)
+                  if "enable" in c and not any(str(p).startswith("ccdash-collector-renew") for p in c)]
+        # The only collector start is the rollback's restart of the previous service.
+        self.assertTrue(all(i > renewal for i in starts))
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["userId"], "old")
+
+    def test_identity_history_survives_uninstall_and_reinstall(self):
+        self.install()
+        self.args.sso_user_id = "alice@example.com"
+        self.install()
+        before = json.loads((self.root / "state.json").read_text())["identity"]
+        self.assertEqual(self.main("uninstall")[0], 0)
+        self.assertFalse(self.unit.exists())
+        self.install()
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["identity"], before)
+
     def test_renewal_schedule_failure_restores_previous_installation(self):
         self.install()
         original = self.snapshot()
