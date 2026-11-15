@@ -116,6 +116,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The adjacent React calendar button owns date selection in Chromium. */
+.range-picker-input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

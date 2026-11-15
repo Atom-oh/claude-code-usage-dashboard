@@ -2028,5 +2028,14 @@
   "mfeee7328687a": "Explícito = invocado directamente por el usuario, Automático = seleccionado por el agente, Anidado = invocado por otro skill (solo Claude).",
   "m3e6ef8517161": "Explícito = invocado directamente por el usuario, Automático = seleccionado por el agente.",
   "m67438422c844": "Si no hay ningún evento, no se registró; no se cuenta como 0.",
-  "m2ef1e0a0f43a": "No se pudieron leer los registros de skill de {0}; se muestran como no recopilados."
+  "m2ef1e0a0f43a": "No se pudieron leer los registros de skill de {0}; se muestran como no recopilados.",
+  "m230bfa94fe54": "Abrir calendario de {0}",
+  "meeabcb446f68": "Terminar de seleccionar {0}",
+  "mbfa42cf6a12e": "Hora",
+  "mca4a187881db": "Minuto",
+  "m1fd639e1ec96": "Segundo",
+  "m77f9e6084937": "Mes anterior",
+  "m4c33c6a0b753": "Mes siguiente",
+  "m83e222c2fb52": "Seleccionar fecha",
+  "m49e86c3288d4": "No disponible"
 }
