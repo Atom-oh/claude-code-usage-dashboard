@@ -78,7 +78,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   date or time selection; keep second precision and apply the range separately.
 - Codex task details also link subagent turns for Codex before 0.166, whose lineage spans
   name no turn or conversation: the spawn/follow-up call is matched to its `codex.tool_result`
-  log and to the calling conversation's turn running at that time.
+  log and to the calling conversation's turn running at that time (UUID-shaped turn ids only,
+  never a synthetic `auto-compact-N` turn, also for a log-linked parent).
 - Codex task details also link the Codex CLI's subagent turns (`multi_agent_v1` spawn_agent and
   send_input), which start through turn input rather than inter-agent communication; they were
   shown as not collected.
@@ -86,7 +87,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   resolution, the communication fallback, subagent turn and completion pricing) only within
   12 s of its own start, bounding the time they add to long sessions' details against the
   25 s load budget; past that it lists the links already found without costs, marked limited
-  and partial, never as a known zero.
+  and partial, never as a known zero. Subagent turns and completions are read up to 48h after
+  the task's turn ends; a subagent turn ending within a day of that bound has partial calls and
+  cost and marks the result limited.
 - A Codex task detail reads the legacy call, child turn and conversation ids of its subagent
   reads in chunks below ClickHouse's HTTP form-field limit, at most 2,000 ids of each kind
   (more are marked limited), instead of failing the whole detail on a long lineage.

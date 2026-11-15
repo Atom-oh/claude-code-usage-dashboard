@@ -121,7 +121,7 @@ export function TaskContextChart({ context, lanes, end, numbers, client, selecte
       {sideSources.length > 0 && <span>{translate("m230a4032eef1", [sideExample])}</span>}
       {s.missing > 0 && <span>{translate("m6dcc5db48d2f", [formatObserved(s.missing)])}</span>}
       {s.partial && <span>{translate("me3ce4065ae02")}</span>}
-      {compactions.length > 0 && <span>{translate("m42a70e109062")}</span>}
+      {client !== "codex" && compactions.length > 0 && <span>{translate("m42a70e109062")}</span>}
       {client !== "codex" && <span>{translate("m31448e365072")}</span>}
       {client === "codex" && s.autoCompactLimit === null && s.contextWindow === null && <span>{translate("m5682cbb5ee40")}</span>}
       {client === "codex" && s.autoCompactLimit !== null && !limitInChart
