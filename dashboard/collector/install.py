@@ -582,28 +582,39 @@ def installed_user_id(root):
     return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._+@-]+", value) else None
 
 
-def installed_identity_since(root):
-    """The recorded start of the installed identity (ns), or None."""
+def initial_identity(base_claude, base_codex, user_id, since=0):
+    """Identity history: the defaults the first replaced Collector inserted per client and
+    one epoch per installed ID (appended only when it changes)."""
+    return {"baseClaude": base_claude, "baseCodex": base_codex, "epochs": [{"since": since, "userId": user_id}]}
+
+
+def installed_identity(root):
+    """The recorded identity history, or None (pre-epoch installation or unreadable)."""
     try:
-        value = json.loads((root / "state.json").read_text()).get("identitySince")
+        value = json.loads((root / "state.json").read_text()).get("identity")
     except (OSError, ValueError, AttributeError):
         return None
-    return value if isinstance(value, int) and value >= 0 else None
-
-
-def settings_user_id(home):
-    """The user.email the existing Claude settings (or shell) carry, without prompting."""
+    ident = re.compile(r"[A-Za-z0-9._+@-]*")
     try:
-        data = json.loads((home / ".claude/settings.json").read_text())
-        env = data.get("env", {}) if isinstance(data, dict) else {}
-        attributes = env.get("OTEL_RESOURCE_ATTRIBUTES", os.environ.get("OTEL_RESOURCE_ATTRIBUTES", ""))
-    except (OSError, ValueError):
-        attributes = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
-    for part in attributes.split(",") if isinstance(attributes, str) else []:
-        key, separator, value = part.partition("=")
-        if separator and key.strip() == "user.email" and re.fullmatch(r"[A-Za-z0-9._+@-]+", value.strip()):
-            return value.strip()
-    return None
+        epochs = value["epochs"]
+        valid = (all(isinstance(value[key], str) and ident.fullmatch(value[key]) for key in ("baseClaude", "baseCodex"))
+                 and isinstance(epochs, list) and epochs
+                 and all(isinstance(e.get("since"), int) and e["since"] >= 0 and isinstance(e.get("userId"), str)
+                         and re.fullmatch(r"[A-Za-z0-9._+@-]+", e["userId"]) for e in epochs)
+                 and all(a["since"] < b["since"] for a, b in zip(epochs, epochs[1:])))
+    except (TypeError, KeyError, AttributeError):
+        return None
+    return value if valid else None
+
+
+def legacy_codex_user_id(home):
+    """The CODEX_DEFAULT_USER_EMAIL a legacy personal Collector inserted for Codex, if any."""
+    try:
+        text = (home / ".otelcol/env").read_text()
+    except (OSError, UnicodeError):
+        return ""
+    match = re.search(r"(?m)^\s*(?:export\s+)?CODEX_DEFAULT_USER_EMAIL=[\"']?([A-Za-z0-9._+@-]*)[\"']?\s*$", text)
+    return match.group(1) if match else ""
 
 
 def migration_user_id(args, home):
@@ -753,21 +764,31 @@ def wait_for_local_collector(unit, uid):
     raise ValueError("new Collector did not become locally healthy; restoring the previous service")
 
 
-def render_config(root, ingest_endpoint, user_id, previous_user_id=None, identity_since_ns=0):
-    """The device config. user_id is the installed identity; metric series that started
-    before identity_since_ns keep previous_user_id as their inserted default, so a
-    cumulative series never changes identity mid-life (see transform/device_user)."""
+def render_config(root, ingest_endpoint, user_id, identity=None):
+    """The device config. user_id is the installed identity (logs and traces). identity
+    ({baseClaude, baseCodex, epochs: [{since, userId}]}) keeps each cumulative metric series
+    under the identity of the epoch it started in; see scripts/sync-collector-package.py."""
+    identity = identity or initial_identity(user_id, user_id, user_id)
     text = (HERE / "generated/local.yaml").read_text()
+    lines = []
+    for line in text.splitlines(keepends=True):
+        if "CCDASH_EPOCH_" not in line:
+            lines.append(line)
+            continue
+        for index, epoch in enumerate(identity["epochs"]):
+            lines.append(line.replace("${env:CCDASH_EPOCH_INDEX}", str(index))
+                         .replace("${env:CCDASH_EPOCH_SINCE_NS}", str(int(epoch["since"])))
+                         .replace("${env:CCDASH_EPOCH_USER_ID}", epoch["userId"]))
+    text = "".join(lines)
     replacements = {"OTELCOL_QUEUE_DIR": str(root / "queue"), "CCDASH_TOKEN_FILE": str(root / "token"),
                     "CCDASH_INGEST_ENDPOINT": ingest_endpoint, "CODEX_DEFAULT_USER_EMAIL": user_id,
-                    "CCDASH_PREVIOUS_USER_ID": user_id if previous_user_id is None else previous_user_id,
-                    "CCDASH_IDENTITY_SINCE_NS": str(int(identity_since_ns)),
+                    "CCDASH_BASE_CLAUDE_USER_ID": identity["baseClaude"], "CCDASH_BASE_CODEX_USER_ID": identity["baseCodex"],
                     "CLAUDE_ENABLED": "true", "CODEX_ENABLED": "true", "EXPERIMENT_GROUP": "unknown"}
     def replace(match):
         value = replacements[match.group(1)]
         # OTTL strings already quote their placeholders; these values are validated identifiers.
-        if match.group(1) in ("CLAUDE_ENABLED", "CODEX_ENABLED", "CODEX_DEFAULT_USER_EMAIL", "CCDASH_PREVIOUS_USER_ID",
-                              "CCDASH_IDENTITY_SINCE_NS"):
+        if match.group(1) in ("CLAUDE_ENABLED", "CODEX_ENABLED", "CODEX_DEFAULT_USER_EMAIL",
+                              "CCDASH_BASE_CLAUDE_USER_ID", "CCDASH_BASE_CODEX_USER_ID"):
             return value
         return json.dumps(value.replace("$", "$$"))
     return re.sub(r"\$\{env:([A-Z_]+)(?::-[^}]*)?\}", replace, text)
@@ -825,10 +846,19 @@ def install(args, home, user, uid, root, unit):
     recorded = installed_user_id(root)
     user_id = sso_user_id or args.user_id or recorded or (
         migration_user_id(args, home) if legacy else getattr(args, "default_user_id", None) or user)
-    # The identity the replaced Collector inserted for signals without one: running
-    # cumulative series keep it until they restart. An unchanged identity keeps its start.
-    previous_user_id = recorded or (settings_user_id(home) if legacy else None) or user_id
-    previous_since = installed_identity_since(root) if previous_user_id == user_id else None
+    # Identity history. The first epoch-aware install records what the replaced Collector
+    # inserted (a device install: its recorded ID for both clients; a legacy Collector:
+    # nothing for Claude, its CODEX_DEFAULT_USER_EMAIL for Codex) and opens an epoch; later
+    # installs append one only when the ID changes. A new epoch starts after every replaced
+    # Collector stopped, so no exported series can count as started in it.
+    history = installed_identity(root) if reinstall and not legacy else None
+    if history is None:
+        if legacy:
+            base_claude, base_codex = "", legacy_codex_user_id(home)
+        else:
+            base_claude = base_codex = recorded or user_id
+        history = {"baseClaude": base_claude, "baseCodex": base_codex, "epochs": []}
+    new_epoch = not history["epochs"] or history["epochs"][-1]["userId"] != user_id
     replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
     changes, notes = client_plan(home, user_id, replace_claude_telemetry)
     for note in notes:
@@ -861,18 +891,22 @@ def install(args, home, user, uid, root, unit):
             print("Downloading and verifying OpenTelemetry Collector " + release["version"])
             download_binary(stage, release)
             atomic(stage / "token", token + "\n")
-            since = previous_since if previous_since is not None else time.time_ns()
-            atomic(stage / "config.yaml", render_config(stage, ingest_endpoint, user_id, previous_user_id, since))
+            def identity_at(since):
+                epochs = history["epochs"] + ([{"since": max(since, history["epochs"][-1]["since"] + 1)
+                                                if history["epochs"] else since, "userId": user_id}] if new_epoch else [])
+                return {**history, "epochs": epochs}
+            atomic(stage / "config.yaml", render_config(stage, ingest_endpoint, user_id, identity_at(time.time_ns())))
             if not run([str(stage / "otelcol-contrib"), "validate", "--config", str(stage / "config.yaml")],
                        required=False):
                 raise ValueError("Collector rejected its configuration; client settings were not changed")
             # Prepare every runtime file before stopping the current service.
             def stage_identity(since):
-                atomic(stage / "config.yaml", render_config(root, ingest_endpoint, user_id, previous_user_id, since))
+                identity = identity_at(since)
+                atomic(stage / "config.yaml", render_config(root, ingest_endpoint, user_id, identity))
                 atomic(stage / "state.json", json.dumps({"managedBy": MARKER, "endpoint": ingest_endpoint,
                                                          "version": release["version"], "unit": str(unit),
-                                                         "userId": user_id, "identitySince": since}) + "\n")
-            stage_identity(since)
+                                                         "userId": user_id, "identity": identity}) + "\n")
+            stage_identity(time.time_ns())
             for relative in MAINTENANCE_FILES:
                 copy_atomic(HERE / relative, stage / relative)
             atomic(stage / "service", systemd_service(root) if sys.platform == "linux" else launchd_service(root))
@@ -913,7 +947,7 @@ def install(args, home, user, uid, root, unit):
                 if any(path.exists() for path in renewal):
                     stop_service(renewal[-1], uid, RENEW_LABEL)
                 assert_unchanged(clients_before)
-                if previous_since is None:
+                if new_epoch:
                     # A new identity starts once every replaced Collector has stopped: no series
                     # exported by it can count as started under the new identity.
                     stage_identity(time.time_ns())

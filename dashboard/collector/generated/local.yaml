@@ -23,7 +23,7 @@ processors:
         value: ${env:EXPERIMENT_GROUP:-unknown}
         action: insert
       - key: user.email
-        value: "${env:CCDASH_PREVIOUS_USER_ID:-}"
+        value: "${env:CCDASH_BASE_CLAUDE_USER_ID:-}"
         action: insert
 
   filter/metrics:
@@ -85,7 +85,7 @@ processors:
           - delete_key(attributes, "ccdash.transport.backend")
           - delete_key(attributes, "backend") where attributes["backend"] != "bedrock-mantle" and attributes["backend"] != "bedrock-runtime"
           - set(attributes["client"], "codex")
-          - set(attributes["user.email"], "${env:CCDASH_PREVIOUS_USER_ID:-}") where "${env:CCDASH_PREVIOUS_USER_ID:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
+          - set(attributes["user.email"], "${env:CCDASH_BASE_CODEX_USER_ID:-}") where "${env:CCDASH_BASE_CODEX_USER_ID:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
           - delete_key(attributes, "experiment.group")
     metric_statements:
       - context: resource
@@ -276,7 +276,7 @@ processors:
     metric_statements:
       - context: datapoint
         statements:
-          - set(attributes["ccdash.device_user"], "1") where start_time_unix_nano >= ${env:CCDASH_IDENTITY_SINCE_NS:-0}
+          - set(attributes["ccdash.device_user"], "${env:CCDASH_EPOCH_INDEX}") where start_time_unix_nano >= ${env:CCDASH_EPOCH_SINCE_NS}
   groupbyattrs/device_user:
     keys: [ccdash.device_user]
   transform/device_user:
@@ -284,7 +284,7 @@ processors:
     metric_statements:
       - context: resource
         statements:
-          - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where attributes["ccdash.device_user"] == "1" and "${env:CODEX_DEFAULT_USER_EMAIL:-}" != ""
+          - set(attributes["user.email"], "${env:CCDASH_EPOCH_USER_ID}") where attributes["ccdash.device_user"] == "${env:CCDASH_EPOCH_INDEX}"
           - delete_key(attributes, "ccdash.device_user")
     log_statements:
       - context: resource
