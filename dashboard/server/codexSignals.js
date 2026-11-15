@@ -101,10 +101,11 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
     : "tuple(sample_flags, sample_value)";
   const scan = `TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalTo:DateTime}`;
   const withinScan = "(SELECT scanned FROM scan_probe) <= {signalScanLimit:UInt64}";
-  const decrease = (index) => `(rise_${index} > (last_hi.2.${index} - first_lo.2.${index})
-      + 1e-9 * greatest(1, abs(last_hi.2.${index}))
+  // Integer counts compare exactly; Float64 sums keep a relative tolerance.
+  const decrease = (index, exact = false) => `(rise_${index} > (last_hi.2.${index} - first_lo.2.${index})${exact ? "" : `
+      + 1e-9 * greatest(1, abs(last_hi.2.${index}))`}
       OR has_base AND first_lo.2.${index} < base_hi.2.${index})`;
-  const decreasing = `temporality = 2 AND ${histogram ? "1" : "monotonic"} AND (${decrease(2)}${histogram ? ` OR ${decrease(3)}` : ""})`;
+  const decreasing = `temporality = 2 AND ${histogram ? "1" : "monotonic"} AND (${decrease(2, histogram)}${histogram ? ` OR ${decrease(3)}` : ""})`;
   const point = "if(baseline_row, base_hi, last_hi)";
   const compacted = `SELECT toString(fromUnixTimestamp64Nano(${point}.1, 'UTC')) AS timestamp,
     toString(toTimeZone(started, 'UTC')) AS start, '${type}' AS type, ${identity},

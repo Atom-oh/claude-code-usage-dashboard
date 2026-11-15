@@ -248,6 +248,9 @@ test("cumulative series fold in one scan to their latest and baseline points", (
     // Positive steps beyond the net change reveal an interior decrease.
     assert.match(series, /deltaSumTimestampIf\(p\.2, ts, w\) AS rise_2/);
     assert.equal(/deltaSumTimestampIf\(p\.3, ts, w\) AS rise_3/.test(series), type !== "sum");
+    const tolerance = (index) => new RegExp(`rise_${index} > \\(last_hi\\.2\\.${index} - first_lo\\.2\\.${index}\\)\\s*\\+ 1e-9`);
+    assert.equal(tolerance(2).test(sql), type === "sum", "histogram counts compare exactly");
+    if (type !== "sum") assert.match(sql, tolerance(3));
     assert.match(sql, /ARRAY JOIN if\(has_base, \[0, 1\], \[0\]\) AS baseline_row/);
     // DELTA keeps exact point deduplication and conflict detection.
     const delta = sql.slice(sql.indexOf("delta_points AS"));
