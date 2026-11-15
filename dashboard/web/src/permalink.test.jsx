@@ -4,7 +4,7 @@ import { claudeDetail } from "./test/claudeDetail.js";
 process.env.TZ = "Asia/Seoul";
 
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "./App.jsx";
 import { ConfigProvider } from "./ConfigContext.jsx";
@@ -238,6 +238,30 @@ test("Escape closes the calendar and returns focus without dismissing the range 
   expect(screen.queryByRole("button", { name: "시작 시각 선택 완료" })).toBeNull();
   expect(document.activeElement).toBe(opener);
   expect(screen.getByRole("button", { name: "적용", exact: true })).toBeTruthy();
+});
+
+test("a growing range editor is repositioned to keep its controls inside the viewport", () => {
+  stubFetch();
+  let notifyResize;
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback) { this.callback = callback; }
+    observe(node) { if (node.getAttribute("aria-label") === "기간 직접 선택") notifyResize = this.callback; }
+    disconnect() {}
+  });
+  mount("/cost", cfg());
+  const button = screen.getByRole("button", { name: "기간 직접 선택" });
+  fireEvent.click(button);
+  const panel = screen.getByRole("group", { name: "기간 직접 선택" });
+  let height = 100;
+  vi.spyOn(button.parentElement, "getBoundingClientRect").mockReturnValue({ right: 500, bottom: window.innerHeight - 60 });
+  vi.spyOn(panel, "getBoundingClientRect").mockImplementation(() => ({ width: 300, height }));
+  expect(notifyResize).toBeTypeOf("function");
+  act(() => notifyResize());
+  const originalTop = parseFloat(panel.style.top);
+  height = 400;
+  act(() => notifyResize());
+  expect(parseFloat(panel.style.top)).toBeLessThan(originalTop);
+  expect(parseFloat(panel.style.top) + height).toBeLessThanOrEqual(window.innerHeight - 16);
 });
 
 test("calendar day selection keeps UTC boundaries and an inclusive final date", async () => {

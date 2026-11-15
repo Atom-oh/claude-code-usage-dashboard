@@ -119,6 +119,7 @@ export function DateRangePopover() {
   useLayoutEffect(() => {
     if (!open) return;
     const align = () => {
+      if (!wrapRef.current || !popoverRef.current) return;
       const anchor = wrapRef.current.getBoundingClientRect();
       const panel = popoverRef.current.getBoundingClientRect();
       const left = Math.max(16, Math.min(anchor.right - panel.width, window.innerWidth - panel.width - 16));
@@ -126,10 +127,12 @@ export function DateRangePopover() {
       setPosition((old) => old.left === left && old.top === top ? old : { left, top });
     };
     align();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(align);
+    observer?.observe(popoverRef.current);
     window.addEventListener("resize", align);
     window.addEventListener("scroll", align, true);
-    return () => { window.removeEventListener("resize", align); window.removeEventListener("scroll", align, true); };
-  }, [open, activePicker, locale]);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", align); window.removeEventListener("scroll", align, true); };
+  }, [open, activePicker, locale, err]);
 
   useEffect(() => {
     if (!open) return;
