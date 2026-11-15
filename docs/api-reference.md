@@ -748,7 +748,9 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   `ttft_ms`, `attempt`, `error_class`, `status_code`, `stop_reason`, `query_source_safe`,
   `effort`, `speed`; tool `tool_name`, `subagent_type`, `skill_name`,
   `anthropic.mcp.server.name`, `bash_command_class`, `success`, `error_class`; wait
-  `decision`, `source`; Codex `model`, `tool_name`, `aborted`.
+  `decision`, `source`; Codex `model`, `tool_name`, `aborted`. A Codex tool span without
+  `tool_name` is one of Codex's own operations (turn scaffolding, `mcp.runtime.*`,
+  `codex.tool_blocking`) and carries `internal: true`; the UI hides those by default.
 - `truncated`/`span_total`: at most the newest 5000 spans. Truncated Claude details null
   whole-task and lane totals and `task.models` (the newest spans' models are not the
   task's) and return no `why`; Codex totals do not depend on spans.
@@ -799,6 +801,16 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
   depth, count, trace or row bound. Traces only establish lineage: calls remain model-call span
   counts and costs completion-log estimates.
+- `activity` (Codex only): `{skills, skills_limited, tools, tools_partial}`. `skills` are the
+  turn's `codex.skill_invocation` logs (exact `conversation.id` and `turn.id`) grouped as
+  `{name, invocation: explicit|implicit|null, scope, calls}`, at most 50 (`skills_limited`
+  past that); `name`/`scope` are null unless label-shaped, and plugin ids are not returned.
+  `tools` are the returned spans carrying `tool_name`, grouped as `{name, mcp, calls,
+  duration_ms, duration_partial, aborted}` by call count, at most 50; `mcp` marks
+  `mcp__<server><tool>` names (Codex joins server and tool, so they are not split) and
+  `duration_ms` sums known span durations (null when none is known). `tools_partial` marks a
+  truncated detail or more than 50 tools. Empty lists mean nothing was recorded, not that
+  nothing was used.
 
 ### Teams
 

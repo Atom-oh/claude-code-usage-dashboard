@@ -1102,6 +1102,31 @@ test("the Codex detail links subagent turns through the trace and never returns 
   assert.ok(seen.filter(p => p.traceIds).every(p => p.traceIds.join() === "tr1" && p.userExact === "kim@x.com"));
 });
 
+test("the Codex detail lists the turn's skills and tool calls and flags its internal spans", async () => {
+  const seen = [];
+  const run = async (sql, params) => {
+    seen.push({ sql, params });
+    if (sql.includes("count() OVER ()")) return [
+      { span_id: "a", parent_id: "", span_name: "exec_command", start_ms: String(ms("2026-11-05T01:00:01Z")), duration_ms: "20",
+        a_tool_name: "exec_command", total_spans: "3" },
+      { span_id: "b", parent_id: "", span_name: "mcp__awsdocsread_documentation", start_ms: String(ms("2026-11-05T01:00:02Z")),
+        duration_ms: "900", a_tool_name: "mcp__awsdocsread_documentation", total_spans: "3" },
+      { span_id: "c", parent_id: "", span_name: "mcp.runtime.resolve_for_step", start_ms: String(ms("2026-11-05T01:00:03Z")),
+        duration_ms: "0", total_spans: "3" }];
+    if (sql.includes("GROUP BY turn_id")) return [turn({ in_bucket: 1 })];
+    if (sql.includes("codex.skill_invocation"))
+      return [{ name: "superpowers:systematic-debugging", invocation: "implicit", scope: "user", calls: "2" }];
+    return [];
+  };
+  const detail = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
+  assert.deepEqual(detail.activity.skills, [{ name: "superpowers:systematic-debugging", invocation: "implicit", scope: "user", calls: 2 }]);
+  assert.deepEqual(detail.activity.tools.map(t => [t.name, t.mcp, t.calls]),
+    [["exec_command", false, 1], ["mcp__awsdocsread_documentation", true, 1]]);
+  assert.deepEqual(detail.spans.filter(s => s.internal).map(s => s.name), ["mcp.runtime.resolve_for_step"]);
+  const skillRead = seen.find(s => s.sql.includes("codex.skill_invocation"));
+  assert.deepEqual([skillRead.params.conversationId, skillRead.params.turnId, skillRead.params.userExact], ["c1", U1, "kim@x.com"]);
+});
+
 test("a context turn starting before the bucket is not a detail of this bucket", async () => {
   const run = async (sql) => sql.includes("GROUP BY turn_id") ? [turn({ in_bucket: 0 })] : [];
   const err = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "a" }, both, run, DEFAULT_CODEX_PRICING)

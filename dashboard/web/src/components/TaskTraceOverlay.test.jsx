@@ -569,6 +569,54 @@ test("a Codex turn without linked subagents says so and keeps the count unknown"
   expect(screen.getByText("Codex: 미수집")).toBeTruthy();
 });
 
+const activityDetail = (activity, extraSpans = []) => {
+  const d = codexDetail();
+  return { ...d, spans: [...d.spans, ...extraSpans], span_total: d.spans.length + extraSpans.length, activity };
+};
+const toolSpan = (id, name, extra = {}) => ({ id, parent: null, lane: "main", kind: "tool", name, start_ms: 1000,
+  duration_ms: 200, attrs: name.startsWith("mcp.") ? {} : { tool_name: name }, ...extra });
+
+test("a Codex turn lists its skills and tool calls with MCP tools marked", async () => {
+  body = activityDetail({ skills: [{ name: "superpowers:systematic-debugging", invocation: "implicit", scope: "user", calls: 2 },
+    { name: "co-agent:pr-autofix", invocation: "explicit", scope: "user", calls: 1 }], skills_limited: false,
+  tools: [{ name: "exec_command", mcp: false, calls: 3, duration_ms: 1500, duration_partial: false, aborted: 0 },
+    { name: "mcp__awsdocsread_documentation", mcp: true, calls: 1, duration_ms: null, duration_partial: true, aborted: 1 }],
+  tools_partial: false });
+  mount({ taskId: CODEX_ID });
+  const card = await screen.findByRole("region", { name: "이 턴에서 쓴 스킬·도구" });
+  const skills = within(card).getByRole("list", { name: "스킬" });
+  expect(skills.textContent).toContain("superpowers:systematic-debugging (자동 선택, 2회)");
+  expect(skills.textContent).toContain("co-agent:pr-autofix (명시 호출, 1회)");
+  const rows = within(card).getAllByRole("row");
+  expect(rows[1].textContent).toContain("exec_command");
+  expect(rows[1].textContent).not.toContain("MCP");
+  expect(rows[2].textContent).toContain("MCP");
+  expect(rows[2].textContent).toContain("중단 1회");
+  expect(rows[2].textContent).toContain("미수집");
+});
+
+test("a Codex turn without recorded skills or tools says none were recorded", async () => {
+  body = activityDetail({ skills: [], skills_limited: false, tools: [], tools_partial: true });
+  mount({ taskId: CODEX_ID });
+  const card = await screen.findByRole("region", { name: "이 턴에서 쓴 스킬·도구" });
+  expect(card.textContent).toContain("이 턴에 기록된 스킬 호출 이벤트가 없습니다.");
+  expect(card.textContent).toContain("이 턴에 기록된 도구 호출 span이 없습니다.");
+  expect(card.textContent).toContain("일부 span만 반영했거나 도구가 많아 일부만 표시합니다.");
+});
+
+test("Codex internal operation spans stay off the timeline until shown", async () => {
+  body = activityDetail(null, [toolSpan("t1", "exec_command"), toolSpan("i1", "mcp.runtime.resolve_for_step", { internal: true })]);
+  mount({ taskId: CODEX_ID });
+  await screen.findByText("Codex 내부 동작 span 1개를 숨겼습니다.");
+  expect(screen.getByRole("button", { name: /exec_command/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /mcp\.runtime\.resolve_for_step/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "모두 표시" }));
+  expect(screen.getByRole("button", { name: /mcp\.runtime\.resolve_for_step/ })).toBeTruthy();
+  expect(screen.queryByText("Codex 내부 동작 span 1개를 숨겼습니다.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "내부 동작 span 숨기기" }));
+  expect(screen.queryByRole("button", { name: /mcp\.runtime\.resolve_for_step/ })).toBeNull();
+});
+
 test("a Claude task shows no Codex subagent section", async () => {
   mount();
   await screen.findByRole("region", { name: "세션 환경" });

@@ -2,7 +2,8 @@ import { richMessage, translate, translateSource, useLocale } from "../i18n/inde
 // Full-screen detail of one task (/api/users/tasks/detail): KPI row, agent lane timeline
 // (TaskTimeline), cumulative cost band by lane (TaskCostBand), context size by lane
 // (TaskContextChart), clicked-span side panel
-// (TaskSpanPanel), the "왜 많이 썼나" rules, Codex subagent calls (TaskAgents) and the
+// (TaskSpanPanel), the "왜 많이 썼나" rules, Codex skills/tool calls (TaskCodexActivity), Codex
+// subagent calls (TaskAgents) and the
 // per-model call table (모델별 호출), whose rows highlight that model's LLM bars. Task ids and raw identities are never shown.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBox, Loading } from "./Card.jsx";
@@ -14,6 +15,7 @@ import { TaskCostBand } from "./TaskCostBand.jsx";
 import { TaskContextChart } from "./TaskContextChart.jsx";
 import { TaskSpanPanel } from "./TaskSpanPanel.jsx";
 import { TaskAgents } from "./TaskAgents.jsx";
+import { TaskCodexActivity } from "./TaskCodexActivity.jsx";
 import { LanguagePicker } from "./LanguagePicker.jsx";
 import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
@@ -220,19 +222,29 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
   }, [spans, _locale]);
   const activeKey = models.some((m) => m.key === highlightKey) ? highlightKey : null;
   const highlight = useMemo(() => (activeKey === null ? null : (s) => modelKey(s) === activeKey), [activeKey, _locale]);
+  // Codex's own operation spans (no tool_name) crowd the timeline; they are hidden until asked.
+  const [showInternal, setShowInternal] = useState(false);
+  const internal = spans.filter((s) => s.internal).length;
+  const shown = useMemo(() => (showInternal || !internal ? spans : spans.filter((s) => !s.internal)),
+    [spans, showInternal, internal, _locale]);
   return <>
     {truncated ? <p role="status" className="rounded-md bg-warning-surface px-3 py-2 text-sm text-warning-text">
       <span>{translateSource(TRUNCATED)}</span>{` (span ${formatObserved(spans.length)} / ${formatObserved(data.span_total)})`}</p>
       : <Kpis task={task} />}
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
       <div className="min-w-0 rounded-lg border border-ink-100 p-4">
-        {lanes.length ? <TaskTimeline lanes={lanes} spans={spans} numbers={numbers} end={end} truncated={truncated}
+        {lanes.length ? <TaskTimeline lanes={lanes} spans={shown} numbers={numbers} end={end} truncated={truncated}
           selectedId={selectedId} onSelect={onSelect} highlight={highlight} /> : <p className="text-sm text-ink-500">{translate("m435d6f7eb375")}</p>}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-500">
           <span>{translate("mf91c0b9a8833")}</span><span>{translate("m55b0c0d28741")}</span><span>{translate("m570967649b01")}</span>
           <span>{translate("m3ee958d3d0cd")}</span>
           {unplaced > 0 && <span>{translate("maa375b40dc61", [formatObserved(unplaced)])}</span>}
         </div>
+        {internal > 0 && <p className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-ink-500">
+          {!showInternal && <span>{translate("m4d74eb05b9b5", [formatObserved(internal)])}</span>}
+          <button type="button" aria-pressed={showInternal} onClick={() => setShowInternal((v) => !v)}
+            className="rounded border border-ink-200 px-2 py-0.5 text-ink-700 hover:bg-ink-50">
+            {translate(showInternal ? "m88fe8ae661ed" : "m0cf412ff8552")}</button></p>}
         {!truncated && (priced ? <div className="mt-4">
           <TaskCostBand lanes={lanes} spans={spans} end={end} durationMs={task.duration_ms} />
           <p className="mt-1 text-[12px] text-ink-500">{richMessage("m8994eb3d9eef", [unlinked > 0 && translate("me28cab7df2c6", [formatObserved(unlinked)])])}</p>
@@ -250,6 +262,7 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
         </div>
         {!truncated && <Why why={data.why || []} lanes={lanes} numbers={numbers} onSelect={onSelect} usage={usage}
           unlinked={unlinked} />}
+        {task.client === "codex" && <TaskCodexActivity activity={data.activity ?? null} />}
         <SessionEnvironment environment={data.environment ?? null} client={task.client} context={data.context} />
       </div>
     </div>

@@ -22,6 +22,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   including them, and, on a subagent turn, a link to the turn that started it. Codex names
   no parent in any attribute, so the link follows the trace's parent-span chain; spawn calls
   whose subagent trace was not collected are counted separately instead of implying none.
+- Codex task details list the turn's skill invocations (explicit or automatic) and its tool
+  calls by tool name with call counts and durations, MCP tools marked. The timeline hides
+  Codex's own operation spans (turn scaffolding, MCP runtime resolution, tool blocking) by
+  default, with a toggle to show them.
 
 ### Changed
 
