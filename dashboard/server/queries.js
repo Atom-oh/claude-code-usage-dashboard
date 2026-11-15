@@ -362,18 +362,42 @@ export function incFlat(metricFilter = "", spanMs = Infinity, includeObservation
     // ToolName은 rollup에서만 실컬럼(code_edit_tool.decision의 tool_name을 접어놓음) — 원본
     // otel_metrics_sum에는 없어서 그대로 SELECT하면 "Unknown expression identifier"로 쿼리가
     // 깨진다(실측 확인). Attributes['tool_name']에서 직접 뽑아 같은 별칭으로 맞춘다.
+    // Exact raw values over [from, to) without a raw lookback scan. A cumulative series'
+    // value before a time is the max of its samples before it (monotonic within a series:
+    // SeriesKey includes the start time). So the lookback before from's hour is the hourly
+    // rollup's max_value (complete hours), and only [toStartOfHour(from), to) is read raw:
+    //   baseline = greatest(rollup max before from's hour, raw max in [from's hour, from))
+    //   current  = greatest(rollup max before from's hour, raw max in [from's hour, to))
+    // Delta series use only the raw window sum. Same result as the previous three-day raw
+    // scan, which no longer fit the dashboard's 25 s load budget on production volume.
     return `(
       SELECT
-          SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName,
-          Attributes['tool_name'] AS ToolName,
-          ${includeObservation ? "max(TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime}) AS InWindow," : ""}
+          SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName,
+          ${includeObservation ? "max(in_window) AS InWindow," : ""}
           if(temp = 2,
-              greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
-              sumIf(Value, TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime})) AS Value
-      FROM claude_code.otel_metrics_sum
-      WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
-        ${metricFilter}
-      GROUP BY ${seriesKey}, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+              greatest(greatest(max(prior), max(raw_current)) - greatest(max(prior), max(raw_baseline)), 0),
+              sum(raw_delta)) AS Value
+      FROM (
+          SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType,
+              Decision, SkillName, ToolName, max(max_value) AS prior, 0 AS raw_baseline, 0 AS raw_current, 0 AS raw_delta
+              ${includeObservation ? ", 0 AS in_window" : ""}
+          FROM claude_code.otel_metrics_sum_hourly
+          WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < toStartOfHour({from:DateTime})
+            AND AggregationTemporality = 2
+            ${metricFilter}
+          GROUP BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+          UNION ALL
+          SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType,
+              Decision, SkillName, Attributes['tool_name'] AS ToolName, 0 AS prior,
+              maxIf(Value, TimeUnix < {from:DateTime}) AS raw_baseline, max(Value) AS raw_current,
+              sumIf(Value, TimeUnix >= {from:DateTime}) AS raw_delta
+              ${includeObservation ? ", max(TimeUnix >= {from:DateTime}) AS in_window" : ""}
+          FROM claude_code.otel_metrics_sum
+          WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < {to:DateTime}
+            ${metricFilter}
+          GROUP BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
+      )
+      GROUP BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision, SkillName, ToolName
     )`;
   }
   // cumulative(temp=2) baseline의 hour 경계 처리 — 세 가지 접근을 실측으로 검증했다. hour는
@@ -550,10 +574,20 @@ function incBucketedRaw(bucketExpr, metricFilter = "", { org = false } = {}) {
                 ), 0),
                 cum) AS Value
         FROM (
+            -- A cumulative series' baseline before from's hour is its hourly rollup max (one
+            -- pseudo-bucket ordered first); raw buckets cover [from's hour, to) only.
+            SELECT toDateTime(0) AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model,
+                TokenType, Decision, max(max_value) AS cum
+            FROM claude_code.otel_metrics_sum_hourly
+            WHERE hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < toStartOfHour({from:DateTime})
+              AND AggregationTemporality = 2
+              ${metricFilter}
+            GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
+            UNION ALL
             SELECT ${bucketExpr} AS t, ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, UserEmail, MetricName, Model, TokenType, Decision,
                 if(AggregationTemporality = 2, max(Value), sum(Value)) AS cum
             FROM claude_code.otel_metrics_sum
-            WHERE TimeUnix >= {from:DateTime} - INTERVAL ${LOOKBACK_DAYS} DAY AND TimeUnix < {to:DateTime}
+            WHERE TimeUnix >= toStartOfHour({from:DateTime}) AND TimeUnix < {to:DateTime}
               ${metricFilter}
             GROUP BY t, sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision
         )

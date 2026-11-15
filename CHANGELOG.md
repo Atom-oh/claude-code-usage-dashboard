@@ -51,6 +51,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Claude detail views over windows of four hours or less no longer time out: the raw path
+  read three days of raw counter rows to find cumulative baselines (about 6 s per query on
+  production, over the 25 s load budget when a page issues several). It now reads raw rows
+  only from the window's start hour and takes earlier baselines from the hourly rollup;
+  results on production windows were identical (about 0.2 s).
 - Prepare five-language dashboard captures and use English and Korean screenshots
   in those public guides, with matching control names and synthetic provenance.
 - Use a localized React calendar with an explicit completion control for each

@@ -23,9 +23,9 @@ test("filters reach productivity SQL only as bound parameters", () => {
   }
   // Cumulative counters use the shared increase helper and in-window observation evidence.
   assert.match(claude.counters.sql, /counter_observations/);
-  assert.match(claude.counters.sql, /maxIf\(Value, TimeUnix < \{to:DateTime\}\) - maxIf\(Value, TimeUnix < \{from:DateTime\}\)/);
+  assert.match(claude.counters.sql, /greatest\(greatest\(max\(prior\), max\(raw_current\)\) - greatest\(max\(prior\), max\(raw_baseline\)\), 0\)/);
   // The activity index uses the shared counter helper, not raw cumulative sums.
-  assert.match(claude.users.sql, /maxIf\(Value, TimeUnix < \{to:DateTime\}\) - maxIf\(Value, TimeUnix < \{from:DateTime\}\)/);
+  assert.match(claude.users.sql, /greatest\(greatest\(max\(prior\), max\(raw_current\)\) - greatest\(max\(prior\), max\(raw_baseline\)\), 0\)/);
   assert.match(claude.logs.sql, new RegExp(`<= ${PRODUCTIVITY_TOOL_LIMIT} AS top`));
   const codex = buildCodexProductivityQuery(from, to, filters);
   assert.ok(!codex.sql.includes(hostile));

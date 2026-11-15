@@ -134,7 +134,8 @@ includes `StartTimeUnix` to distinguish restarted process segments, except that
 `claude_code.session.count` keeps its label-only key.
 
 `incFlat` uses raw rows for spans at most four hours and hourly rollups otherwise, with raw
-start-boundary correction. Minute charts use raw buckets; dimension-specific version,
+start-boundary correction. The short raw path and minute charts read raw rows only from the
+start hour and take older cumulative baselines from the hourly rollup; dimension-specific version,
 effort, agent, language and project queries have local raw aggregations. Historical end
 alignment, latest-hour approximation, bounded baselines and some existence/bucket boundaries
 remain. No universal equality between all windows, snapshots and charts is claimed.
