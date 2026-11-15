@@ -1523,10 +1523,10 @@ test("on the rollup path the Codex detail reads its turn's own window", async ()
   assert.equal(+codexDetailHourFrom(from, v7("2026-11-01T05:30:00Z")), Date.parse("2026-10-25T05:00:00Z"), "id hour - 7 days");
   assert.equal(+codexDetailHourFrom(new Date("2026-11-01T00:00:00Z"), v7("2026-11-12T05:30:00Z")), Date.parse("2026-10-25T00:00:00Z"),
     "a late id on a long page: the list's first hour");
-  // Competitors: start in [s, min(e + slack, to + 24h)).
+  // Competitors: start in [s, e + slack] and before to + 24h (startTo is exclusive ms).
   const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
   assert.deepEqual([competitors.params.startFrom, competitors.params.startTo, competitors.params.conversationId,
-    competitors.params.userExact, competitors.params.hourFrom, competitors.params.turnId], [s, e + 5000, "c1", "a", "2026-10-29 00:00:00", undefined]);
+    competitors.params.userExact, competitors.params.hourFrom, competitors.params.turnId], [s, e + 5001, "c1", "a", "2026-10-29 00:00:00", undefined]);
   // Completions: [max(s - 1h, from), min(e + 24h, to + 24h)), upper bound rounded up to the second.
   const completions = readOf(seen, x => x.sql.includes("codex.sse_event"));
   assert.deepEqual([completions.params.logFrom, completions.params.logTo, completions.params.conversationId, completions.params.userExact],
@@ -1663,6 +1663,18 @@ test("the rollup detail equals its rollup list row", async () => {
     assert.equal(completions.params.logTo, "2026-11-07 00:00:00");
     const spanRead = readOf(seen, x => x.sql.includes("count() OVER ()"));
     assert.equal(spanRead.params.spanTo, "2026-11-07 00:00:00");
+  });
+  // (d) A competitor starting exactly at e + slack wins a completion at exactly e + slack: linking
+  // accepts that time, so the competitor bound is inclusive there.
+  const edge = v7("2026-11-05T07:00:00Z", 9), edgeNext = v7("2026-11-05T07:00:15Z", 10);
+  await check("competitor at exactly e + slack", from, to, [
+    rollupRow(edge, "2026-11-05T07:00:00.000Z", "2026-11-05T07:00:10.000Z"),
+    rollupRow(edgeNext, "2026-11-05T07:00:15.000Z", "2026-11-05T07:00:20.000Z"),
+  ], [completion("2026-11-05T07:00:05.000Z"), completion("2026-11-05T07:00:15.000Z")], edge,
+  ({ row, seen }) => {
+    assert.ok(Math.abs(row.cost_usd - unitCost) < 1e-12, "the later turn wins the completion at e + 5 s");
+    const competitors = readOf(seen, x => x.sql.includes("codex_turns_v1") && x.params.startFrom !== undefined);
+    assert.equal(competitors.params.startTo, ms("2026-11-05T07:00:15.000Z") + 1);
   });
   // (c) A one-hour link window: completions start at the window, never s - 1h before it.
   const hourFrom = new Date("2026-11-05T05:00:00Z"), hourTo = new Date("2026-11-05T06:00:00Z");

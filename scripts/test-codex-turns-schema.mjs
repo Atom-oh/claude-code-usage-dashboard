@@ -13,7 +13,8 @@ import {
 import { codexTurnSql, namesTurnOnTools } from "../dashboard/server/taskTraces.js";
 import { TURN_LOOKBACK_MS, rollupOwnerSql, rollupTurnSql } from "../dashboard/server/codexTurnsSource.js";
 import { codexDetailHourFrom, codexDetailSql, codexTurnWindow } from "../dashboard/server/taskTraceDetail.js";
-import { codexCompletionSql } from "../dashboard/server/taskTraces.js";
+import { attachCompletions, codexCompletionSql, foldCodexTask, linkCompletions } from "../dashboard/server/taskTraces.js";
+import { DEFAULT_CODEX_PRICING } from "../dashboard/server/codexPricing.js";
 import { codexSkillsSql } from "../dashboard/server/codexActivity.js";
 import { SPAWN_SPANS } from "../dashboard/server/codexAgents.js";
 
@@ -295,6 +296,8 @@ function detailWindow() {
   const multi = v7("2026-10-22T23:00:00.000Z", 27);
   // On a 10-day page: an id over 7 days after the turn's first span (that span's own hour row).
   const lateId = v7("2026-10-30T05:00:00.000Z", 28);
+  // A competitor starting exactly at e + 5 s, winning a completion at exactly that millisecond.
+  const edge = v7("2026-10-21T08:00:00.000Z", 29), edgeNext = v7("2026-10-21T08:00:15.000Z", 30);
   insert([
     f("codex.sampling", d0, "2026-10-21T04:59:00.000Z"),
     f("codex.sampling", d, "2026-10-21T05:00:00.000Z"), f("codex.sampling", d, "2026-10-21T05:00:08.000Z", { duration: 2000000000 }),
@@ -307,6 +310,8 @@ function detailWindow() {
     f("codex.sampling", multi, "2026-10-22T22:30:00.000Z", { conversation: "conv-m" }),
     f("codex.sampling", lateId, "2026-10-21T06:00:00.000Z", { conversation: "conv-m2" }),
     f("codex.sampling", lateId, "2026-10-30T04:30:00.000Z", { conversation: "conv-m2" }),
+    f("codex.sampling", edge, "2026-10-21T08:00:00.000Z", { conversation: "conv-edge", duration: 10000000000 }),
+    f("codex.sampling", edgeNext, "2026-10-21T08:00:15.000Z", { conversation: "conv-edge" }),
   ]);
   const log = (time, attributes, user = userF) => ({ Timestamp: ts(time), ResourceAttributes: { client: "codex", "user.email": user },
     LogAttributes: attributes });
@@ -320,6 +325,7 @@ function detailWindow() {
     completed("2026-10-22T05:00:09.000Z"), completed("2026-10-22T05:00:10.000Z"), completed("2026-10-22T23:59:59.000Z"),
     completed("2026-10-23T00:00:00.000Z"), completed("2026-10-21T05:00:05.000Z", "conv-other"),
     completed("2026-10-21T05:00:05.000Z", "conv-detail", userA),
+    completed("2026-10-21T08:00:05.000Z", "conv-edge"), completed("2026-10-21T08:00:15.000Z", "conv-edge"),
     skill("2026-10-21T04:58:59.000Z", "skill-early"), skill("2026-10-21T05:00:03.000Z", "skill-in"),
     skill("2026-10-21T05:01:09.000Z", "skill-in"), skill("2026-10-21T05:01:10.000Z", "skill-late"),
   ].map(value => JSON.stringify(value)).join("\n"));
@@ -367,6 +373,30 @@ function detailWindow() {
     "late id: id hour - 7 days alone misses the first span's row");
   check(lateRead(codexDetailHourFrom(pageFrom, lateId)).map(r => [r.started_at, r.llm_calls]), [["2026-10-21T06:00:00Z", "2"]],
     "late id: both rows merge");
+  // The edge competitor: the detail's real reads fold to the list's real row; the half-open bound
+  // would leave the competitor out and give both completions to the turn.
+  const prices = DEFAULT_CODEX_PRICING;
+  const listTask = attachCompletions(asRows(rollupTurnSql(pageFrom, pageTo, q)), asRows(codexCompletionSql(pageFrom, pageTo, q)),
+    { prices, from: pageFrom, to: pageTo }).tasks.find(t => t.id === `codex:conv-edge:${edge}`);
+  const [edgeRow] = asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-edge", turnId: edge, hourFrom: hourFrom(edge) }));
+  check([Number(edgeRow.end_ms) + 5000], [Date.parse("2026-10-21T08:00:15.000Z")], "edge: the competitor starts at exactly e + 5 s");
+  const edgeWin = codexTurnWindow(pageFrom, pageTo, Number(edgeRow.start_ms), Number(edgeRow.end_ms));
+  const detailTask = startTo => {
+    const competitors = asRows(rollupTurnSql(pageFrom, pageTo, q, { conversationId: "conv-edge", hourFrom: hourFrom(edge),
+      startFrom: edgeWin.competitors.startFrom, startTo }));
+    const completions = asRows(codexCompletionSql(pageFrom, pageTo, q, { conversationId: "conv-edge", ...edgeWin.completions }));
+    const entry = linkCompletions([edgeRow, ...competitors.filter(t => t.turn_id !== edge)], completions, { prices }).entries
+      .find(e => e.turn.turn_id === edge);
+    return { competitors: competitors.map(t => t.turn_id), linked: entry.linked.length, task: foldCodexTask(entry.turn, entry.linked) };
+  };
+  const inclusive = detailTask(edgeWin.competitors.startTo);
+  check(inclusive.competitors, [edge, edgeNext], "edge: the inclusive bound reads the competitor");
+  check(inclusive.task, listTask, "edge: detail equals the list row");
+  check(inclusive.linked, 1, "edge: the turn keeps one completion (the competitor won the other)");
+  const halfOpen = detailTask(Number(edgeRow.end_ms) + 5000);
+  check([halfOpen.competitors, halfOpen.linked], [[edge], 2], "edge: a half-open bound takes the competitor's completion");
+  assert.notDeepEqual(halfOpen.task, listTask, "edge: a half-open bound would differ from the list");
+  assertions++;
   // A link's conversation outside the turn's set: no row (the detail then reads raw).
   check(turnRow(d, "conv-other"), [], "another conversation finds no turn row");
   // Agents: subagent/parent turns by conversation from the lineage start minus 7 days, unclipped.
