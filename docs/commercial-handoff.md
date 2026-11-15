@@ -1,8 +1,10 @@
 # Dedicated installation handoff
 
 This is the technical handoff for the [customer-owned AWS product](product-readiness.md).
-It accompanies a versioned release and the customer's written license/support agreement.
-The repository [LICENSE](../LICENSE) does not itself grant customer use or redistribution.
+It accompanies a versioned release and, where support is purchased, the customer's written
+support agreement. The repository [LICENSE](../LICENSE) (FSL-1.1-ALv2) permits a customer's
+internal use and professional services for that customer; it does not permit offering the
+software in a competing commercial product or service.
 This document sets no sale price, service credit, legal warranty or response-time promise.
 
 ## Supported scope
@@ -84,7 +86,7 @@ evidence; do not promise a throughput/SLO, full-database RTO or RPO from default
 
 Keep a private, customer-approved record containing:
 
-1. Written license/support scope, owner/contact, target AWS account/region/context/domain,
+1. Written support scope, owner/contact, target AWS account/region/context/domain,
    supported prerequisites and approved secret/state-storage workflow.
 2. Reviewed source revision, release tag, image digest/platform, runtime revision and
    packaged third-party notices; keep the known-good image/environment for rollback.

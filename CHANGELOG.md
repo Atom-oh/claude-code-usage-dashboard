@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- License the repository under FSL-1.1-ALv2 instead of all rights reserved: internal
+  use, education, research and professional services are permitted, competing commercial
+  products or services are not, and each version becomes Apache-2.0 two years after
+  release. The packaged `APPLICATION_LICENSE` and both `package.json` files match.
+
 ## [1.11.0] - 2026-11-15
 
 ### Added
