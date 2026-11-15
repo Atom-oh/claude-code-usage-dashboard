@@ -194,9 +194,11 @@ const t8Spans = [
 // T9: a v7 id whose spans all start 3.5 hours before its id time, inside the 1 day lead.
 // T10: a v7 id with a gap: its later span 3 days on still has the id hour (7 day age).
 // T11: a non-v7 id whose later span hour starts at verifyTo + 7 days: past the raw scan.
+// T12: a v7 id at 14:20 straddling the 7 day age: a span at 13:30 seven days on keeps the id
+// hour, one at 15:00 is past the age and has its own hour row, which its own hour verifies.
 const userE = "turns-e@example.test";
 const t9 = v7("2026-10-18T20:30:00.000Z", 9), t10 = v7("2026-10-18T12:20:00.000Z", 10);
-const t11 = "6c2d3e4f-5061-4a72-8c83-1d2e3f4a5b6c";
+const t11 = "6c2d3e4f-5061-4a72-8c83-1d2e3f4a5b6c", t12 = v7("2026-10-18T14:20:00.000Z", 12);
 const boundarySpans = [
   span("codex.sampling", t9, "2026-10-18T17:00:00.000Z", { user: userE, model: sol, conversation: "conv-i" }),
   span("shell", t9, "2026-10-18T17:10:00.000Z", { user: userE, conversation: "conv-i" }),
@@ -204,6 +206,9 @@ const boundarySpans = [
   span("codex.sampling", t10, "2026-10-21T09:00:00.000Z", { user: userE, model: sol, conversation: "conv-j" }),
   span("codex.sampling", t11, "2026-10-18T21:10:00.000Z", { user: userE, model: sol, conversation: "conv-k" }),
   span("codex.sampling", t11, "2026-10-25T22:30:00.000Z", { user: userE, model: sol, conversation: "conv-k" }),
+  span("codex.sampling", t12, "2026-10-18T14:20:00.000Z", { user: userE, model: sol, conversation: "conv-l" }),
+  span("codex.sampling", t12, "2026-10-25T13:30:00.000Z", { user: userE, model: sol, conversation: "conv-l" }),
+  span("codex.sampling", t12, "2026-10-25T15:00:00.000Z", { user: userE, model: sol, conversation: "conv-l" }),
 ];
 // One insert block of garbage-time v7 ids spread over 120 months (2050-2059, inside the DateTime
 // range, so nothing saturates). With id hours it would exceed max_partitions_per_insert_block and
@@ -542,6 +547,8 @@ check(rows(`SELECT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TA
   [{ hour: "2026-10-18 10:00:00" }, { hour: "2026-10-18 11:00:00" }], "garbage-time v7 turn keeps one row per span hour");
 check(rows(`SELECT count() AS turns, uniqExact(toYYYYMM(TurnHour)) AS months FROM claude_code.${TURNS_ROLLUP_TABLE}
   WHERE UserIdentity = '${userD}'`), [{ turns: "120", months: "1" }], "garbage-time ids stay in the span's partition");
+check(rows(`SELECT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t12}' GROUP BY TurnHour ORDER BY hour`),
+  [{ hour: "2026-10-18 14:00:00" }, { hour: "2026-10-25 15:00:00" }], "a v7 span past the 7 day age has its own hour row");
 check(rows(`SELECT DISTINCT UserIdentity AS u FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t3}' ORDER BY u`),
   [{ u: userA }, { u: userB }], "a shared synthetic id stays per owner");
 console.log(JSON.stringify({ phase: "live", status: "passed", assertions }));
@@ -575,8 +582,8 @@ console.log(JSON.stringify({ phase: "backfill", status: "passed", assertions }))
 
 // --- Generated verify: no differs over every hour of the day, clipped turns kept out. ---
 const verify = generated("clickhouse-verify-012.sql");
-const verifyHour = hour => {
-  const start = new Date(Date.parse("2026-10-18T00:00:00Z") + hour * 3600000);
+const verifyHour = (hour, date = "2026-10-18") => {
+  const start = new Date(Date.parse(`${date}T00:00:00Z`) + hour * 3600000);
   const text = start.toISOString().slice(0, 19).replace("T", " ");
   const end = new Date(start.getTime() + 3600000).toISOString().slice(0, 19).replace("T", " ");
   return execute(verify, { verifyFrom: text, verifyTo: end }, ["--format=JSONEachRow"])
@@ -585,22 +592,35 @@ const verifyHour = hour => {
 const verified = [];
 for (let hour = 0; hour < 24; hour++)
   for (const row of verifyHour(hour)) verified.push({ hour, ...row });
+// A turn is compared in each window holding one of its rows, over its rows from that window on.
 const expected = [
   { hour: 9, turn_id: t3, differs: 0, clipped: 0 }, { hour: 9, turn_id: t3, differs: 0, clipped: 0 },
   { hour: 11, turn_id: t7, differs: 0, clipped: 0 },
-  { hour: 13, turn_id: t2, differs: 0, clipped: 0 },
+  { hour: 13, turn_id: t2, differs: 0, clipped: 0 }, { hour: 14, turn_id: t2, differs: 0, clipped: 0 },
   // T4's next-day spans are inside the 7 day raw scan, so it is compared.
   { hour: 14, turn_id: t4, differs: 0, clipped: 0 }, { hour: 14, turn_id: t1, differs: 0, clipped: 0 },
+  // T12's own-hour span starts at the raw end of its id hour: clipped there.
+  { hour: 14, turn_id: t12, differs: 0, clipped: 1 },
   { hour: 20, turn_id: t9, differs: 0, clipped: 0 },
   { hour: 12, turn_id: t10, differs: 0, clipped: 0 },
   { hour: 21, turn_id: t11, differs: 0, clipped: 1 },
   { hour: 16, turn_id: t6, differs: 1, clipped: 0 },
   { hour: 18, turn_id: t5, differs: 0, clipped: 0 },
-  { hour: 10, turn_id: t8, differs: 0, clipped: 0 },
+  { hour: 10, turn_id: t8, differs: 0, clipped: 0 }, { hour: 11, turn_id: t8, differs: 0, clipped: 0 },
   ...garbage.map(turn_id => ({ hour: 8, turn_id, differs: 0, clipped: 0 })),
 ];
 const order = list => [...list].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-check(order(verified), order(expected), "verify: each turn once; only the two-conversation turn differs; the clipped turn is excluded");
+check(order(verified), order(expected), "verify: each turn row's window; only the two-conversation turn differs; clipped turns are excluded");
+// T12's own-hour window reads the 15:00 span and its row; the 13:30 span on the same day belongs
+// to the id-hour row, so neither side groups it here.
+check(verifyHour(15, "2026-10-25"), [{ turn_id: t12, differs: 0, clipped: 0 }], "verify: a fragment past the 7 day age matches");
+// A lost fragment row differs in its own hour; its id hour then compares the rest.
+execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} DELETE WHERE TurnId = '${t12}' AND TurnHour = '2026-10-25 15:00:00'`, {},
+  ["--mutations_sync=2"]);
+check(verifyHour(15, "2026-10-25"), [{ turn_id: t12, differs: 1, clipped: 0 }], "verify: a lost fragment row differs");
+check(verifyHour(14).find(r => r.turn_id === t12), { turn_id: t12, differs: 0, clipped: 0 }, "verify: the id-hour row still matches");
+execute(backfill, day("2026-10-25"), ["--insert_deduplicate=0"]);
+check(verifyHour(15, "2026-10-25"), [{ turn_id: t12, differs: 0, clipped: 0 }], "verify: backfill restores the fragment row");
 // A lost rollup row differs until a backfill restores it, including a turn whose spans all lead
 // its id hour; a misaligned window is rejected.
 execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} DELETE WHERE TurnId IN ('${t1}', '${t9}')`, {}, ["--mutations_sync=2"]);
