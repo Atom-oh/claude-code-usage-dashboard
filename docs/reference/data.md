@@ -166,7 +166,7 @@ session unit. This is source intent; deployment requires migration and rebuild e
 
 | Query path | Source and boundary behavior |
 |---|---|
-| `incFlat(metricFilter, spanMs)` | Raw table for spans **at most four hours**; rollup otherwise. The raw path reads raw rows only from `from`'s hour to `to`; a cumulative series' lookback before that hour is its hourly rollup `max_value` (same result as a three-day raw scan, since a series' value is monotonic and SeriesKey includes its start time) |
+| `incFlat(metricFilter, spanMs)` | Raw table for spans **at most four hours**; rollup otherwise. The raw path reads raw rows only from `from`'s hour to `to`; a cumulative series' lookback before that hour is its hourly rollup `max_value` (the same result as a three-day raw scan when the rollup holds those hours, since a series' value is monotonic and SeriesKey includes its start time; a partially rebuilt rollup misstates them, as it already does every longer view) |
 | Rollup `incFlat` | Retains rollup current values and corrects the start-hour baseline from raw rows; delta start-hour values are replaced with the in-window raw sum |
 | `incBucketed` | Hour/day rollups plus raw correction for the first bucket; aggregate, then window difference, then outer range filter |
 | `incBucketedRaw` | Minute buckets from raw rows from `from`'s hour; a cumulative series' earlier value enters as one first-ordered rollup pseudo-bucket used only as the first real bucket's baseline. Outer `t >= from` filters by bucket start, so an unaligned first bucket is not guaranteed to be retained |
