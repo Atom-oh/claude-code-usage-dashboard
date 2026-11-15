@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AGENT_DEPTH, AGENT_LIMIT, LINEAGE_SPAN_LIMIT, LINK_WINDOW_MS, SPAWN_SPANS, agentCount, codexLineageSql, codexAgents,
-  foldAgents, linkWindow, walkLineage } from "./codexAgents.js";
+import { AGENT_DEPTH, AGENT_LIMIT, LEGACY_CALL_SLACK_MS, LINEAGE_SPAN_LIMIT, LINK_WINDOW_MS, SPAWN_SPANS, agentCount,
+  codexCallLogSql, codexLineageSql, codexAgents, codexTurnConversationSql, containingTurn, foldAgents, legacyNeeds, linkWindow,
+  resolveLegacy, walkLineage } from "./codexAgents.js";
 import { codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
 
@@ -39,6 +40,15 @@ const chain = (trace, tag, parentTurn, child, conv, { tool = "collaborationspawn
   span(trace, `i${tag}`, `d${tag}`, "op.dispatch.inter_agent_communication"),
   span(trace, `c${tag}`, `i${tag}`, "session_task.turn", { turn: child, start_ms: at }),
   span(trace, `r${tag}`, `c${tag}`, "run_turn", { turn: child, conversation: conv }),
+];
+// The same chain as Codex before 0.166 emits it: the tool span names no turn or conversation
+// (only its call id), and run_turn carries no conversation.
+const legacyChain = (trace, tag, child, { tool = "collaborationfollowup_task", at = "0" } = {}) => [
+  span(trace, `g${tag}`, "x", tool, { call_id: `call_${tag}` }),
+  span(trace, `d${tag}`, `g${tag}`, "dispatch_tool_call_with_state"),
+  span(trace, `i${tag}`, `d${tag}`, "op.dispatch.inter_agent_communication"),
+  span(trace, `c${tag}`, `i${tag}`, "session_task.turn", { turn: child, start_ms: at }),
+  span(trace, `r${tag}`, `c${tag}`, "run_turn"),
 ];
 
 test("lineage SQL reads the task's traces for the exact user with bound parameters", () => {
@@ -221,4 +231,50 @@ test("without trace ids nothing is read and the result is unknown, and partial t
     { from, to, run: async () => [] });
   assert.equal(partial.limited, true);
   assert.equal(partial.total.cost_partial, true);
+});
+
+test("legacy spans need their call logs and child conversations", () => {
+  const rows = [...legacyChain("t", 1, C1), ...chain("t", 2, P, C2, "sub2")];
+  assert.deepEqual(legacyNeeds(rows), { callIds: ["call_1"], childTurns: [C1] });
+  assert.deepEqual(legacyNeeds(chain("t", 3, P, C2, "sub2")), { callIds: [], childTurns: [] });
+  // A call id outside the id shape is never sent to the database.
+  assert.deepEqual(legacyNeeds([span("t", "g", "x", "collaborationspawn_agent", { call_id: "a b" })]).callIds, []);
+});
+
+test("call log and turn-conversation SQL bind the owner, ids and lineage window", () => {
+  const a = codexCallLogSql("kim@x.com", ["call_1"], ms("2026-11-05T01:00:00Z"), ms("2026-11-05T02:00:00Z"));
+  assert.ok(a.sql.includes("EventName = 'codex.tool_result'") && a.sql.includes("{callIds:Array(String)}"));
+  assert.ok(a.sql.includes("coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') = {userExact:String}"));
+  assert.ok(a.sql.includes("LIMIT 1 BY call_id") && !a.sql.includes("kim@x.com") && !a.sql.includes("call_1"));
+  assert.deepEqual(a.params, { spanFrom: "2026-11-05 00:50:00", spanTo: "2026-11-06 02:00:00", userExact: "kim@x.com",
+    callIds: ["call_1"] });
+  const b = codexTurnConversationSql("kim@x.com", [C1], ms("2026-11-05T01:00:00Z"), ms("2026-11-05T02:00:00Z"));
+  assert.ok(b.sql.includes("{turnIds:Array(String)}") && b.sql.includes("GROUP BY turn_id"));
+  assert.ok(b.sql.includes("{userExact:String}") && !b.sql.includes(C1));
+  assert.deepEqual(b.params, { spanFrom: "2026-11-05 00:50:00", spanTo: "2026-11-06 02:00:00", userExact: "kim@x.com",
+    turnIds: [C1] });
+});
+
+test("the containing turn of a call is the latest turn of its conversation started by then", () => {
+  const turns = [turn("up", uuid(7), "2026-11-05T00:00:00Z", { end_ms: String(ms("2026-11-05T02:00:00Z")) }),
+    turn("up", uuid(8), "2026-11-05T01:00:00Z"), turn("other", uuid(9), "2026-11-05T00:30:00Z")];
+  assert.equal(containingTurn(turns, "up", ms("2026-11-05T01:00:05Z")).turn_id, uuid(8));
+  assert.equal(containingTurn(turns, "up", ms("2026-11-05T01:30:00Z")).turn_id, uuid(7));
+  assert.equal(containingTurn(turns, "up", ms("2026-11-05T00:00:00Z") - LEGACY_CALL_SLACK_MS).turn_id, uuid(7));
+  assert.equal(containingTurn(turns, "up", ms("2026-11-05T03:00:00Z")), null);
+  assert.equal(containingTurn(turns, "nope", ms("2026-11-05T01:00:05Z")), null);
+});
+
+test("resolved legacy spans link like 0.166 spans, and unresolved ones stay unlinked", () => {
+  const rows = [...legacyChain("t", 1, C1), ...legacyChain("t", 2, C2), ...chain("t", 3, P, G1, "sub3")];
+  const turns = [turn("root", P, "2026-11-05T01:00:00Z")];
+  const logs = [{ call_id: "call_1", conversation: "root", at_ms: String(ms("2026-11-05T01:00:01Z")) },
+    { call_id: "call_2", conversation: "root", at_ms: String(ms("2026-11-05T05:00:00Z")) }];
+  const resolved = resolveLegacy(rows, logs, [{ turn_id: C1, conversation: "sub1" }], turns);
+  const { links } = walkLineage(resolved.rows, P, resolved.conversations);
+  assert.deepEqual(links.map(l => [l.child_turn, l.child_conversation, l.parent_conversation]).sort(),
+    [[C1, "sub1", "root"], [G1, "sub3", "root"]].sort());
+  assert.equal(walkLineage(resolved.rows, C1, resolved.conversations).parent.parent_turn, P);
+  // The input rows are not changed.
+  assert.equal(rows[0].turn, "");
 });
