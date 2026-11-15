@@ -19,6 +19,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Migration 012 adds a Codex turn rollup (`codex_turns_v1`, with bounded backfill and
   verify files); no dashboard read uses it yet.
+- The task list shows a Codex "subagent calls" value (spawn and follow-up calls, not
+  subagents): a count for Codex 0.166+ turns, not collected before. With
+  `CODEX_TURNS_READ_FROM` set and the 7-day context inside it, the Codex list reads the
+  turn rollup instead of raw spans; unset keeps raw reads.
 - Codex task details show retries (`try_run_sampling_request` spans beyond
   `run_sampling_request`, both counted exactly) in the why rules and count `codex.compaction`
   spans as context compactions (Codex 0.161+; earlier versions read as not collected),
