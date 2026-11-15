@@ -371,6 +371,10 @@ export function codexTurnSql(from, to, q, { conversationId = null, conversationI
         -- run_sampling_request span that earlier versions emit once per call.
         countIf(SpanName = 'codex.sampling') AS sampling_calls,
         countIf(SpanName = 'run_sampling_request') AS legacy_calls,
+        -- One try_run_sampling_request span per attempt; tries beyond the runs are retries.
+        uniqIf(SpanId, SpanName = 'try_run_sampling_request') AS sampling_tries,
+        uniqIf(SpanId, SpanName = 'codex.compaction') AS compactions,
+        anyIf(span_version, span_version != '') AS app_version,
         if(sampling_calls > 0, sampling_calls, legacy_calls) AS llm_calls,
         if(sampling_calls > 0, 'codex.sampling', 'run_sampling_request') AS sampling_span,
         if(sampling_calls > 0,
@@ -382,6 +386,7 @@ export function codexTurnSql(from, to, q, { conversationId = null, conversationI
             intDiv(Duration, 1000000) AS span_duration_ms,
             coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id,
             SpanAttributes['conversation.id'] AS conversation,
+            ResourceAttributes['service.version'] AS span_version,
             coalesce(nullIf(SpanAttributes['model'], ''), SpanAttributes['gen_ai.request.model']) AS span_model
         FROM claude_code.otel_traces
         PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
@@ -396,6 +401,19 @@ export function codexTurnSql(from, to, q, { conversationId = null, conversationI
     LIMIT ${CODEX_TURN_LIMIT + 1}`,
     params,
   };
+}
+
+// Retries of a Codex turn: attempts beyond one per request. Unknown (null) without run spans
+// or when tries are fewer than runs (partial telemetry), never a guessed zero.
+export function codexRetries(turn) {
+  const runs = count(turn.legacy_calls), tries = count(turn.sampling_tries);
+  return runs > 0 && tries !== null && tries >= runs ? tries - runs : null;
+}
+
+// Codex 0.166 and later name the turn on tool spans; compare major.minor numerically.
+export function namesTurnOnTools(version) {
+  const m = /^(\d+)\.(\d+)/.exec(String(version ?? ""));
+  return m !== null && (Number(m[1]) > 0 || Number(m[2]) >= 166);
 }
 
 // Usage-bearing completions of the exact user in [from, to + 24h). One unique event is a
