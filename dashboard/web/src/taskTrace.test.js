@@ -157,6 +157,10 @@ test("contextSummary counts Codex compactions from the turn total, not the bound
   // Unknown stays unknown; Claude (no total) counts its events.
   expect(contextSummary({ compactions: null, compactions_total: null }).compactions).toBeNull();
   expect(contextSummary({ compactions: [ev] }).compactions).toBe(1);
+  // Whether the drawn events are only some of them.
+  expect(contextSummary({ compactions: [ev, ev], compactions_total: 5, compactions_partial: true }).compactionsPartial).toBe(true);
+  expect(contextSummary({ compactions: [ev], compactions_total: 1, compactions_partial: false }).compactionsPartial).toBe(false);
+  expect(contextSummary({ compactions: [ev] }).compactionsPartial).toBe(false);
 });
 
 test("modelUsage folds call sources into one row per model, most expensive first", () => {

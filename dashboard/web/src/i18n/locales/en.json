@@ -2037,5 +2037,8 @@
   "m83e222c2fb52": "Select date",
   "m49e86c3288d4": "Unavailable",
   "m051986e644b8": "The collection user ID is set to the email address of the signed-in account that approved the device. Reinstalling over an existing collector also changes it to this email address. You can specify a different ID with {0} only if the signed-in account has no verified email address.",
-  "me7f6707f549f": "When you approve, the collection user ID is set to this account's email; devices that already have a collector installed also change to this email."
+  "me7f6707f549f": "When you approve, the collection user ID is set to this account's email; devices that already have a collector installed also change to this email.",
+  "m1167c444c874": "{0} compactions{1} (only some shown in chart)",
+  "mb1c9e46267bb": "Codex runs subagents as separate conversations. Connections not found through trace are inferred from Codex agent_communication logs. The first turn of a receiving conversation that starts within 60 seconds of transmission is counted as a subagent turn. Costs are estimates calculated from each subagent’s completion logs.",
+  "m8aa42f469326": "Count linked through agent_communication logs"
 }

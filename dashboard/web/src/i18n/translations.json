@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T08:47:12.539835+00:00",
-  "source_messages": 2039,
+  "updated_at": "2026-11-15T11:05:25.355559+00:00",
+  "source_messages": 2042,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2039,
-      "bytes": 156710,
-      "sha256": "03e91b1f3af30f774448ee232e13f290ffb67dff485985386dd297fbd4667cf2"
+      "messages": 2042,
+      "bytes": 157193,
+      "sha256": "10acb265f9a7b983b1d99488873dbbdd94766a20e08862d2cee8084aa56989d5"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2039,
-      "bytes": 185212,
-      "sha256": "4411fc3e0e144e80b3f4d6473bce3b63b3b7ddb0aebda24de79a14179e905b62"
+      "messages": 2042,
+      "bytes": 185827,
+      "sha256": "766935a9fffb7606c3be77e30f52d86b77fac84631473d5e6306300f6327d035"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2039,
-      "bytes": 194082,
-      "sha256": "864fa2d0f9c4440efd02525a3292ed50552e50342dd086e5a4afeaf97b443d5c"
+      "messages": 2042,
+      "bytes": 194710,
+      "sha256": "50e24d823aee72bb24c7297eb43d4ffdfd9b90299870b5831091fd4a56dad25e"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2039,
-      "bytes": 166477,
-      "sha256": "d8a488ef6bf92abe44be1a4a52f3c19c25de93ad502ec9970760fda84b7dad03"
+      "messages": 2042,
+      "bytes": 166981,
+      "sha256": "09cc646ad804cfbd381bcec9a30ff898a4916673d5c965a4da1d3e69ae13443d"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2039,
-      "bytes": 148184,
-      "sha256": "e6d0387b0bd3f730c9c79a9caf5bbc68606f8f281fb23348cf29a15f09dad307"
+      "messages": 2042,
+      "bytes": 148635,
+      "sha256": "e9687a23defc3e442b4c1742aeb98d869bdb0c56fbc242847cea68239ab32cee"
     }
   ],
   "catalog_calls": [
@@ -675,6 +675,34 @@
       },
       "stop_reason": "end_turn",
       "timestamp": "2026-11-14T10:46:19.252648+00:00"
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "date": "2026-11-15",
+      "source_sha256": "1b0856cef257916f105189c1a74af98040d9e2397d9eaa22249ec20a4feb67c1",
+      "request_sha256": "44daa7586c25904381bf9bd9ff5157d3960a6108a9e6d2969eb617a7e2603bcf",
+      "output_sha256": "43ce04fab03215ce9da8dcd803609e2bd0faf3c562910a236a67c883c6b08ad0",
+      "usage": {
+        "inputTokens": 465,
+        "outputTokens": 723,
+        "totalTokens": 1188,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-15T11:04:35.354601+00:00",
+      "keys": [
+        "m1167c444c874",
+        "m8aa42f469326",
+        "mb1c9e46267bb"
+      ],
+      "messages": 3,
+      "serialization": "source: the Korean messages as a JSON object (ensure_ascii false); request: the Converse request, sorted keys; output: the text block returned",
+      "attempts": "An identical earlier call in the same session succeeded, but its output was not retained (the reading script failed on the reasoning block); this call's output is the one applied.",
+      "verification": "All five catalogs retain nonempty messages and matching positional placeholders."
     }
   ],
   "additional_messages": {
