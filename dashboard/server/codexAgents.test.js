@@ -870,3 +870,72 @@ test("the communication fallback reads the turns of many long conversation ids i
   assert.deepEqual(turnReads.flatMap(s => s.params.conversationIds).sort(), ["root", ...receivers].sort());
   assert.deepEqual([out.links_source, out.children.map(c => c.id), out.limited], ["log", [`codex:${last}:${C1}`], false]);
 });
+
+test("on the rollup the communication fallback reads the turns of many long conversation ids in chunks", async () => {
+  const { COST_ID_PARAM_BYTES } = await import("./taskTraces.js");
+  const boundary = new Date("2026-10-01T00:00:00Z");
+  const receivers = Array.from({ length: 1000 }, (_, i) => longId("conv", i));
+  const sends = receivers.map((r, i) => ({ kind: "spawn", sender: "root", receiver: r, at_ms: String(T0 + i * 5) }));
+  const last = receivers.at(-1);
+  const seen = [];
+  const run = commRun(seen, { sends, turns: [turn(last, C1, new Date(T0 + 999 * 5 + 50).toISOString())],
+    completions: [completion(last, new Date(T0 + 999 * 5 + 100).toISOString())] });
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING,
+    turnsBoundary: boundary });
+  const rollupReads = seen.filter(s => s.sql.includes("codex_turns_v1"));
+  assert.ok(rollupReads.length > 1, String(rollupReads.length));
+  for (const s of rollupReads) {
+    assert.ok(encodedBytes(s.params.conversationIds) <= COST_ID_PARAM_BYTES);
+    // Every chunk keeps the rollup's hour range: lineage start (T0 - 10 min) minus the 7-day lookback.
+    assert.equal(s.params.hourFrom, "2026-10-29 00:00:00");
+  }
+  assert.deepEqual(rollupReads.flatMap(s => s.params.conversationIds).sort(), ["root", ...receivers].sort());
+  assert.ok(!seen.some(s => s.sql.includes("GROUP BY turn_id")), "no raw turn read");
+  assert.deepEqual([out.links_source, out.children.map(c => c.id), out.limited], ["log", [`codex:${last}:${C1}`], false]);
+});
+
+test("on the rollup legacy candidate conversations over the budget are read in chunks", async () => {
+  const { COST_ID_PARAM_BYTES } = await import("./taskTraces.js");
+  const boundary = new Date("2026-10-01T00:00:00Z");
+  const n = 1500;
+  const calls = Array.from({ length: n }, (_, i) => span("t", `h${i}`, "x", "collaborationfollowup_task", { call_id: longId("call_", i) }));
+  const rows = [...calls, ...legacyChain("t", 1, C1)];
+  const at = String(ms("2026-11-05T01:00:01Z"));
+  const seen = [];
+  // Each long call is logged by its own long conversation, whose turn ran it; call_1 by root.
+  const others = calls.map((c, i) => turn(c.call_id.replace("call_", "conv"), uuid(30000 + i), "2026-11-05T01:00:00Z"));
+  const base = legacyRun(seen, { rows, logs: [], conversations: [{ turn_id: C1, conversation: "sub1" }],
+    turns: [turn("root", P, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:02Z"), ...others],
+    completions: [completion("sub1", "2026-11-05T01:00:05Z")] });
+  const run = async (sql, params) => sql.includes("codex.tool_result")
+    ? (seen.push({ sql, params }), params.callIds.map((id) => ({ call_id: id, at_ms: at,
+      conversation: id === "call_1" ? "root" : id.replace("call_", "conv") })))
+    : base(sql, params);
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING,
+    turnsBoundary: boundary });
+  const rollupReads = seen.filter(s => s.sql.includes("codex_turns_v1"));
+  assert.ok(rollupReads.length > 1, String(rollupReads.length));
+  for (const s of rollupReads) {
+    assert.ok(encodedBytes(s.params.conversationIds) <= COST_ID_PARAM_BYTES);
+    assert.equal(s.params.hourFrom, "2026-10-29 00:00:00");
+  }
+  const wanted = ["root", "sub1", ...calls.map(c => c.call_id.replace("call_", "conv"))].sort();
+  assert.deepEqual(rollupReads.flatMap(s => s.params.conversationIds), wanted);
+  assert.ok(!seen.some(s => s.sql.includes("GROUP BY turn_id") && !s.sql.includes("{turnIds")), "no raw turn read");
+  assert.deepEqual(out.children.map(c => c.id), [`codex:sub1:${C1}`]);
+  assert.equal(out.limited, false);
+});
+
+test("on the rollup a budget spent after the first conversation chunk starts no further rollup chunk", async () => {
+  const boundary = new Date("2026-10-01T00:00:00Z");
+  const receivers = Array.from({ length: 1000 }, (_, i) => longId("conv", i));
+  const sends = receivers.map((r, i) => ({ kind: "spawn", sender: "root", receiver: r, at_ms: String(T0 + i * 5) }));
+  const inner = commRun([], { sends, turns: [] });
+  const b = budgetRun(inner, (sql) => sql.includes("codex_turns_v1"));
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: b.run, prices: DEFAULT_CODEX_PRICING,
+    turnsBoundary: boundary, detailStart: b.detailStart, now: b.now });
+  assert.equal(b.seen.filter(s => s.includes("codex_turns_v1")).length, 1);
+  assert.ok(!b.seen.some(s => s.includes("GROUP BY turn_id")));
+  assert.deepEqual([out.limited, out.known_zero], [true, false]);
+});
