@@ -326,9 +326,10 @@ rollup row is unclipped; the raw read clips a turn to the page range. Retention 
 Order: the shared schema contract (`infra/files/clickhouse-schema-contract.sql`) requires the
 ledger to equal its version list, so run steps 3-5 only from merged `main`.
 
-1. Merge with `CODEX_TURNS_READ_FROM` unset (Terraform `codex_turns_read_from` empty), and do
-   not roll out the image that contains this change yet: on the raw path its lineage reads make
-   long Codex sessions exceed the 25 s query budget. The image goes out with step 6.
+1. Merge with `CODEX_TURNS_READ_FROM` unset (Terraform `codex_turns_read_from` empty). The image
+   is safe on the raw path: subagent reads stop at the detail's read budget
+   (`AGENT_EXTRA_BUDGET_MS`), so long Codex sessions list their subagents as limited, without
+   costs, until step 6.
 2. Inspect. Require ledger 004 and no ledger 012; confirm `claude_code.codex_turns_v1` does not
    exist on any replica.
 3. Apply `clickhouse-migration-012.sql` once through one pod, as for migration 011, then verify
@@ -390,14 +391,13 @@ ledger to equal its version list, so run steps 3-5 only from merged `main`.
 6. Activate by setting `CODEX_TURNS_READ_FROM` (Terraform `codex_turns_read_from`, compose and
    `.env` `CODEX_TURNS_READ_FROM`) to the verified start of the backfill, hour-aligned UTC
    (`YYYY-MM-DDTHH:00:00Z`; the server refuses to start on any other value), together with the
-   image rollout that contains this change. Do not roll that image out with the variable unset:
-   the lineage fixes make long Codex sessions exceed the 25 s query budget on the raw path.
+   image rollout that contains this change (or a restart of an image that already contains it).
 
 With the variable set, the Codex task list reads the rollup when its range start minus 7 days is
 at or after the boundary. A detail reads it when its list would and its turn id is UUIDv7 with a
 time at or after the boundary and within [range start - 7 days, range end + 1 day]; any other
 read, and a turn missing from the rollup, stays raw. To roll back, unset it and
-redeploy; this restores raw reads (the long-session budget risk above returns). Retain the table
+redeploy; this restores raw reads (long sessions show limited subagents again). Retain the table
 and view. Each production step needs the owner's go-ahead.
 
 ## Rollback
