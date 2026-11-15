@@ -8,6 +8,7 @@ import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
 import { SPAWN_SPANS, agentCount, codexAgents } from "./codexAgents.js";
+import { codexSkillsSql, foldCodexSkills, foldCodexTools } from "./codexActivity.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
@@ -509,10 +510,16 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
   // The turn row names its model-call span kind (codexTurnSql): codex.sampling, or
   // run_sampling_request for Codex versions without it.
   const callSpan = turn.sampling_span || "codex.sampling";
-  const spans = ordered.map(({ r, start }) => ({ id: r.span_id, parent: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null,
-    lane: "main", kind: r.span_name === callSpan ? "llm" : "tool", name: label(r.span_name) ?? "unknown",
-    start_ms: start !== null && t0 !== null ? start - t0 : null, duration_ms: count(r.duration_ms),
-    attrs: pickAttrs(r, SPAN_ATTRIBUTE_ALLOWLIST.codex), _start: start }));
+  // A Codex tool call is a span carrying tool_name; other non-model spans are Codex's own
+  // operations (turn scaffolding, MCP runtime resolution, tool blocking), flagged internal.
+  const spans = ordered.map(({ r, start }) => {
+    const attrs = pickAttrs(r, SPAN_ATTRIBUTE_ALLOWLIST.codex);
+    const kind = r.span_name === callSpan ? "llm" : "tool";
+    return { id: r.span_id, parent: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null,
+      lane: "main", kind, name: label(r.span_name) ?? "unknown",
+      start_ms: start !== null && t0 !== null ? start - t0 : null, duration_ms: count(r.duration_ms),
+      attrs, ...(kind === "tool" && !attrs.tool_name ? { internal: true } : {}), _start: start };
+  });
   // Each linked completion goes to the latest-starting sampling span whose
   // [start, end + slack] contains its event time (the turn rule, one level down).
   const assigned = new Map();
@@ -609,8 +616,9 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const turnStart = count(entry.turn.start_ms);
   const limitsSql = turnStart === null ? null
     : codexLimitsSql(q, task.conversationId, turnStart, count(entry.turn.end_ms) ?? turnStart);
-  const [rows, limitRows] = await Promise.all([run(sql.spans.sql, sql.spans.params),
-    limitsSql ? run(limitsSql.sql, limitsSql.params) : []]);
+  const skillsSql = codexSkillsSql(from, to, q, task.conversationId, task.turnId);
+  const [rows, limitRows, skillRows] = await Promise.all([run(sql.spans.sql, sql.spans.params),
+    limitsSql ? run(limitsSql.sql, limitsSql.params) : [], run(skillsSql.sql, skillsSql.params)]);
   const detail = foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
   // Subagent turns linked through the trace's parent-span chain; their own completions price them.
   const spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
@@ -618,5 +626,6 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const agents = await codexAgents(owner, { turnId: task.turnId, startMs: turnStart, endMs: count(entry.turn.end_ms),
     traceIds, tracesPartial: detail.truncated }, detail.task, spawnSpanIds, { from, to, run, prices });
   // Codex emits no MCP or plugin session events: its environment is not collected.
-  return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, environment: null, owner };
+  const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
+  return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, activity, environment: null, owner };
 }

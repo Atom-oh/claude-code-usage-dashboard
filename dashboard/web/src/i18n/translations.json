@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T06:40:00+00:00",
-  "source_messages": 2004,
+  "updated_at": "2026-11-15T07:05:19.082934+00:00",
+  "source_messages": 2018,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2004,
-      "bytes": 154429,
-      "sha256": "341446792ffb844f96828327bdd4e4fc3defd492fd69ea2ad8c1962f92fa08ca"
+      "messages": 2018,
+      "bytes": 155340,
+      "sha256": "88d12eaa0668bb2e870f1ffa1ed5ab6868e45c8b0b42f23f75ce9d05eab0726c"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2004,
-      "bytes": 182503,
-      "sha256": "8e561fdde7e28d66a658a80739bd87a44d5d8f002be0501549b9e076a7d05f28"
+      "messages": 2018,
+      "bytes": 183587,
+      "sha256": "7c7c7600a3d667ced4a85875d6d1d7de3b561ac7b7d2ce24d0905280047215a7"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2004,
-      "bytes": 191313,
-      "sha256": "f4c02b69e08d8276dfdb828c6e8cf719d9f50ecb1f3317da04858636ada4186e"
+      "messages": 2018,
+      "bytes": 192467,
+      "sha256": "21c187aec480d8f993a87c059e7172a085cd9618f9565e27f0957d749117de4b"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2004,
-      "bytes": 164197,
-      "sha256": "9d9ba833b4bf3b3ae0e01a8140b0b407086b89d0f9aeebf5abec25dc603aa760"
+      "messages": 2018,
+      "bytes": 165156,
+      "sha256": "307c6de97b369a4a201be457315015b9ee3acc4fc50d87566e8dc80dd7254ef0"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2004,
-      "bytes": 145997,
-      "sha256": "ba7c23e30fad82b0ded162a5984fc31a5b4a2d0e9870e55c8acc2bb361fd863f"
+      "messages": 2018,
+      "bytes": 146900,
+      "sha256": "8df2862dc1134e73ffb5b7e80d2a4ca96b89bba3479dc05156dcca1bab635c16"
     }
   ],
   "catalog_calls": [
@@ -1085,5 +1085,63 @@
     ],
     "verification": "All new keys have nonempty strings in all five locales; positional placeholder multisets match.",
     "attestation_note": "The requested model is recorded. Hidden weights are not independently attested."
+  },
+  "codex_activity_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-15T07:05:19.082704+00:00",
+    "added_message_count": 14,
+    "added_keys": [
+      "m07cdad7a7167",
+      "m0cf412ff8552",
+      "m11cf787f3c11",
+      "m24e46b503f01",
+      "m4268a8e02583",
+      "m4d74eb05b9b5",
+      "m4da09def7978",
+      "m67e7ba0fc025",
+      "m734e27062552",
+      "m88fe8ae661ed",
+      "ma26970acc182",
+      "mb57872ccd2ff",
+      "mbb40fe15a913",
+      "me1a23d5c2d10"
+    ],
+    "source_sha256": "033cba78c4bfe529fd6ca36b0e0139756bc7f35612b7fe45c2501f9e5c65337f",
+    "calls": [
+      {
+        "request_sha256": "161c02b0ae00b214e70f66f0ccad2220333cfaafe7851772f04682e9e3076025",
+        "usage": {
+          "inputTokens": 413,
+          "outputTokens": 1766,
+          "totalTokens": 2179,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "2043c121d7aa88c69409f898c2c088900e8e08e116c652c3b8816abf06fd463d"
+      },
+      {
+        "request_sha256": "857b61edfcc529f25b66c4b196628e3638665746f372d6508daf6195f0c76d60",
+        "usage": {
+          "inputTokens": 138,
+          "outputTokens": 138,
+          "totalTokens": 276,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "output_sha256": "1ab0523c81cf38b4cc733e2d6ca3f977e7adab832b696e8eaf3925059113e1eb"
+      }
+    ],
+    "host_corrections": {
+      "m4268a8e02583": "short invocation labels (explicit/automatic) in all four targets",
+      "m67e7ba0fc025": "short invocation labels (explicit/automatic) in all four targets",
+      "m4d74eb05b9b5": "en word order",
+      "m734e27062552": "en/es count as ×{2} (no plural agreement)",
+      "me1a23d5c2d10": "en/es count as label: {0} (no plural agreement)"
+    }
   }
 }

@@ -2002,5 +2002,19 @@
   "m0d31ae34c7ed": "Call method",
   "m2668bc818e5b": "Open",
   "m0bd87b5900b9": "Count linked through the trace's parent spans",
-  "m203f80842740": "Open subagent turn #{0}"
+  "m203f80842740": "Open subagent turn #{0}",
+  "m11cf787f3c11": "Skills and tools used in this turn",
+  "m734e27062552": "{0} ({1}, ×{2})",
+  "m4268a8e02583": "explicit",
+  "m67e7ba0fc025": "automatic",
+  "mb57872ccd2ff": "No skill invocation events were recorded in this turn.",
+  "mbb40fe15a913": "There are many skill types, so only up to {0} are shown.",
+  "m4da09def7978": "No tool call spans were recorded in this turn.",
+  "m24e46b503f01": "Only some spans were included, or there are too many tools, so only some are shown.",
+  "ma26970acc182": "Skills are counted from codex.skill_invocation logs, and tool calls from spans with tool_name. MCP tool names (mcp__…) combine the server and tool names, so they aren't split.",
+  "me1a23d5c2d10": "Aborted: {0}",
+  "m4d74eb05b9b5": "{0} Codex internal operation spans hidden.",
+  "m0cf412ff8552": "Show all",
+  "m88fe8ae661ed": "Hide internal operation spans",
+  "m07cdad7a7167": "Total span time"
 }
