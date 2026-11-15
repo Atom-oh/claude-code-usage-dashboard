@@ -18,9 +18,11 @@ class ResizeObserverStub {
 }
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({
-    width: 800, height: 300, top: 0, left: 0, right: 800, bottom: 300, x: 0, y: 0,
-  }));
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+    // A 300px legend would consume the entire horizontal chart in jsdom.
+    const height = this.classList.contains("recharts-legend-wrapper") ? 32 : 300;
+    return { width: 800, height, top: 0, left: 0, right: 800, bottom: height, x: 0, y: 0 };
+  });
 });
 afterEach(() => {
   cleanup();
@@ -400,6 +402,67 @@ test("missing token composition is disclosed instead of charting a partial total
   const composition = card("클라이언트별 토큰 구성");
   expect(within(composition).getByRole("status").textContent).toContain("확인 필요");
   expect(composition.querySelector("svg.recharts-surface")).toBeNull();
+});
+
+test("known Codex composition is charted with a partial warning while canonical counts stay unavailable", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const data = partialTokensFixture();
+  data.by_client[0].observed_token_parts = {
+    input_tokens: 49, cache_read_tokens: 40, cache_write_tokens: 11, output_tokens: 30, partial: true,
+  };
+  mount("usage", data);
+  const composition = card("클라이언트별 토큰 구성");
+  await waitFor(() => expect(composition.querySelectorAll(".recharts-bar-rectangle path")).toHaveLength(4));
+  expect(within(composition).getByRole("status").textContent).toContain("Codex");
+  expect(composition.textContent).toContain("부분합");
+  expect(composition.textContent).toContain("빠져 있습니다");
+  const comparison = card("클라이언트별 사용량");
+  expect(comparison.textContent).toContain("148");
+  expect(within(comparison).getAllByText("—").length).toBeGreaterThanOrEqual(4);
+});
+
+test("an unavailable client does not suppress another client's complete composition", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const data = fixture(["claude", "codex"]);
+  data.by_client[1] = { ...data.by_client[1], input_tokens: null, cache_read_tokens: null,
+    cache_write_tokens: null, output_tokens: null };
+  mount("usage", data);
+  const composition = card("클라이언트별 토큰 구성");
+  await waitFor(() => expect(composition.querySelectorAll(".recharts-bar-rectangle path")).toHaveLength(4));
+  expect(within(composition).getByRole("status").textContent).toContain("Codex");
+  expect(composition.textContent).toContain("미확인");
+});
+
+test.each([null, -1, 0.5, Number.MAX_SAFE_INTEGER])(
+  "an invalid observed composition part %s never becomes a zero or a canonical fallback", (output_tokens) => {
+    const data = fixture(["codex"]);
+    data.by_client[0].observed_token_parts = {
+      input_tokens: 49, cache_read_tokens: 40, cache_write_tokens: 11, output_tokens, partial: true,
+    };
+    mount("usage", data);
+    const composition = card("클라이언트별 토큰 구성");
+    expect(composition.querySelector("svg.recharts-surface")).toBeNull();
+    expect(composition.textContent).toContain("미확인");
+  },
+);
+
+test("recorded zero composition stays distinct from an unobserved client", async () => {
+  const data = partialTokensFixture();
+  data.by_client[0].observed_token_parts = {
+    input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 0, partial: true,
+  };
+  const { unmount } = mount("usage", data);
+  let composition = card("클라이언트별 토큰 구성");
+  await waitFor(() => expect(composition.querySelector('svg[role="application"]')).not.toBeNull());
+  expect(composition.textContent).toContain("부분합");
+  expect(composition.textContent).not.toContain("미확인");
+  unmount();
+  data.by_client[0].observed_records = 0;
+  data.by_client[0].observed_token_parts.input_tokens = 100;
+  mount("usage", data);
+  composition = card("클라이언트별 토큰 구성");
+  expect(composition.querySelector('svg[role="application"]')).toBeNull();
+  expect(composition.textContent).toContain("미확인");
 });
 
 test("all-unpriced time series explain absent costs instead of plotting zero", () => {

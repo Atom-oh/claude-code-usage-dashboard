@@ -258,6 +258,80 @@ test("client rows keep a known input composition when a request has no usage", (
   assert.equal(Object.hasOwn(partial.timeseries[0], "observed_input"), false);
 });
 
+test("token composition preserves aligned known parts when another scope has no usage", () => {
+  const records = [event,
+    { ...event, session: "second", input_tokens_total: 40, cache_read_tokens: 10,
+      cache_write_tokens: 5, output_tokens: 10, reasoning_tokens: 1 },
+    { ...event, kind: "request", session: "missing" }];
+  const result = foldClientMetrics(records, ["codex"]);
+  const [row] = result.by_client;
+  assert.equal(row.tokens, null);
+  assert.equal(row.output_tokens, null);
+  assert.deepEqual(row.observed_token_parts, {
+    input_tokens: 74, cache_read_tokens: 50, cache_write_tokens: 16, output_tokens: 40, partial: true,
+  });
+  assert.equal(Object.hasOwn(result.timeseries[0], "observed_token_parts"), false);
+  assert.equal(Object.hasOwn(result.totals, "_tokenParts"), false);
+});
+
+test("token composition excludes incomplete records whole and stays independent of pricing", () => {
+  const result = foldClientMetrics([event,
+    { ...event, session: "invalid", input_tokens_total: 500, cache_write_tokens: null, output_tokens: 200 },
+    { ...event, session: "invalid-cache-subset", cache_read_tokens: 95 },
+    { ...event, session: "invalid-reasoning-subset", reasoning_tokens: 31 },
+    { ...event, session: "unpriced", model: "openai.unknown" },
+    { ...event, client: "claude", session: "claude", input_tokens: 7, output_tokens: null, reported_cost: 2 },
+  ], ["codex", "claude"]);
+  assert.deepEqual(result.by_client[0].observed_token_parts, {
+    input_tokens: 98, cache_read_tokens: 80, cache_write_tokens: 22, output_tokens: 60, partial: true,
+  });
+  assert.deepEqual(result.by_client[1].observed_token_parts, {
+    input_tokens: null, cache_read_tokens: null, cache_write_tokens: null, output_tokens: null, partial: true,
+  });
+});
+
+test("token composition distinguishes complete, recorded zero, unknown and absent usage", () => {
+  for (const [records, expected] of [
+    [[event], { input_tokens: 49, cache_read_tokens: 40, cache_write_tokens: 11, output_tokens: 30, partial: false }],
+    [[{ ...event, input_tokens_total: 0, cache_read_tokens: 0, cache_write_tokens: 0,
+      output_tokens: 0, reasoning_tokens: 0 }, { ...event, kind: "request", session: "missing" }],
+    { input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 0, partial: true }],
+    [[{ ...event, kind: "request", session: "missing" }],
+    { input_tokens: null, cache_read_tokens: null, cache_write_tokens: null, output_tokens: null, partial: true }],
+    [[], { input_tokens: null, cache_read_tokens: null, cache_write_tokens: null, output_tokens: null, partial: false }],
+  ]) {
+    assert.deepEqual(foldClientMetrics(records, ["codex"]).by_client[0].observed_token_parts, expected);
+  }
+});
+
+test("unsafe token composition totals never expose a smaller partial prefix", () => {
+  const large = { ...event, input_tokens_total: Number.MAX_SAFE_INTEGER, cache_read_tokens: 0,
+    cache_write_tokens: 0, output_tokens: 0, reasoning_tokens: 0 };
+  for (const records of [
+    [event, large],
+    [event, { ...large, output_tokens: 1 }],
+    [event, { ...large, input_tokens_total: Number.MAX_SAFE_INTEGER + 1 }],
+    [event, { ...event, output_tokens: Number.MAX_SAFE_INTEGER + 1 }],
+    [event, { ...event, observed_tokens_overflow: 1 }],
+  ]) {
+    assert.deepEqual(foldClientMetrics(records, ["codex"]).by_client[0].observed_token_parts, {
+      input_tokens: null, cache_read_tokens: null, cache_write_tokens: null, output_tokens: null, partial: true,
+    });
+  }
+});
+
+test("Claude composition accepts collected numeric strings without requiring Codex reasoning", () => {
+  const result = foldClientMetrics([
+    { ...event, client: "claude", input_tokens: "7", cache_read_tokens: "3",
+      cache_write_tokens: "2", output_tokens: "8", reasoning_tokens: null, reported_cost: 1 },
+    event, { ...event, kind: "request", session: "missing" },
+  ], ["claude", "codex"]);
+  assert.deepEqual(result.by_client[0].observed_token_parts, {
+    input_tokens: 7, cache_read_tokens: 3, cache_write_tokens: 2, output_tokens: 8, partial: false,
+  });
+  assert.equal(result.by_client[1].observed_token_parts.partial, true);
+});
+
 test("known observed tokens survive an unmatched usage scope without changing canonical coverage or cost", () => {
   const out = foldClientMetrics([
     event,
