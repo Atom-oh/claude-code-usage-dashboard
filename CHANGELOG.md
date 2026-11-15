@@ -28,7 +28,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   shows a known zero instead of not collected.
 - Codex task details show retries (`try_run_sampling_request` spans beyond
   `run_sampling_request`) in the why rules and count `codex.compaction` spans as context
-  compactions, with a partial flag when the bounded span list holds fewer.
+  compactions (Codex 0.161+; earlier versions read as not collected), stating the turn's
+  full count with a partial flag when the bounded span list holds fewer.
 - Codex task details link subagent turns from `codex.agent_communication` logs
   (Codex 0.167.1-0.168.0) when the traces give no lineage, marked as log-linked.
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex

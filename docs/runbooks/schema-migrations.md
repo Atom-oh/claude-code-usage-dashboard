@@ -324,11 +324,14 @@ rollup row is unclipped; the raw read clips a turn to the page range. Retention 
 `scripts/generate-codex-turns-schema.mjs`; edit the generator, not the SQL.
 
 Order: the shared schema contract (`infra/files/clickhouse-schema-contract.sql`) requires the
-ledger to equal its version list, so run steps 2-4 only from merged `main`.
+ledger to equal its version list, so run steps 3-5 only from merged `main`.
 
-1. Inspect. Require ledger 004 and no ledger 012; confirm `claude_code.codex_turns_v1` does not
+1. Merge with `CODEX_TURNS_READ_FROM` unset (Terraform `codex_turns_read_from` empty), and do
+   not roll out the image that contains this change yet: on the raw path its lineage reads make
+   long Codex sessions exceed the 25 s query budget. The image goes out with step 6.
+2. Inspect. Require ledger 004 and no ledger 012; confirm `claude_code.codex_turns_v1` does not
    exist on any replica.
-2. Apply `clickhouse-migration-012.sql` once through one pod, as for migration 011, then verify
+3. Apply `clickhouse-migration-012.sql` once through one pod, as for migration 011, then verify
    the table and view on every replica. Confirm the view uses `SQL SECURITY DEFINER` and collector
    inserts into `otel_traces` continue without new grants.
 
@@ -336,17 +339,31 @@ ledger to equal its version list, so run steps 2-4 only from merged `main`.
    CH_USER=otel_writer CH_SECRET=clickhouse-writer ch < clickhouse-migration-012.sql
    ```
 
-3. Backfill the retained 90 days, one day per call, bound as parameters (the file rejects an interval over one day or a
-   non-positive one; `ch` passes no flags, so `SET` them first), serially on one replica per shard, from the oldest retained trace hour
-   through installation plus one settled hour. Repeatable: overlaps with the live view and reruns
-   are safe.
+4. Backfill the retained 90 days, one day per call, bound as parameters (the file rejects an
+   interval over one day or a non-positive one; `ch` passes no flags, so `SET` the parameters
+   and the [cost backfill](codex-cost-schema.md#2-backfill-bounded-intervals) throttles first),
+   serially on one replica per shard, from the oldest retained trace day through today; run the
+   last day after installation plus one settled hour. Repeatable: overlaps with the live view and
+   reruns are safe. Stop on a failed day and retry it in full; if a day exceeds
+   `max_execution_time`, split it into hours rather than raising the limit. Between days watch
+   parts, merges, replication queues and ingestion as the cost backfill describes, and pause when
+   they back up.
 
    ```bash
-   { echo "SET param_backfillFrom='2026-11-01 00:00:00', param_backfillTo='2026-11-02 00:00:00';"
-     cat clickhouse-backfill-012.sql; } | CH_USER=otel_writer CH_SECRET=clickhouse-writer ch
+   day=$(date -u -d '89 days ago' +%F) end=$(date -u -d tomorrow +%F)
+   while [ "$day" != "$end" ]; do
+     next=$(date -u -d "$day + 1 day" +%F)
+     { echo "SET max_threads=1, max_block_size=8192, max_insert_block_size=8192,"
+       echo "  min_insert_block_size_rows=0, min_insert_block_size_bytes=0,"
+       echo "  max_memory_usage=800000000, max_execution_time=120;"
+       echo "SET param_backfillFrom='$day 00:00:00', param_backfillTo='$next 00:00:00';"
+       cat clickhouse-backfill-012.sql; } | CH_USER=otel_writer CH_SECRET=clickhouse-writer ch || break
+     echo "backfilled $day"
+     day=$next
+   done
    ```
 
-4. Verify every backfilled hour window with the read-only `clickhouse-verify-012.sql` (bound
+5. Verify every backfilled hour window with the read-only `clickhouse-verify-012.sql` (bound
    hour-aligned UTC `verifyFrom`/`verifyTo`). It reads raw spans in `[verifyFrom - 1h,
    verifyTo + 24h)`, so verify only windows whose raw spans are still retained. It returns one row
    per turn whose first hour is in the window: `differs` (rollup and raw disagree on conversation
@@ -361,15 +378,16 @@ ledger to equal its version list, so run steps 2-4 only from merged `main`.
      cat clickhouse-verify-012.sql; } | CH_USER=otel_writer CH_SECRET=clickhouse-writer ch
    ```
 
-5. Activate by setting `CODEX_TURNS_READ_FROM` (Terraform `codex_turns_read_from`, compose and
+6. Activate by setting `CODEX_TURNS_READ_FROM` (Terraform `codex_turns_read_from`, compose and
    `.env` `CODEX_TURNS_READ_FROM`) to the verified start of the backfill, hour-aligned UTC
    (`YYYY-MM-DDTHH:00:00Z`; the server refuses to start on any other value), together with the
    image rollout that contains this change. Do not roll that image out with the variable unset:
    the lineage fixes make long Codex sessions exceed the 25 s query budget on the raw path.
 
 With the variable set, the Codex task list reads the rollup when its range start minus 7 days is
-at or after the boundary, and a detail reads it for a UUIDv7 turn id whose time is at or after the
-boundary; any other read, and a turn missing from the rollup, stays raw. To roll back, unset it and
+at or after the boundary. A detail reads it when its list would and its turn id is UUIDv7 with a
+time at or after the boundary and within [range start - 7 days, range end + 1 day]; any other
+read, and a turn missing from the rollup, stays raw. To roll back, unset it and
 redeploy; this restores raw reads (the long-session budget risk above returns). Retain the table
 and view. Each production step needs the owner's go-ahead.
 
