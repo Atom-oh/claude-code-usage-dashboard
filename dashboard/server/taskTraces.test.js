@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
   sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId, COST_CANDIDATES,
-  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES, codexRetries, namesTurnOnTools } from "./taskTraces.js";
+  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES, codexRetries, namesTurnOnTools, foldCodexTask } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -1372,4 +1372,47 @@ test("codex detail reports retries and compactions from the turn row", () => {
   const partial = run({ compactions: "4" });
   assert.equal(partial.context.compactions.length, 2);
   assert.equal(partial.context.compactions_partial, true);
+});
+
+test("the Codex list reads the rollup behind the gate and keeps raw otherwise", async () => {
+  const run = (rows, seen) => async (sql, params) => {
+    seen.push({ sql, params });
+    if (sql.includes("codex_turns_v1")) return rows;
+    if (sql.includes("otel_traces")) return [];
+    if (sql.includes("codex.sse_event")) return [completion("2026-11-05T01:00:01Z")];
+    return [];
+  };
+  const page = new Date("2026-11-20T00:00:00Z"), pageTo = new Date("2026-11-21T00:00:00Z");
+  const boundary = new Date("2026-11-01T00:00:00Z");
+  const opt = { userExact: "a", client: "codex" };
+  const rawSeen = [];
+  await userTasks(page, pageTo, opt, both, run([], rawSeen), undefined, null);
+  assert.ok(rawSeen.every(s => !s.sql.includes("codex_turns_v1")), "gate unset: raw reads");
+  assert.ok(rawSeen.some(s => s.sql.includes("otel_traces")));
+  const before = [];
+  await userTasks(new Date("2026-11-05T00:00:00Z"), to, opt, both, run([], before), undefined, boundary);
+  assert.ok(before.every(s => !s.sql.includes("codex_turns_v1")), "lookback before the boundary: raw");
+
+  const seen = [];
+  const rows = [{ turn_id: U1, in_bucket: 1, conversation_id: "c1", started_at: "2026-11-20T01:00:00Z",
+    start_ms: String(ms("2026-11-20T01:00:00Z")), end_ms: String(ms("2026-11-20T01:00:10Z")),
+    llm_calls: "2", models: ["openai.gpt-6-astra"], spawn_calls: "3", names_turn: 1 }];
+  const out = await userTasks(page, pageTo, opt, both, run(rows, seen), undefined, boundary);
+  assert.ok(seen.some(s => s.sql.includes("codex_turns_v1")));
+  assert.ok(seen.every(s => !s.sql.includes("otel_traces")), "rollup list never reads spans");
+  const rollupSql = seen.find(s => s.sql.includes("codex_turns_v1"));
+  assert.ok(rollupSql.sql.includes("min_start < {spanTo:DateTime}"));
+  assert.ok(rollupSql.sql.includes("end_ms + 5000 >= toUnixTimestamp({from:DateTime}) * 1000"));
+  assert.equal(rollupSql.params.userExact, "a");
+  assert.equal(out.tasks.length, 1);
+  assert.equal(out.tasks[0].subagent_calls, 3);
+  assert.equal(out.tasks[0].subagents, null);
+});
+
+test("subagent_calls is known only for rows that name the turn on tools", () => {
+  const fold = row => foldCodexTask(turn(row), []).subagent_calls;
+  assert.equal(fold({}), null, "raw rows carry no spawn_calls");
+  assert.equal(fold({ spawn_calls: "4", names_turn: 0 }), null, "before 0.166: not collected");
+  assert.equal(fold({ spawn_calls: "0", names_turn: 1 }), 0, "0.166+: a known zero");
+  assert.equal(fold({ spawn_calls: "2", names_turn: 1 }), 2);
 });

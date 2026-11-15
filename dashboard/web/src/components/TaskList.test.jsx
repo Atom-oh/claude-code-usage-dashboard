@@ -28,7 +28,7 @@ const claudeTask = {
 };
 const codexTask = {
   id: "codex:conv-1:turn-1", client: "codex", started_at: "2026-09-02T04:00:00.000Z",
-  duration_ms: 12000, duration_basis: "observed_span_window", models: ["gpt-6.1"], llm_calls: 3, subagents: null,
+  duration_ms: 12000, duration_basis: "observed_span_window", models: ["gpt-6.1"], llm_calls: 3, subagents: null, subagent_calls: 4,
   tokens: { input: 200, cache_read: 800, cache_write: 0, output: 100, observed_tokens: 1100, tokens_partial: false },
   cost_usd: 0.25, cost_partial: false, cost_basis: "linked_estimate",
 };
@@ -239,11 +239,28 @@ test("codex row shows estimated linkage", async () => {
   expect(within(codex).getByText("$0.25")).toBeTruthy();
   // Codex has no parent link for subagents: unknown, never 0.
   expect(within(codex).getAllByText("미수집").length).toBeGreaterThan(0);
+  // Calls are not subagents: the value sits under its own labelled column.
+  const headers = screen.getAllByRole("columnheader");
+  const callsAt = headers.findIndex((h) => h.textContent.includes("서브에이전트 호출"));
+  expect(callsAt).toBeGreaterThan(-1);
+  expect(headers[callsAt].getAttribute("title")).toMatch(/0\.166/);
+  expect(within(codex).getAllByRole("cell")[callsAt].textContent).toBe("4");
   const claude = rowOf("claude-opus-5-5");
+  expect(within(claude).getAllByRole("cell")[callsAt].textContent).toBe("—");
   expect(within(claude).getByText("클라이언트 보고")).toBeTruthy();
   expect(within(claude).queryByText("연결 추정")).toBeNull();
   expect(within(claude).getByText("1분 35초")).toBeTruthy();
   expect(within(claude).getByText("5,000")).toBeTruthy();
+});
+
+test("a Codex turn without collected calls shows not collected, never 0", async () => {
+  tasksBody = response({ tasks: [{ ...codexTask, subagent_calls: null }] });
+  mount();
+  await screen.findByText("gpt-6.1");
+  const headers = screen.getAllByRole("columnheader");
+  const callsAt = headers.findIndex((h) => h.textContent.includes("서브에이전트 호출"));
+  const cell = within(rowOf("gpt-6.1")).getAllByRole("cell")[callsAt];
+  expect(cell.textContent).toBe("미수집");
 });
 
 test("unknown cost renders not collected not $0", async () => {

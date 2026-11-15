@@ -42,6 +42,9 @@ CREATE TABLE claude_code.otel_traces (
 ) ENGINE = MergeTree ORDER BY (SpanName, Timestamp);`);
 execute(codexTurnsSchemaSql());
 execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} REMOVE TTL`);
+// Background merges would fold the fixture's separate inserts nondeterministically (the T5 and
+// list-context checks read unmerged parts); the merged phase starts them explicitly below.
+execute(`SYSTEM STOP MERGES claude_code.${TURNS_ROLLUP_TABLE}`);
 
 // --- Turn hour and version rules: SQL equals the JS rule the reads use. ---
 const BRIEF_ID = "01a14f6d-7899-7a83-8000-000000000001";
@@ -177,6 +180,21 @@ const garbage = Array.from({ length: 120 }, (_, i) => {
 });
 const garbageSpans = garbage.map((turn, i) => span("codex.sampling", turn, `2026-10-18T08:${String(i % 60).padStart(2, "0")}:00.000Z`,
   { user: userD, model: sol, conversation: `conv-garbage-${i}` }));
+// List context turns (user E, outside the other reads): the list reads turns that start before
+// to + 24h and end (plus the 5 s completion slack) at or after from, whatever their start.
+const userE = "turns-e@example.test";
+const ctx = (name, at, extra = []) => {
+  const turn = v7(at, name);
+  return { turn, spans: [span("codex.sampling", turn, at, { user: userE, model: sol, conversation: `conv-ctx-${name}` }),
+    ...extra.map(later => span("codex.sampling", turn, later, { user: userE, model: sol, conversation: `conv-ctx-${name}` }))] };
+};
+const ctxEarly = ctx(11, "2026-10-17T10:00:00.000Z");            // ends long before from - 5 s: excluded
+const ctxJustOut = ctx(12, "2026-10-17T23:59:54.000Z");          // ends 23:59:54.001: +5 s < from, excluded
+const ctxJustIn = ctx(13, "2026-10-17T23:59:57.000Z");           // ends 23:59:57.001: +5 s >= from, included
+const ctxLong = ctx(14, "2026-10-15T12:00:00.000Z", ["2026-10-18T00:00:20.000Z"]); // starts 3 days before from, included whole
+const ctxLate = ctx(15, "2026-10-19T23:30:00.000Z");             // starts before to + 24h, included as context
+const ctxBeyond = ctx(16, "2026-10-20T00:00:00.000Z");           // starts at to + 24h: excluded
+const ctxTurns = [ctxEarly, ctxJustOut, ctxJustIn, ctxLong, ctxLate, ctxBeyond];
 // Not turn spans of Codex: another client, and a Codex span without a turn id.
 const excluded = [
   span("codex.sampling", t1, plus(t1At, 1500), { resource: { client: "claude" } }),
@@ -186,6 +204,7 @@ insert([...t1Spans, ...t2Spans.slice(0, 3)]);
 insert([duplicate, ...t2Spans.slice(3), ...t3Spans, ...t4Spans]);
 insert([...t5Spans, ...t6Spans, ...t7Spans, ...t8Spans, ...excluded, t1Spans[3]]);
 insert(garbageSpans);
+insert(ctxTurns.flatMap(c => c.spans));
 // A version-less span of T5 in its own insert: its row's empty version must never win a merge.
 insert([span("shell", t5, "2026-10-18T18:05:02.000Z", { version: "", conversation: "conv-d" })]);
 
@@ -244,8 +263,18 @@ function filters() {
   check(asRows(rollupOwnerSql(t6)), [{ owner: userB }], "rollupOwnerSql for the two-conversation turn");
   check(asRows(rollupOwnerSql(v7("2026-10-18T15:00:00.000Z", 99))), [], "rollupOwnerSql without rows");
 }
+// The list read (no turnId, startFrom or startTo) applies the context rule and does not clip.
+function listContext() {
+  const list = asRows(rollupTurnSql(from, to, { userExact: userE }));
+  check(list.map(r => r.turn_id), [ctxLong, ctxJustIn, ctxLate].map(c => c.turn), "list context rule: early, just-out and beyond turns are excluded");
+  check(list.map(r => Number(r.in_bucket)), [0, 0, 0], "context turns are not bucket turns");
+  const long = list.find(r => r.turn_id === ctxLong.turn);
+  check([Number(long.start_ms), Number(long.end_ms)], [Date.parse("2026-10-15T12:00:00.000Z"), Date.parse("2026-10-18T00:00:20.000Z") + 1],
+    "a turn that starts 3 days before from is read whole, not clipped");
+}
 const live = parity("live view");
 filters();
+listContext();
 const byId = Object.fromEntries(live[userA].map(r => [r.turn_id, r]));
 check(Object.keys(byId).sort(), [t1, t2, t3, t4, t5, t8].sort(), "user A turns");
 check([byId[t1].llm_calls, byId[t1].legacy_calls, byId[t1].sampling_tries, byId[t1].compactions,

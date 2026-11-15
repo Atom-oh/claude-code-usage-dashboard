@@ -2037,5 +2037,6 @@
   "m83e222c2fb52": "Select date",
   "m49e86c3288d4": "Unavailable",
   "m051986e644b8": "The collection user ID is set to the email address of the signed-in account that approved the device. Reinstalling over an existing collector also changes it to this email address. You can specify a different ID with {0} only if the signed-in account has no verified email address.",
-  "me7f6707f549f": "When you approve, the collection user ID is set to this account's email; devices that already have a collector installed also change to this email."
+  "me7f6707f549f": "When you approve, the collection user ID is set to this account's email; devices that already have a collector installed also change to this email.",
+  "m5657e573bb06": "Number of calls that create a subagent or assign follow-up work to an existing subagent (not the number of new subagents). Data from versions earlier than Codex 0.166 isn't collected and is shown as uncollected."
 }

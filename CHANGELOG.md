@@ -17,6 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- The task list shows a Codex "subagent calls" value (spawn and follow-up calls, not
+  subagents): a count for Codex 0.166+ turns, not collected before. With
+  `CODEX_TURNS_READ_FROM` set and the 7-day context inside it, the Codex list reads the
+  turn rollup instead of raw spans; unset keeps raw reads.
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex
   `codex.skill_invocation`): calls split into explicit, automatic and nested (Claude only)
   invocations, with users and sessions, under the shared user, model, backend and team
