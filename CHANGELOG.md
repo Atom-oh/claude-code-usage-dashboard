@@ -15,8 +15,6 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
-## [1.12.0] - 2026-11-15
-
 ### Added
 
 - Migration 012 adds a Codex turn rollup (`codex_turns_v1`, with bounded backfill and
@@ -34,6 +32,41 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - A Codex task detail with positive evidence of no subagent calls (complete spans inside the
   span window, no spawn, follow-up or `send_input` span, Codex 0.166+)
   shows a known zero subagents instead of not collected.
+
+### Changed
+
+- With `CODEX_TURNS_READ_FROM` set, a Codex task detail whose list row comes from the turn
+  rollup reads the rollup too, over the turn's own window: later same-conversation turns
+  until its end plus 5 s, completions (collector time) from an hour before its start, but
+  not before the page start, to 24h after the page end, spans and skills a minute either side,
+  each stopping where the list's reads stop. Its values
+  equal its list row; a turn missing from the rollup reads raw. Subagent and parent turns
+  come from the rollup with their true start. Unset keeps raw reads.
+
+### Fixed
+
+- Codex task details also link subagent turns for Codex before 0.166, whose lineage spans
+  name no turn or conversation: the spawn/follow-up call is matched to its `codex.tool_result`
+  log and to the calling conversation's turn running at that time (UUID-shaped turn ids only,
+  never a synthetic `auto-compact-N` turn).
+- Codex task details also link the Codex CLI's subagent turns (`multi_agent_v1` spawn_agent and
+  send_input), which start through turn input rather than inter-agent communication; they were
+  shown as not collected.
+- A Codex task detail starts its subagent reads beyond the lineage span read (legacy lineage
+  resolution, subagent turn and completion pricing) only within
+  12 s of its own start, bounding the time they add to long sessions' details against the
+  25 s load budget; past that it lists the links already found without costs, marked limited
+  and partial, never as a known zero. Subagent turns and completions are read up to 48h after
+  the task's turn ends; a subagent turn ending within a day of that bound has partial calls and
+  cost and marks the result limited.
+- A Codex task detail reads the legacy call, child turn and conversation ids of its subagent
+  reads in chunks below ClickHouse's HTTP form-field limit, at most 2,000 ids of each kind
+  (more are marked limited), instead of failing the whole detail on a long lineage.
+
+## [1.12.0] - 2026-11-15
+
+### Added
+
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex
   `codex.skill_invocation`): calls split into explicit, automatic and nested (Claude only)
   invocations, with users and sessions, under the shared user, model, backend and team
@@ -65,13 +98,6 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   use, education, research and professional services are permitted, competing commercial
   products or services are not, and each version becomes Apache-2.0 two years after
   release. The packaged `APPLICATION_LICENSE` and both `package.json` files match.
-- With `CODEX_TURNS_READ_FROM` set, a Codex task detail whose list row comes from the turn
-  rollup reads the rollup too, over the turn's own window: later same-conversation turns
-  until its end plus 5 s, completions (collector time) from an hour before its start, but
-  not before the page start, to 24h after the page end, spans and skills a minute either side,
-  each stopping where the list's reads stop. Its values
-  equal its list row; a turn missing from the rollup reads raw. Subagent and parent turns
-  come from the rollup with their true start. Unset keeps raw reads.
 
 ### Fixed
 
@@ -90,23 +116,6 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   guides, with matching control names and synthetic capture provenance.
 - Use a localized React calendar with an explicit completion control for each
   date or time selection; keep second precision and apply the range separately.
-- Codex task details also link subagent turns for Codex before 0.166, whose lineage spans
-  name no turn or conversation: the spawn/follow-up call is matched to its `codex.tool_result`
-  log and to the calling conversation's turn running at that time (UUID-shaped turn ids only,
-  never a synthetic `auto-compact-N` turn).
-- Codex task details also link the Codex CLI's subagent turns (`multi_agent_v1` spawn_agent and
-  send_input), which start through turn input rather than inter-agent communication; they were
-  shown as not collected.
-- A Codex task detail starts its subagent reads beyond the lineage span read (legacy lineage
-  resolution, subagent turn and completion pricing) only within
-  12 s of its own start, bounding the time they add to long sessions' details against the
-  25 s load budget; past that it lists the links already found without costs, marked limited
-  and partial, never as a known zero. Subagent turns and completions are read up to 48h after
-  the task's turn ends; a subagent turn ending within a day of that bound has partial calls and
-  cost and marks the result limited.
-- A Codex task detail reads the legacy call, child turn and conversation ids of its subagent
-  reads in chunks below ClickHouse's HTTP form-field limit, at most 2,000 ids of each kind
-  (more are marked limited), instead of failing the whole detail on a long lineage.
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
   read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
   queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at
