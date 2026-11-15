@@ -29,9 +29,10 @@ export function addObservedTokenParts(state, usage, source = usage) {
   }
 }
 
-export function finishObservedTokenParts(state) {
+export function finishObservedTokenParts(state, { emptyValue = null } = {}) {
+  const empty = state.missing || state.overflow ? null : emptyValue;
   return {
-    ...Object.fromEntries(PARTS.map(key => [key, state.seen && !state.overflow ? state.values[key] : null])),
+    ...Object.fromEntries(PARTS.map(key => [key, state.overflow ? null : state.seen ? state.values[key] : empty])),
     partial: state.missing || state.overflow,
   };
 }

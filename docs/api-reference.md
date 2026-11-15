@@ -168,8 +168,10 @@ this labelled subtotal when the strict components are null.
 cache_write_tokens, output_tokens, partial }`. All four disjoint parts come from the
 same usage rows with validated components; incomplete rows are excluded whole.
 `partial` discloses excluded usage or missing Codex usage scopes. With no usable rows
-the parts remain null; recorded zero is retained. Unsafe individual or combined sums
-make all four parts unavailable instead of exposing a smaller prefix. The shared
+the parts remain null, except identified rejection-only Codex scopes retain zero recorded
+completion usage under ADR-016. Invalid components projected as null by SQL are excluded
+whole as incomplete records. Counts arriving as unsafe values, unsafe combined sums or
+marked aggregate overflows make all four parts unavailable instead of exposing a smaller prefix. The shared
 Usage composition chart labels this cohort's subtotal and lists unavailable clients
 without hiding another client's usable chart. This display does not replace canonical
 counts, observed input/output pairs, or ratio denominators.

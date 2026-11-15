@@ -407,10 +407,15 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     const rows = backedRows(key).sort(compare);
     return compactTime ? compactTimeRows(rows) : rows;
   };
-  const by_client = [...byClient.values()].map((target) => ({
-    ...finishRow(target), observed_input: observedInput(target),
-    observed_token_parts: finishObservedTokenParts(target._tokenParts),
-  }));
+  const by_client = [...byClient.values()].map((target) => {
+    const row = finishRow(target);
+    return { ...row, observed_input: observedInput(target),
+      observed_token_parts: finishObservedTokenParts(target._tokenParts, {
+        // ADR-016: identified rejection-only scopes have zero recorded completion usage.
+        emptyValue: row.request_rejections_only ? 0 : null,
+      }),
+    };
+  });
   const total = finishRow(totals);
   const userTime = modelTime ? foldUserTime(groups, userTimeRows, finishRow) : null;
   quality.missing_usage = missingUsage.size;

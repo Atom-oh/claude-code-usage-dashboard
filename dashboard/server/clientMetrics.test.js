@@ -304,6 +304,38 @@ test("token composition distinguishes complete, recorded zero, unknown and absen
   }
 });
 
+test("rejection-only Codex scopes retain recorded zero token composition", () => {
+  const rejected = { ...event, kind: "request", count: 3, rejected_count: 3, errors: 3 };
+  const [row] = foldClientMetrics([rejected], ["codex"]).by_client;
+  assert.equal(row.request_rejections_only, true);
+  assert.equal(row.observed_tokens, 0);
+  assert.deepEqual(row.observed_token_parts, {
+    input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 0, partial: false,
+  });
+  // A missing identity or another accepted request cannot borrow the rejected scope's zero.
+  for (const records of [
+    [{ ...rejected, session: "" }],
+    [rejected, { ...rejected, session: "accepted", rejected_count: 0 }],
+  ]) {
+    const [unknown] = foldClientMetrics(records, ["codex"]).by_client;
+    assert.equal(unknown.request_rejections_only, false);
+    assert.deepEqual(unknown.observed_token_parts, {
+      input_tokens: null, cache_read_tokens: null, cache_write_tokens: null, output_tokens: null, partial: true,
+    });
+  }
+});
+
+test("SQL-projected unsafe usage is excluded whole without discarding another valid cohort", () => {
+  // SQL marks the unsafe input invalid and projects it as null before JS pricing.
+  const projected = { ...event, session: "unsafe-projected", input_tokens_total: null,
+    invalid: 1, observed_tokens_overflow: 0 };
+  const [row] = foldClientMetrics([event, projected], ["codex"]).by_client;
+  assert.deepEqual(row.observed_token_parts, {
+    input_tokens: 49, cache_read_tokens: 40, cache_write_tokens: 11, output_tokens: 30, partial: true,
+  });
+  assert.equal(row.input_tokens, null);
+});
+
 test("unsafe token composition totals never expose a smaller partial prefix", () => {
   const large = { ...event, input_tokens_total: Number.MAX_SAFE_INTEGER, cache_read_tokens: 0,
     cache_write_tokens: 0, output_tokens: 0, reasoning_tokens: 0 };

@@ -465,6 +465,21 @@ test("recorded zero composition stays distinct from an unobserved client", async
   expect(composition.textContent).toContain("미확인");
 });
 
+test("rejection-only composition remains a recorded zero chart without an unavailable warning", async () => {
+  const data = fixture(["codex"]);
+  data.by_client[0] = { ...data.by_client[0], observed_records: 3, request_rejections_only: true,
+    tokens: 0, observed_tokens: 0, tokens_partial: false, input_tokens: 0, cache_read_tokens: 0,
+    cache_write_tokens: 0, output_tokens: 0, observed_token_parts: {
+      input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, output_tokens: 0, partial: false,
+    } };
+  mount("usage", data);
+  const composition = card("클라이언트별 토큰 구성");
+  await waitFor(() => expect(composition.querySelector('svg[role="application"]')).not.toBeNull());
+  expect(composition.textContent).not.toContain("미확인");
+  expect(composition.textContent).not.toContain("부분합");
+  expect(composition.textContent).not.toContain("확인 필요");
+});
+
 test("all-unpriced time series explain absent costs instead of plotting zero", () => {
   const data = fixture(["codex"]);
   data.timeseries = data.timeseries.map((row) => ({ ...row, cost_usd: null }));
