@@ -1416,3 +1416,38 @@ test("subagent_calls is known only for rows that name the turn on tools", () => 
   assert.equal(fold({ spawn_calls: "0", names_turn: 1 }), 0, "0.166+: a known zero");
   assert.equal(fold({ spawn_calls: "2", names_turn: 1 }), 2);
 });
+
+test("the rollup list equals the raw list for the same turns and completions", async () => {
+  const base = (id, at, endAt, inBucket, extra = {}) => ({ turn_id: id, in_bucket: inBucket, conversation_id: "c1",
+    started_at: at, start_ms: String(ms(at)), end_ms: String(ms(endAt)), llm_calls: "2",
+    models: ["openai.gpt-6-astra"], ...extra });
+  // A context turn that started before from, ending inside the bucket, and two bucket turns.
+  const shapes = [
+    base(uuid(10), "2026-11-04T23:59:50Z", "2026-11-05T00:00:30Z", 0),
+    base(uuid(11), "2026-11-05T01:00:00Z", "2026-11-05T01:00:10Z", 1),
+    base(uuid(12), "2026-11-05T03:00:00Z", "2026-11-05T03:00:10Z", 1, { llm_calls: "1" }),
+  ];
+  const rollupRows = shapes.map((r, i) => ({ ...r, spawn_calls: String([2, 0, 5][i]), names_turn: i === 2 ? 0 : 1 }));
+  const completions = [completion("2026-11-05T00:00:20Z"), completion("2026-11-05T01:00:01Z"),
+    completion("2026-11-05T03:00:02Z", { cost_usd: undefined }), completion("2026-11-05T09:00:00Z")];
+  const runFor = rows => async (sql) => {
+    if (sql.includes("codex_turns_v1") || (sql.includes("otel_traces") && sql.includes("'codex'"))) return rows;
+    if (sql.includes("codex.sse_event")) return completions;
+    return [];
+  };
+  const opt = { userExact: "a", client: "codex" };
+  const raw = await userTasks(from, to, opt, both, runFor(shapes), undefined, null);
+  const roll = await userTasks(from, to, opt, both, runFor(rollupRows), undefined, new Date("2026-10-01T00:00:00Z"));
+  const key = t => ({ id: t.id, llm_calls: t.llm_calls, models: t.models, cost_usd: t.cost_usd,
+    cost_partial: t.cost_partial, tokens: t.tokens, started_at: t.started_at, duration_ms: t.duration_ms });
+  assert.equal(raw.tasks.length, 2, "context turn is not a task of this bucket");
+  assert.deepEqual(roll.tasks.map(key), raw.tasks.map(key));
+  assert.deepEqual(roll.unattached_codex, raw.unattached_codex);
+  assert.equal(raw.unattached_codex.completions, 1);
+  assert.deepEqual(roll.coverage, raw.coverage);
+  assert.deepEqual(raw.tasks.map(t => t.subagent_calls), [null, null]);
+  assert.deepEqual(roll.tasks.map(t => t.subagent_calls), [0, null]);
+  // The completion at 00:00:20 attached to the context turn, so its cost is not unattached.
+  const lost = attachCompletions(shapes.slice(1), completions, { ...opts });
+  assert.equal(lost.unattached.completions, 2, "without the context turn that completion is unattached");
+});
