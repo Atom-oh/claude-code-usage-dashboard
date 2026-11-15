@@ -713,9 +713,13 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS || (rowCalls !== null && rowCalls > spawnSpanIds.length))
       spawnSpanIds = null;
   }
+  // Turn-naming evidence: the rollup row's own flag (any span of the turn on 0.166+), as the list
+  // reads it; raw rows carry only the kept version.
+  const namesTurn = entry.turn.names_turn !== undefined && entry.turn.names_turn !== null
+    ? Number(entry.turn.names_turn) > 0 : namesTurnOnTools(entry.turn.app_version);
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
-    traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices,
+    traceIds, tracesPartial: detail.truncated, namesTurn }, detail.task, spawnSpanIds, { from, to, run, prices,
     turnsBoundary, detailStart, now: clock });
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
