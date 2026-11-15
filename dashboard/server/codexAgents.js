@@ -332,11 +332,12 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
     const end = own(l) ? count(own(l).turn.end_ms) : null;
     return end !== null && end >= readToMs - SPAN_SLACK_MS;
   }).map((l) => l.child_turn));
-  if (clipped.size) limited = true;
   const children = links.map((l) => {
     const entry = own(l);
     const folded = entry ? foldCodexTask(entry.turn, entry.linked) : null;
     const start = folded ? count(entry.turn.start_ms) : l.child_start_ms;
+    // Only a clipped turn's own calls and cost are partial; the result is limited below.
+    const partial = limited || clipped.has(l.child_turn);
     return {
       id: idOfTurn.get(l.child_turn) ?? null,
       parent_id: l.depth === 1 ? task.id : idOfTurn.get(l.parent_turn) ?? null,
@@ -346,12 +347,13 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
       duration_ms: folded?.duration_ms ?? null,
       models: folded?.models ?? [],
       llm_calls: folded ? folded.llm_calls : null,
-      llm_calls_partial: folded ? limited : true,
+      llm_calls_partial: folded ? partial : true,
       cost_usd: folded ? folded.cost_usd : null,
-      cost_partial: folded ? folded.cost_partial || limited : true,
+      cost_partial: folded ? folded.cost_partial || partial : true,
       link: linkWindow(start),
     };
   });
+  if (clipped.size) limited = true;
   // Tree order: each subagent turn directly followed by its own subagent turns (siblings keep
   // their start order), so an indented row always sits under the turn that started it.
   const kids = new Map();

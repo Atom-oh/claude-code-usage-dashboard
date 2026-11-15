@@ -405,6 +405,22 @@ test("a subagent turn ending within a day of the reads' bound has partial calls 
   assert.deepEqual([whole.children[0].llm_calls_partial, whole.children[0].cost_partial, whole.limited], [false, false, false]);
 });
 
+test("only the subagent turn ending near the reads' bound is partial; its siblings stay whole", () => {
+  const readToMs = ms("2026-11-07T01:00:10Z");
+  const entry = (conversation, turnId, endMs) => ({ turn: turn(conversation, turnId, "2026-11-05T01:00:02Z", { end_ms: String(endMs) }),
+    linked: [] });
+  const out = foldAgents({ task: rootTask, spawnSpanIds: [], readToMs,
+    links: [link(P, C1, "sub1", { depth: 1 }), link(P, C2, "sub2", { depth: 1 })],
+    entries: [entry("sub1", C1, readToMs - 10000), entry("sub2", C2, ms("2026-11-05T01:00:20Z"))] });
+  const flags = Object.fromEntries(out.children.map(c => [c.id, [c.llm_calls_partial, c.cost_partial]]));
+  assert.deepEqual(flags, { [`codex:sub1:${C1}`]: [true, true], [`codex:sub2:${C2}`]: [false, false] });
+  assert.deepEqual([out.limited, out.total.llm_calls_partial, out.total.cost_partial], [true, true, true]);
+  // A result limited for another reason still marks every child partial.
+  const other = foldAgents({ task: rootTask, spawnSpanIds: [], readToMs, limited: true,
+    links: [link(P, C2, "sub2", { depth: 1 })], entries: [entry("sub2", C2, ms("2026-11-05T01:00:20Z"))] });
+  assert.deepEqual([other.children[0].llm_calls_partial, other.children[0].cost_partial], [true, true]);
+});
+
 // The Codex CLI's multi_agent_v1 tools start a subagent turn through turn input:
 //   multi_agent_v1<tool> <- dispatch_tool_call_with_state <- op.dispatch.turn_input
 //   <- codex.turn_input (child conversation and turn) <- session_task.turn
