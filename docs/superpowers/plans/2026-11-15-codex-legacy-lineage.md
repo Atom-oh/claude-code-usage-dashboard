@@ -135,7 +135,7 @@ Expected: all pass, including the existing tests (lineage SQL test still passes 
 
 **Files:**
 - Modify: `dashboard/server/codexAgents.js` (`codexAgents`)
-- Modify: `docs/reference/codex-observability.md:77`, `CHANGELOG.md` (Unreleased → Fixed)
+- Modify: `docs/reference/codex-observability.md` (Supported surfaces, "Subagent turns of a task" row), `CHANGELOG.md` (Unreleased → Fixed)
 - Test: `dashboard/server/codexAgents.test.js`
 
 **Interfaces:**
