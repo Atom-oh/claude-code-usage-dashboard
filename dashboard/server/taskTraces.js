@@ -372,8 +372,8 @@ export function codexTurnSql(from, to, q, { conversationId = null, conversationI
         countIf(SpanName = 'codex.sampling') AS sampling_calls,
         countIf(SpanName = 'run_sampling_request') AS legacy_calls,
         -- One try_run_sampling_request span per attempt; tries beyond the runs are retries.
-        uniqIf(SpanId, SpanName = 'try_run_sampling_request') AS sampling_tries,
-        uniqIf(SpanId, SpanName = 'codex.compaction') AS compactions,
+        uniqExactIf(SpanId, SpanName = 'try_run_sampling_request') AS sampling_tries,
+        uniqExactIf(SpanId, SpanName = 'codex.compaction') AS compactions,
         anyIf(span_version, span_version != '') AS app_version,
         if(sampling_calls > 0, sampling_calls, legacy_calls) AS llm_calls,
         if(sampling_calls > 0, 'codex.sampling', 'run_sampling_request') AS sampling_span,

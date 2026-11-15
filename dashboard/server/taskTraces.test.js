@@ -1331,8 +1331,10 @@ test("the Claude detail carries the session environment and never the raw sessio
 
 test("codex turn SQL counts tries and compactions per span id", () => {
   const { sql, params } = codexTurnSql(from, to, validateTaskQuery({ userExact: "a" }, both));
-  assert.match(sql, /uniqIf\(SpanId, SpanName = 'try_run_sampling_request'\) AS sampling_tries/);
-  assert.match(sql, /uniqIf\(SpanId, SpanName = 'codex\.compaction'\) AS compactions/);
+  // Exact counts: retries subtract the exact run count from the tries.
+  assert.match(sql, /uniqExactIf\(SpanId, SpanName = 'try_run_sampling_request'\) AS sampling_tries/);
+  assert.match(sql, /uniqExactIf\(SpanId, SpanName = 'codex\.compaction'\) AS compactions/);
+  assert.doesNotMatch(sql, /\buniqIf\(/);
   // The per-span counts read SpanId from the deduplicated span subquery, which must select it.
   assert.match(sql, /SELECT Timestamp, SpanName, SpanId,\n/);
   assert.match(sql, /anyIf\(span_version, span_version != ''\) AS app_version/);
