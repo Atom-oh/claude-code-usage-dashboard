@@ -15,10 +15,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
-### Fixed
-
-- Bundle the five interface languages with the application so switching languages
-  does not depend on separate catalog requests or files removed during a rollout.
+## [1.11.0] - 2026-11-15
 
 ### Added
 
@@ -31,6 +28,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Bundle the five interface languages with the application so switching languages
+  does not depend on separate catalog requests or files removed during a rollout.
 - The Codex efficiency card's expanded whole-range panel no longer shows four blank tiles
   whenever one request in the range has no collected usage. With recorded completions, it
   keeps only the HTTP request and session metrics (the cache and reasoning ratios above

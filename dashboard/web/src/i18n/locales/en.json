@@ -1975,5 +1975,19 @@
   "mf4a53b277b13": "On",
   "m6609ccb10fbd": "Off",
   "m64ce1b37ca97": "Save masking settings",
-  "m6a630c788363": "No settings store is available, so this follows the deployment setting. You can change it at deployment with TEAM_MASK_ENABLED (Terraform team_mask_enabled)."
+  "m6a630c788363": "No settings store is available, so this follows the deployment setting. You can change it at deployment with TEAM_MASK_ENABLED (Terraform team_mask_enabled).",
+  "m36408895d9fd": "You can redact team names like email addresses on shared screens. You can view Codex metrics in Reliability, and the backend breakdown for Claude costs is now more accurate.",
+  "m41b6e20d5ba7": "On screens viewed by multiple people (such as demos), team names are masked with the first two characters and a short identifier. The default follows the deployment setting (if none is specified, it matches email masking), and admin can turn it on or off from the Settings page. Teams with a display name set will show that name as is. This only changes what is shown on screens and in CSV; API responses remain unchanged.",
+  "m310ac7be73ac": "Settings → Team name masking (admin)",
+  "m80a69594529e": "Codex metrics in Reliability",
+  "mc80f45a992ba": "Fixed an issue where Metrics in Codex details showed Query limit exceeded for almost all time ranges. For ranges up to about 8 days, the average turn duration, average time to first token, tool calls per turn, and tokens per turn tiles now show confirmed values. If some values can’t be confirmed, you’ll be notified.",
+  "mcdc04fb46188": "Reliability → Codex details",
+  "ma2347d9e391f": "Claude cost backend for resumed sessions",
+  "mee72421a59dd": "Fixed an issue where costs for sessions started with Bedrock and continued after signing in to Claude appeared as backend unavailable in cost by model. Usage after sign-in is now attributed to Anthropic.",
+  "m1e7e926b5b5e": "Full-range metrics on the Codex efficiency card",
+  "mf31f1b9d0ff4": "Fixed an issue where all four tiles in the full-range panel appeared empty if usage couldn't be collected for even one request in the period. When based on completed responses, only HTTP request and session metrics are shown, with an explanation for any withheld values.",
+  "m6488293ef11c": "Cost → Codex details → Full-range metrics",
+  "mbf672b9454ab": "More reliable language switching",
+  "me6725bf311bb": "All five language catalogs are now bundled with the app, so language changes take effect immediately, even during deployment.",
+  "mb9834780ac07": "Bottom of the sidebar → Language"
 }
