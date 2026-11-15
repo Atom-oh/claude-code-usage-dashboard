@@ -2001,5 +2001,6 @@
   "mdbd1ade42624": "Turnos de subagentes",
   "m0d31ae34c7ed": "Método de llamada",
   "m2668bc818e5b": "Abrir",
-  "m0bd87b5900b9": "Recuento vinculado mediante los spans padre del trace"
+  "m0bd87b5900b9": "Recuento vinculado mediante los spans padre del trace",
+  "m203f80842740": "Abrir turno de subagente #{0}"
 }

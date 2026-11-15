@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T06:01:54.101453+00:00",
-  "source_messages": 2003,
+  "updated_at": "2026-11-15T06:40:00+00:00",
+  "source_messages": 2004,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2003,
-      "bytes": 154383,
-      "sha256": "7f66d4594414c73059b91dd835567a940696508fb715991852493996e32eb41b"
+      "messages": 2004,
+      "bytes": 154429,
+      "sha256": "341446792ffb844f96828327bdd4e4fc3defd492fd69ea2ad8c1962f92fa08ca"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2003,
-      "bytes": 182451,
-      "sha256": "d41f1a99e327bc7df6a2284f2aa729dd87e1b267af2ed42b2e7d6baa9a571d06"
+      "messages": 2004,
+      "bytes": 182503,
+      "sha256": "8e561fdde7e28d66a658a80739bd87a44d5d8f002be0501549b9e076a7d05f28"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2003,
-      "bytes": 191239,
-      "sha256": "eb6ab7d1aecb974d9e6a7c4f3fac2e8c357478e1f128abab691820e5ef5a3371"
+      "messages": 2004,
+      "bytes": 191313,
+      "sha256": "f4c02b69e08d8276dfdb828c6e8cf719d9f50ecb1f3317da04858636ada4186e"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2003,
-      "bytes": 164140,
-      "sha256": "db41de1e61194efa4585214571ccf17ac1503dfdafcaa7cb837fe519a1c6deda"
+      "messages": 2004,
+      "bytes": 164197,
+      "sha256": "9d9ba833b4bf3b3ae0e01a8140b0b407086b89d0f9aeebf5abec25dc603aa760"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2003,
-      "bytes": 145948,
-      "sha256": "6eaee67b3b5949c795a72222705cc69d335f8e7c3efdc2e2c767104b57c4f7f6"
+      "messages": 2004,
+      "bytes": 145997,
+      "sha256": "ba7c23e30fad82b0ded162a5984fc31a5b4a2d0e9870e55c8acc2bb361fd863f"
     }
   ],
   "catalog_calls": [

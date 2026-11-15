@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AGENT_DEPTH, AGENT_LIMIT, LINEAGE_SPAN_LIMIT, SPAWN_SPANS, agentCount, codexLineageSql, codexAgents, foldAgents,
-  walkLineage } from "./codexAgents.js";
+import { AGENT_DEPTH, AGENT_LIMIT, LINEAGE_SPAN_LIMIT, LINK_WINDOW_MS, SPAWN_SPANS, agentCount, codexLineageSql, codexAgents,
+  foldAgents, linkWindow, walkLineage } from "./codexAgents.js";
 import { codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
 
@@ -127,9 +127,59 @@ test("a subagent turn without its own turn row is unknown, and the total says pa
 
 test("the parent link of a subagent turn names its parent task and tool", () => {
   const out = foldAgents({ task: rootTask, parent: link(uuid(9), P, "x", { parent_conversation: "up" }) });
-  assert.deepEqual(out.parent, { id: `codex:up:${uuid(9)}`, tool: "spawn_agent" });
+  assert.equal(out.parent.id, `codex:up:${uuid(9)}`);
+  assert.equal(out.parent.tool, "spawn_agent");
   // Ids that are not identifier-shaped are not linked.
   assert.equal(foldAgents({ task: rootTask, parent: link(uuid(9), P, "x", { parent_conversation: "a b" }) }).parent, null);
+});
+
+test("a link window is the UTC hour containing a start, and unknown without one", () => {
+  assert.deepEqual(linkWindow(ms("2026-11-05T01:30:00Z")),
+    { from: "2026-11-05T01:00:00.000Z", to: "2026-11-05T02:00:00.000Z" });
+  assert.equal(LINK_WINDOW_MS, 3600000);
+  assert.equal(linkWindow(null), null);
+  assert.equal(linkWindow(NaN), null);
+});
+
+test("each subagent turn links to the hour of its own start, even after the bucket ends", () => {
+  const { entries } = linkCompletions([turn("sub1", C1, "2026-11-06T00:30:00Z")], [], { prices: DEFAULT_CODEX_PRICING });
+  const out = foldAgents({ task: rootTask, entries, links: [link(P, C1, "sub1", { depth: 1 }),
+    link(P, C2, "sub2", { depth: 1, child_start_ms: ms("2026-11-05T03:20:00Z") })] });
+  assert.deepEqual(out.children[0].link, { from: "2026-11-06T00:00:00.000Z", to: "2026-11-06T01:00:00.000Z" });
+  // Without its turn row the lineage span's start is used.
+  assert.deepEqual(out.children[1].link, { from: "2026-11-05T03:00:00.000Z", to: "2026-11-05T04:00:00.000Z" });
+});
+
+test("the parent link carries the hour of the parent turn's start, before the bucket", () => {
+  const parent = link(uuid(9), P, "x", { parent_conversation: "up" });
+  const { entries } = linkCompletions([turn("up", uuid(9), "2026-11-04T23:10:00Z")], [], { prices: DEFAULT_CODEX_PRICING });
+  const out = foldAgents({ task: rootTask, parent, entries });
+  assert.equal(out.parent.started_at, "2026-11-04T23:10:00Z");
+  assert.equal(out.parent.link.from, "2026-11-04T23:00:00.000Z");
+  // Without the parent's turn row its start and link are unknown.
+  const bare = foldAgents({ task: rootTask, parent });
+  assert.deepEqual([bare.parent.started_at, bare.parent.link], [null, null]);
+});
+
+test("a subagent task reads its parent's turns but not the parent's completions", async () => {
+  const seen = [];
+  const run = async (sql, params) => {
+    seen.push({ sql, params });
+    if (sql.includes("op.dispatch")) return [...chain("t", 9, uuid(9), P, "self", { parentConv: "up" }), ...chain("t", 1, P, C1, "sub1")];
+    if (sql.includes("GROUP BY turn_id")) return [turn("up", uuid(9), "2026-11-04T23:10:00Z"), turn("sub1", C1, "2026-11-05T01:00:00Z")];
+    if (sql.includes("otel_logs")) return [];
+    throw new Error("unexpected SQL");
+  };
+  const turnInfo = { turnId: P, startMs: ms("2026-11-05T01:00:00Z"), endMs: ms("2026-11-05T01:00:10Z"), traceIds: ["t"] };
+  const out = await codexAgents("kim@x.com", turnInfo, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.equal(out.parent.id, `codex:up:${uuid(9)}`);
+  const turnReads = seen.filter(s => s.sql.includes("GROUP BY turn_id"));
+  assert.equal(turnReads.length, 1);
+  assert.ok(turnReads[0].params.conversationIds.includes("up"));
+  assert.ok(turnReads[0].params.conversationIds.includes("sub1"));
+  const logReads = seen.filter(s => !s.sql.includes("op.dispatch") && !s.sql.includes("GROUP BY turn_id") && s.sql.includes("otel_logs"));
+  assert.equal(logReads.length, 1);
+  assert.deepEqual(logReads[0].params.conversationIds, ["sub1"]);
 });
 
 test("zero linked subagents is unknown, not zero", () => {

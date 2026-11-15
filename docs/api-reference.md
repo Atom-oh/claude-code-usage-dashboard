@@ -782,17 +782,23 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   subagent turn's `session_task.turn` ← `op.dispatch.inter_agent_communication` ←
   `dispatch_tool_call_with_state` ← the parent turn's `collaboration<tool>` span), read from
   the traces of the task's spans between 10 minutes before the turn and 24h after it ends.
-  `parent` is `{id, tool}` of the turn that started this one, else null. `children` are up to
+  `parent` is `{id, tool, started_at, link}` of the turn that started this one, else null
+  (`started_at`/`link` null when the parent's turn row is absent). `children` are up to
   50 subagent turns, three levels deep, in tree order: `{id, parent_id, depth, tool, started_at,
-  duration_ms, models, llm_calls, cost_usd, cost_partial}`, each folded like a list row from its
-  own conversation's turns and completions (null when its turn row is absent). `subagents` counts
+  duration_ms, models, llm_calls, cost_usd, cost_partial, link}`: `llm_calls` is the subagent
+  turn's model-call span count and `cost_usd` its completion-log estimate, folded like a list row
+  (null when its turn row is absent). Each child's `link` `{from, to}` is the UTC hour containing
+  that turn's start (from its turn row, else its lineage span), for opening its own detail; the
+  parent's `link` is the same for the parent turn. Subagent turns and completions are read in the
+  detail's window (`from - 24h` .. `to + 24h`): a linked subagent outside it is listed with
+  unknown calls and cost and a partial total. `subagents` counts
   their distinct conversations; `task.subagents` is that count when positive, else null (a turn
   without links may lack traces or run a Codex version without collaboration spans).
   `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans and those
   with no linked turn (null when spans are truncated). `total` is `{llm_calls,
   llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
-  depth, count, trace or row bound. Traces only establish lineage: calls and costs remain the
-  completion-log estimates.
+  depth, count, trace or row bound. Traces only establish lineage: calls remain model-call span
+  counts and costs completion-log estimates.
 
 ### Teams
 

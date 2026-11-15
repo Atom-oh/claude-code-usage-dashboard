@@ -510,7 +510,8 @@ const CHILD_A = "codex:sub-a:00000000-0000-4000-8000-000000000011";
 const CHILD_B = "codex:sub-b:00000000-0000-4000-8000-000000000021";
 const agentsDetail = (agents, subagents = null) => ({ ...codexDetail(), task: { ...codexDetail().task, subagents }, agents });
 const child = (id, depth, extra = {}) => ({ id, parent_id: CODEX_ID, depth, tool: "spawn_agent", started_at: "2026-09-02T04:00:01.000Z",
-  duration_ms: 3000, models: ["gpt-6.1"], llm_calls: 4, cost_usd: 1.5, cost_partial: false, ...extra });
+  duration_ms: 3000, models: ["gpt-6.1"], llm_calls: 4, cost_usd: 1.5, cost_partial: false,
+  link: { from: "2026-09-02T04:00:00.000Z", to: "2026-09-02T05:00:00.000Z" }, ...extra });
 
 test("a Codex turn lists its linked subagent turns with their calls, cost and the total including them", async () => {
   body = agentsDetail({ parent: null, subagents: 2, spawn_calls: 3, unlinked_calls: 1, limited: false,
@@ -527,20 +528,35 @@ test("a Codex turn lists its linked subagent turns with their calls, cost and th
   expect(rows[1].textContent).toContain("followup_task");
   expect(rows[1].textContent).toContain("미수집");
   const link = within(rows[0]).getByRole("link");
-  expect(link.getAttribute("href")).toBe(`/tasks/${encodeURIComponent(CHILD_A)}/${encodeURIComponent(BUCKET.from)}/${encodeURIComponent(BUCKET.to)}`);
+  expect(link.getAttribute("href")).toBe(`/tasks/${encodeURIComponent(CHILD_A)}/${encodeURIComponent("2026-09-02T04:00:00.000Z")}/${encodeURIComponent("2026-09-02T05:00:00.000Z")}`);
   expect(card.textContent).toContain("spawn_agent·followup_task 호출 1건은");
   // The subagent tile shows the linked count with its basis instead of "not collected".
   expect(screen.getByText("trace의 부모 span으로 연결한 수")).toBeTruthy();
 });
 
 test("a Codex subagent turn links back to its parent turn", async () => {
-  body = agentsDetail({ parent: { id: CHILD_A, tool: "followup_task" }, subagents: 0, spawn_calls: 0, unlinked_calls: 0,
+  body = agentsDetail({ parent: { id: CHILD_A, tool: "followup_task", started_at: "2026-09-01T23:10:00Z",
+    link: { from: "2026-09-01T23:00:00.000Z", to: "2026-09-02T00:00:00.000Z" } }, subagents: 0, spawn_calls: 0, unlinked_calls: 0,
     limited: false, children: [], total: { llm_calls: 1, llm_calls_partial: false, cost_usd: 0.25, cost_partial: false } });
   mount({ taskId: CODEX_ID });
   const card = await screen.findByRole("region", { name: "서브에이전트 호출" });
   expect(card.textContent).toContain("이 턴은 상위 턴이 followup_task 도구를 호출해 실행한 서브에이전트 턴입니다.");
-  expect(within(card).getByRole("link", { name: "상위 턴 열기" }).getAttribute("href")).toContain(encodeURIComponent(CHILD_A));
+  const href = within(card).getByRole("link", { name: "상위 턴 열기" }).getAttribute("href");
+  expect(href).toContain(encodeURIComponent(CHILD_A));
+  expect(href).toContain(encodeURIComponent("2026-09-01T23:00:00.000Z"));
   expect(card.textContent).not.toContain("trace로 연결된 서브에이전트 턴이 없습니다.");
+});
+
+test("a Codex parent or subagent turn without a link window renders no link", async () => {
+  body = agentsDetail({ parent: { id: CHILD_B, tool: "spawn_agent", started_at: null, link: null }, subagents: 1, spawn_calls: 1,
+    unlinked_calls: 0, limited: false, children: [child(CHILD_A, 1, { link: null })],
+    total: { llm_calls: 5, llm_calls_partial: false, cost_usd: 1.75, cost_partial: false } }, 1);
+  mount({ taskId: CODEX_ID });
+  const card = await screen.findByRole("region", { name: "서브에이전트 호출" });
+  const row = within(card).getAllByRole("row")[1];
+  expect(row.textContent).toContain("#1");
+  expect(within(row).queryByRole("link")).toBeNull();
+  expect(within(card).queryByRole("link", { name: "상위 턴 열기" })).toBeNull();
 });
 
 test("a Codex turn without linked subagents says so and keeps the count unknown", async () => {

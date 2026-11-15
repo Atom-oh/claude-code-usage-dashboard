@@ -24,8 +24,9 @@ export function TaskAgents({ agents, from, to }) {
   return <section aria-label={translate("mdf62edb62607")} className="rounded-lg border border-ink-100 p-4">
     <h3 className="mb-2 text-[14px] font-semibold text-ink-800">{translate("mdf62edb62607")}</h3>
     {parent && <p className="mb-2 text-[13px] text-ink-700">
-      {translate("ma5f1a83f15da", [parent.tool ?? translateSource(MISSING)])}{" "}
-      <a className={link} href={taskSharePath(parent.id, from, to)}>{translate("mbac6e1b660b1")}</a></p>}
+      {translate("ma5f1a83f15da", [parent.tool ?? translateSource(MISSING)])}
+      {parent.link && <>{" "}<a className={link} href={taskSharePath(parent.id, parent.link.from, parent.link.to)}>
+        {translate("mbac6e1b660b1")}</a></>}</p>}
     {children.length > 0 ? <>
       <p className="mb-2 text-[13px] font-medium text-ink-800">
         {/* One partial mark at the end covers calls and cost: both sum the same known turns. */}
@@ -42,8 +43,8 @@ export function TaskAgents({ agents, from, to }) {
           </tr></thead>
           <tbody>{children.map((c, i) => <tr key={c.id ?? i} className="border-t border-ink-100">
             <td className="px-2 py-1 whitespace-nowrap" style={{ paddingLeft: `${0.5 + (c.depth - 1) * 1.25}rem` }}>
-              {c.depth > 1 ? "└ " : ""}{c.id ? <a className={link} href={taskSharePath(c.id, from, to)}
-                aria-label={`${translate("mdbd1ade42624")} #${i + 1} ${translate("m2668bc818e5b")}`}>#{i + 1}</a> : `#${i + 1}`}</td>
+              {c.depth > 1 ? "└ " : ""}{c.id && c.link ? <a className={link} href={taskSharePath(c.id, c.link.from, c.link.to)}
+                aria-label={translate("m203f80842740", [i + 1])}>#{i + 1}</a> : `#${i + 1}`}</td>
             <td className="px-2 py-1"><code className="text-[12px]">{c.tool ?? translateSource(MISSING)}</code></td>
             <td className="px-2 py-1 [overflow-wrap:anywhere]">{c.models?.length ? c.models.join(", ") : translateSource(MISSING)}</td>
             <td className="px-2 py-1 whitespace-nowrap">{c.started_at ? formatClientTimestamp(c.started_at) : translateSource(MISSING)}</td>

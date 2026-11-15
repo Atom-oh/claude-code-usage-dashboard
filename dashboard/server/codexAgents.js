@@ -8,8 +8,8 @@
 // The subagent turn's run_turn span carries its conversation.id. No span or log attribute
 // names the parent, so the link is that parent-span chain. It exists only when the traces were
 // collected (Codex trace export, versions emitting collaboration spans): a missing link is
-// unknown, never "no subagents". Calls and costs come from the subagents' own completion logs,
-// linked exactly like the task list; traces only establish the lineage.
+// unknown, never "no subagents". Calls are the subagent turns' model-call spans and costs their own
+// completion logs, linked exactly like the task list; traces only establish the lineage.
 import { toChDateTime } from "./clickhouse.js";
 import { EXACT_USER, SPAN_SLACK_MS, CODEX_TURN_LIMIT, CODEX_COMPLETION_LIMIT, TURN_ID, count,
   codexTurnSql, codexCompletionSql, linkCompletions, foldCodexTask } from "./taskTraces.js";
@@ -25,6 +25,15 @@ export const LINEAGE_SPAN_LIMIT = 50000;
 export const LINEAGE_LEAD_MS = 10 * 60 * 1000;
 // Tool spans that start a subagent turn; their count is the denominator for unlinked calls.
 export const SPAWN_SPANS = ["collaborationspawn_agent", "collaborationfollowup_task"];
+
+// The detail route serves a turn only from a range containing its start, so each link carries
+// the UTC hour of its own target's start.
+export const LINK_WINDOW_MS = 3600000;
+export function linkWindow(startMs) {
+  if (!Number.isFinite(startMs)) return null;
+  const from = Math.floor(startMs / LINK_WINDOW_MS) * LINK_WINDOW_MS;
+  return { from: new Date(from).toISOString(), to: new Date(from + LINK_WINDOW_MS).toISOString() };
+}
 
 const CHAIN = ["session_task.turn", "op.dispatch.inter_agent_communication", "dispatch_tool_call_with_state", "run_turn"];
 const IDENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -117,6 +126,7 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
   const children = links.map((l) => {
     const entry = byTurn.get(l.child_turn);
     const folded = entry && entry.turn.conversation_id === l.child_conversation ? foldCodexTask(entry.turn, entry.linked) : null;
+    const start = folded ? count(entry.turn.start_ms) : l.child_start_ms;
     return {
       id: idOfTurn.get(l.child_turn) ?? null,
       parent_id: l.depth === 1 ? task.id : idOfTurn.get(l.parent_turn) ?? null,
@@ -128,6 +138,7 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
       llm_calls: folded ? folded.llm_calls : null,
       cost_usd: folded ? folded.cost_usd : null,
       cost_partial: folded ? folded.cost_partial || limited : true,
+      link: linkWindow(start),
     };
   });
   // Tree order: each subagent turn directly followed by its own subagent turns (siblings keep
@@ -143,8 +154,16 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
   const calls = knownSum([task.llm_calls, ...children.map((c) => c.llm_calls)]);
   const cost = knownSum([task.cost_usd, ...children.map((c) => c.cost_usd)]);
   const linkedSpawns = new Set(links.filter((l) => l.depth === 1).map((l) => l.tool_span_id));
+  let parentOut = null;
+  if (parentId) {
+    const entry = byTurn.get(parent.parent_turn);
+    const found = entry && entry.turn.conversation_id === parent.parent_conversation;
+    parentOut = { id: parentId, tool: toolName(parent.tool_span),
+      started_at: found ? entry.turn.started_at ?? null : null,
+      link: found ? linkWindow(count(entry.turn.start_ms)) : null };
+  }
   return {
-    parent: parentId ? { id: parentId, tool: toolName(parent.tool_span) } : null,
+    parent: parentOut,
     children: ordered,
     subagents: conversations.size,
     // Spawn/follow-up calls of this turn whose subagent turn was not found in the traces.
@@ -171,13 +190,16 @@ export async function codexAgents(owner, turn, task, spawnSpanIds, { from, to, r
   const walked = walkLineage(rows.slice(0, LINEAGE_SPAN_LIMIT), turn.turnId);
   limited ||= walked.limited;
   const conversationIds = [...new Set(walked.links.map((l) => l.child_conversation).filter((c) => IDENT.test(c ?? "")))];
+  const parentConversation = walked.parent && IDENT.test(walked.parent.parent_conversation ?? "")
+    ? walked.parent.parent_conversation : null;
+  const turnIds = [...new Set([...conversationIds, ...(parentConversation ? [parentConversation] : [])])];
   let entries = [];
-  if (conversationIds.length) {
+  if (conversationIds.length || turnIds.length) {
     const q = { userExact: owner };
-    const turnsSql = codexTurnSql(from, to, q, { conversationIds });
-    const completionsSql = codexCompletionSql(from, to, q, { conversationIds });
+    const turnsSql = codexTurnSql(from, to, q, { conversationIds: turnIds });
+    const completionsSql = conversationIds.length ? codexCompletionSql(from, to, q, { conversationIds }) : null;
     const [turns, completions] = await Promise.all([run(turnsSql.sql, turnsSql.params),
-      run(completionsSql.sql, completionsSql.params)]);
+      completionsSql ? run(completionsSql.sql, completionsSql.params) : []]);
     if (turns.length > CODEX_TURN_LIMIT || completions.length > CODEX_COMPLETION_LIMIT) limited = true;
     entries = linkCompletions(turns.slice(0, CODEX_TURN_LIMIT), completions.slice(0, CODEX_COMPLETION_LIMIT),
       { prices }).entries;
