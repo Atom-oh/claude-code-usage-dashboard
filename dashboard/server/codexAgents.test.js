@@ -496,6 +496,20 @@ const commRun = (seen, { rows = [], sends = [], turns = [], completions = [] }) 
 };
 const commTurn = { turnId: P, conversationId: "root", startMs: T0, endMs: T1, traceIds: ["t"], namesTurn: true };
 
+test("an unlinked send_input call of the turn blocks a known zero", async () => {
+  // send_input is no spawn call, but it may have started a subagent turn the traces did not link.
+  const fold = foldAgents({ task: rootTask, spawnSpanIds: [], namesTurn: true, toolSpanIds: ["g9"] });
+  assert.deepEqual([fold.known_zero, agentCount(fold)], [false, null]);
+  const seen = [];
+  const run = commRun(seen, { rows: [span("t", "g9", "x", "multi_agent_v1send_input", { turn: P, conversation: "root" })] });
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([out.subagents, out.spawn_calls, out.known_zero, agentCount(out)], [0, 0, false, null]);
+  // A send_input span of another turn does not block this turn's zero.
+  const other = commRun([], { rows: [span("t", "g9", "x", "multi_agent_v1send_input", { turn: C2, conversation: "other" })] });
+  const zero = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run: other, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([zero.known_zero, agentCount(zero)], [true, 0]);
+});
+
 test("without trace links, communication logs link subagents with one owner-filtered turn read", async () => {
   const seen = [];
   const run = commRun(seen, { sends: [send("spawn", "root", "sub1", "2026-11-05T01:00:02Z"), send("spawn", "up", "root", "2026-11-05T00:59:50Z")],

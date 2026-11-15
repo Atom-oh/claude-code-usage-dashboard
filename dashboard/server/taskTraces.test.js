@@ -1388,3 +1388,19 @@ test("codex detail reports retries and compactions from the turn row", () => {
       [null, null, false], v);
   }
 });
+
+test("a raw Codex detail whose spans reach the clipped span window has no spawn evidence", async () => {
+  const detailFor = (at, endAt) => userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "a" }, both, async (sql) => {
+    if (sql.includes("count() OVER ()")) return [{ span_id: "s1", parent_id: "", span_name: "exec_command",
+      start_ms: String(ms(at) + 1000), duration_ms: "5", trace_id: "tr1", a_tool_name: "exec_command", total_spans: "1" }];
+    if (sql.includes("GROUP BY turn_id")) return [turn({ in_bucket: 1, started_at: at, start_ms: String(ms(at)),
+      end_ms: String(ms(endAt)), app_version: "0.169.0" })];
+    return [];
+  }, DEFAULT_CODEX_PRICING);
+  // Inside the span window: no spawn span is a known zero on 0.166+.
+  const whole = await detailFor("2026-11-05T05:00:00Z", "2026-11-05T05:00:10Z");
+  assert.deepEqual([whole.agents.spawn_calls, whole.agents.known_zero, whole.task.subagents], [0, true, 0]);
+  // The spans stop at to + 24h: a turn still running there may have spawned later (unknown).
+  const clipped = await detailFor("2026-11-05T20:00:00Z", "2026-11-06T23:59:30Z");
+  assert.deepEqual([clipped.agents.spawn_calls, clipped.agents.known_zero, clipped.task.subagents], [null, false, null]);
+});
