@@ -17,6 +17,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Codex task details show retries (`try_run_sampling_request` spans beyond
+  `run_sampling_request`, both counted exactly) in the why rules and count `codex.compaction`
+  spans as context compactions (Codex 0.161+; earlier versions read as not collected),
+  stating the turn's full count and marking the chart when the bounded span list holds fewer.
+- A Codex task detail with positive evidence of no subagent calls (complete spans inside the
+  span window, no spawn, follow-up or `send_input` span, no communication send, Codex 0.166+)
+  shows a known zero subagents instead of not collected.
+- Codex task details link subagent turns from `codex.agent_communication` logs
+  (Codex 0.167.1-0.168.0) when the traces link no child of the turn, keeping a traced parent;
+  the detail says these links are inferred from the logs, and more than 50 log-linked
+  children mark the result limited.
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex
   `codex.skill_invocation`): calls split into explicit, automatic and nested (Claude only)
   invocations, with users and sessions, under the shared user, model, backend and team
@@ -69,6 +80,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Codex task details also link the Codex CLI's subagent turns (`multi_agent_v1` spawn_agent and
   send_input), which start through turn input rather than inter-agent communication; they were
   shown as not collected.
+- A Codex task detail starts its subagent reads beyond the lineage span read (legacy lineage
+  resolution, the communication fallback, subagent turn and completion pricing) only within
+  12 s of its own start, bounding the time they add to long sessions' details against the
+  25 s load budget; past that it lists the links already found without costs, marked limited
+  and partial, never as a known zero.
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
   read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
   queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at
