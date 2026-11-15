@@ -32,9 +32,9 @@ See [web/AGENTS.md](../../dashboard/web/AGENTS.md) for developer instructions an
 ## Routes and state
 
 The browser stores its validated language choice in `ccdash.locale`; Korean is
-the default. English, Simplified Chinese, Japanese and Spanish catalogs load on
-demand. Failed loads retain the current language, later choices supersede pending
-loads, and denied storage remains usable. The locale store updates subscribed
+the default. All five catalogs ship with the application bundle, so language
+switches need no separate request. Failed validation retains the current language,
+later choices supersede pending selections, and denied storage remains usable. The locale store updates subscribed
 components without remounting open user/task views or changing API parameters.
 All route pages now use the catalogs, including collector approval and setup;
 telemetry and user-authored content remain unchanged.

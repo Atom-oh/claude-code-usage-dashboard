@@ -15,6 +15,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundle the five interface languages with the application so switching languages
+  does not depend on separate catalog requests or files removed during a rollout.
+
 ### Added
 
 - Mask team names on shared screens and CSV exports, as emails are: two characters plus a
@@ -35,6 +40,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - Reliability's Codex turn tiles (duration, TTFT, tool calls, tokens) average the metric
   groups with known statistics and mark the tile "일부 원본 통계 미확인" when any group is
   withheld, instead of showing "—" whenever one series lacks a baseline.
+- The Codex efficiency card's expanded whole-range panel no longer shows four blank tiles
+  whenever one request in the range has no collected usage. With recorded completions, it
+  keeps only the HTTP request and session metrics (the cache and reasoning ratios above
+  already use the same responses), explains a withheld tokens-per-request value, and lists
+  its own coverage reasons inside the panel. Strict ratio rules are unchanged.
 
 ## [1.10.0] - 2026-11-14
 
