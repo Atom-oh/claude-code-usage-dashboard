@@ -10,6 +10,88 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.12.0",
+    "date": "2026-11-15",
+    "summary": "Usage에서 Codex 토큰 구성의 확인된 부분합을 볼 수 있습니다. 날짜·시간 선택, 다국어 가이드, 작업 상세와 Collector 연결도 개선했습니다.",
+    "items": [
+      {
+        "kind": "fixed",
+        "title": "Codex 토큰 구성의 부분합",
+        "body": "사용량을 확인하지 못한 기록이 있어도 입력·캐시 읽기·캐시 쓰기·출력의 확인된 부분합을 표시합니다. 누락된 기록을 알리고, 거부된 요청만 있는 기간의 기록된 0도 유지합니다.",
+        "to": "/usage",
+        "where": "Usage → 클라이언트별 토큰 구성",
+        "refs": [
+          315
+        ]
+      },
+      {
+        "kind": "new",
+        "title": "클라이언트별 Skill 사용량",
+        "body": "Usage 화면에서 Claude Code와 Codex가 사용한 Skill의 호출 수와 발동 방식을 확인할 수 있습니다. 클라이언트·사용자·모델·백엔드·팀 필터를 함께 적용합니다.",
+        "to": "/usage",
+        "where": "Usage → Skill 사용량",
+        "refs": [
+          304
+        ]
+      },
+      {
+        "kind": "new",
+        "title": "Codex 작업 상세의 하위 에이전트와 도구",
+        "body": "작업 상세에서 연결이 확인된 하위 에이전트, LLM 호출, 비용 추정과 Skill·MCP·도구 호출을 살펴볼 수 있습니다. 수집되지 않은 하위 에이전트는 별도로 안내합니다.",
+        "to": "/users",
+        "where": "Users → 작업 목록 → 작업 상세",
+        "refs": [
+          302,
+          303
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "날짜·시간 선택의 완료 버튼",
+        "body": "React 달력에서 날짜나 시간을 고른 뒤 완료 버튼으로 선택을 마치고, 적용 버튼으로 조회 기간을 변경할 수 있습니다.",
+        "to": null,
+        "where": "상단 → 날짜·시간 선택",
+        "refs": [
+          305
+        ]
+      },
+      {
+        "kind": "improved",
+        "title": "다섯 언어의 가이드 화면",
+        "body": "가이드의 대시보드 이미지와 조작 안내가 선택한 언어로 표시됩니다. 이미지를 확대해 화면의 메뉴와 차트를 확인할 수 있습니다.",
+        "to": null,
+        "where": "가이드 → 화면 이미지",
+        "refs": [
+          306,
+          310
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "Claude의 짧은 기간 조회",
+        "body": "Claude 상세 화면에서 4시간 이하의 기간을 조회할 때 발생하던 로딩 시간 초과를 해결했습니다.",
+        "to": "/cost",
+        "detail": true,
+        "where": "Claude 상세 → 조회 기간",
+        "refs": [
+          311
+        ]
+      },
+      {
+        "kind": "improved",
+        "title": "Collector 로그인 정보와 연결",
+        "body": "브라우저에서 승인한 로그인 이메일로 Claude Code와 Codex 사용량을 연결합니다. Codex는 로컬 OTLP/gRPC 연결을 사용하며, 재설치할 때의 사용자 정보와 갱신 설정도 보존합니다.",
+        "to": null,
+        "where": "Collector 연결 → 설치·재설치",
+        "refs": [
+          308,
+          309,
+          312
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.11.0",
     "date": "2026-11-15",
     "summary": "공유 화면에서 팀 이름을 이메일처럼 가릴 수 있습니다. Reliability에서 Codex 지표를 볼 수 있고, Claude 비용의 백엔드 구분이 더 정확해졌습니다.",
