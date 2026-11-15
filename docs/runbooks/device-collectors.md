@@ -45,7 +45,11 @@ started before the first epoch, or reports no start time, keeps its own ID or th
 default. Logs and traces switch immediately. Restart Claude Code and Codex after
 reinstalling so new series start under the new ID. Earlier rows stay under the previous ID
 (no merge), and collectors installed before this change keep insert-only attribution until
-reinstalled. A legacy migration records nothing for Claude and the legacy
+reinstalled. `claude_code.session.count` is keyed by labels only (ADR-003), so a session that
+spans an identity change is counted once under each ID. The history survives uninstall
+(`state.json` is kept). Renewal is scheduled before the Collector starts, so a failed install
+rolls back before new-epoch telemetry is exported; only a legacy migration's post-start
+health check can still roll back after the new Collector ran briefly. A legacy migration records nothing for Claude and the legacy
 `CODEX_DEFAULT_USER_EMAIL` for Codex as those defaults; close clients first, as prompted. This is still device-configured attribution, not server-verified per-event
 identity: a device owner can edit the Collector configuration itself.
 
