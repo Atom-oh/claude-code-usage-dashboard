@@ -5,8 +5,9 @@ import { resolveBackend, backendSql } from "./backend.js";
 const LIMIT = 50000;
 // Stored rows one cumulative metric query may scan (window plus baseline lookback). The
 // per-series sorted value arrays dominate memory: measured 2026-11-14 on production, 43M
-// histogram rows ran in 5.8 s and 47M exceeded the reader's 3.7 GiB query limit. The four
-// performance metrics read about 2.2M rows a day, so 25M covers about eight days.
+// histogram rows ran in 5.8 s and 47M exceeded the reader's then 3.7 GiB query limit
+// (8 GB since 2026-11-15). The four performance metrics read about 2.2M rows a day, so
+// 25M covers about eight days.
 // Over the budget the signal reports "limited".
 export const SCAN_LIMIT = 25000000;
 const TYPES = ["sum", "gauge", "histogram", "exponential_histogram"];
