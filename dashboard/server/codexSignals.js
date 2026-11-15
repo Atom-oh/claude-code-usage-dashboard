@@ -152,7 +152,9 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
       FROM (
         SELECT *, toUnixTimestamp64Nano(t) AS ts, t >= {signalFrom:DateTime} AS w, ${payload} AS p,
           -- Per point: the outer any() aliases shadow identity columns inside aggregates.
-          (${valid}) AS point_valid, cityHash64(${identity}, started) AS series_key
+          -- A cumulative point stamped before its own start is malformed; the fold rejected it.
+          (${valid}) AND (temporality != 2 OR t >= started) AS point_valid,
+          cityHash64(${identity}, started) AS series_key
         FROM (${source} AND AggregationTemporality != 1 AND ${scan} AND ${withinScan})
       )
       -- A 64-bit key over the full identity groups far faster than the maps themselves.

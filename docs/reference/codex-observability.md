@@ -101,7 +101,8 @@ series require a prior baseline or an observed start inside the range; unresolve
 baselines/regressions mark the aggregate partial. Codex re-exports every cumulative
 series each interval, so [codexSignals.js](../../dashboard/server/codexSignals.js) folds
 each series in SQL to its latest in-window point and its latest point in the three-day
-lookback. The interior checks travel with the latest point: invalid samples, a decrease
+lookback. The interior checks travel with the latest point: invalid samples (including a
+point stamped before its series start), a decrease
 (a fall between consecutive in-window points sorted by timestamp, or a first point below
 the baseline) and a conflicting retry at either endpoint (histogram buckets are not
 compared; a NaN optional extremum equals itself, so it leaves count and sum available). Sorting per series makes the result independent of part and thread read order.

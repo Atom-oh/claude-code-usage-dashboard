@@ -318,6 +318,17 @@ test("Codex signal SQL against isolated ClickHouse", {
     }
   });
 
+  await t.test("a cumulative point stamped before its series start marks the series partial", () => {
+    const row = { ...base, MetricName: "codex.before-start", Attributes: { model: "start-fixture" },
+      StartTimeUnix: "2026-09-15 00:05:00", AggregationTemporality: 2, IsMonotonic: true };
+    insert("sum", [{ ...row, TimeUnix: "2026-09-15 00:02:00", Value: 3 },
+      { ...row, TimeUnix: "2026-09-15 00:10:00", Value: 9 }]);
+    const result = metric("sum", { model: "start-fixture" });
+    const m = result.metrics.find((r) => r.name === "codex.before-start");
+    assert.equal(m.partial, true);
+    assert.equal(m.value, null);
+  });
+
   await t.test("a NaN extremum at a cumulative endpoint withholds only the extrema", () => {
     const row = { ...base, MetricName: "codex.nan-extremum", Attributes: { model: "nan-fixture" },
       StartTimeUnix: "2026-09-15 00:01:00", AggregationTemporality: 2, Count: 4, Sum: 40, Min: "nan", Max: 20 };

@@ -49,6 +49,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   in SQL to their latest and baseline points, and a stored-row budget bounds the scan.
   Reliability covers ranges up to about eight days; the full metric list (Analytics) still
   reports "limited", because its three-day baseline lookback alone exceeds the budget.
+  Cumulative metric `points` and coverage `records` now count stored points, including
+  identical redeliveries.
 - Reliability's Codex turn tiles (duration, TTFT, tool calls, tokens) average the metric
   groups with known statistics and mark the tile "Some source statistics unconfirmed" when
   any group is withheld, instead of showing "—" whenever one series lacks a baseline.
