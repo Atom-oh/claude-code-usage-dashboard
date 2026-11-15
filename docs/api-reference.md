@@ -699,7 +699,7 @@ listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
 "observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
 from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
-null (no parent link). Spans carry no usage: tokens and cost come only from unique
+null (no attribute links a subagent conversation; the detail's `agents` follows the trace). Spans carry no usage: tokens and cost come only from unique
 usage-bearing `response.completed` completions of the same conversation whose event
 time falls in `[start, end + 5s]` (latest-starting turn when several; each completion
 once), priced per completion with the Codex AWS list estimate (`cost_basis:
@@ -725,8 +725,8 @@ belong to `userExact` in that bucket, or does not exist, returns 404 `{"error": 
 either way. Without `userExact` (a shared task link) the owner is resolved: the Claude
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
-access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`, `owner` being
-the exact identity the task belongs to:
+access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`
+(Codex adds `agents`), `owner` being the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no model-call span).
@@ -778,6 +778,21 @@ the exact identity the task belongs to:
   be stored with the collector's later observed time), looking back 7 days:
   `{context_window, auto_compact_token_limit}`, null when none is reported; always null for
   Claude, which reports no context window.
+- `agents` (Codex only): subagent turns linked through the trace's parent-span chain (a
+  subagent turn's `session_task.turn` ← `op.dispatch.inter_agent_communication` ←
+  `dispatch_tool_call_with_state` ← the parent turn's `collaboration<tool>` span), read from
+  the traces of the task's spans between 10 minutes before the turn and 24h after it ends.
+  `parent` is `{id, tool}` of the turn that started this one, else null. `children` are up to
+  50 subagent turns, three levels deep, in tree order: `{id, parent_id, depth, tool, started_at,
+  duration_ms, models, llm_calls, cost_usd, cost_partial}`, each folded like a list row from its
+  own conversation's turns and completions (null when its turn row is absent). `subagents` counts
+  their distinct conversations; `task.subagents` is that count when positive, else null (a turn
+  without links may lack traces or run a Codex version without collaboration spans).
+  `spawn_calls`/`unlinked_calls` count the turn's `spawn_agent`/`followup_task` spans and those
+  with no linked turn (null when spans are truncated). `total` is `{llm_calls,
+  llm_calls_partial, cost_usd, cost_partial}` over the turn and every child; `limited` marks a
+  depth, count, trace or row bound. Traces only establish lineage: calls and costs remain the
+  completion-log estimates.
 
 ### Teams
 

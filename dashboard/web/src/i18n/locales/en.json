@@ -1989,5 +1989,17 @@
   "m6488293ef11c": "Cost → Codex details → Full-range metrics",
   "mbf672b9454ab": "More reliable language switching",
   "me6725bf311bb": "All five language catalogs are now bundled with the app, so language changes take effect immediately, even during deployment.",
-  "mb9834780ac07": "Bottom of the sidebar → Language"
+  "mb9834780ac07": "Bottom of the sidebar → Language",
+  "mdf62edb62607": "Subagent calls",
+  "ma5f1a83f15da": "This is a subagent turn run by the parent turn calling the {0} tool.",
+  "mbac6e1b660b1": "Open parent turn",
+  "m850bec9b93cc": "Total including subagents: {0} LLM calls · Cost {1}",
+  "mc6dc5f0f3a29": "No subagent turns are linked by trace.",
+  "mdaa24361cf11": "{0} spawn_agent·followup_task calls aren't included in the total because no trace for a subagent turn was found.",
+  "me9647623a44e": "Only some subagents were checked. The total is a partial subtotal.",
+  "mb94cdf6330f5": "Codex runs subagents as separate conversations. Connections are identified through the parent span chain in the trace, so calls from devices or versions that don't send a trace aren't shown. Costs are estimates calculated from each subagent's completion logs.",
+  "mdbd1ade42624": "Subagent turns",
+  "m0d31ae34c7ed": "Call method",
+  "m2668bc818e5b": "Open",
+  "m0bd87b5900b9": "Count linked through the trace's parent spans"
 }

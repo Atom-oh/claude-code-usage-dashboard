@@ -7,6 +7,7 @@ import { query as defaultQuery, toChDateTime } from "./clickhouse.js";
 import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
+import { SPAWN_SPANS, agentCount, codexAgents } from "./codexAgents.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
@@ -149,13 +150,14 @@ LIMIT ${SPAN_BOUND}`,
 // Codex: the conversation's turns and completions (the complete competitor set for the
 // list's latest-start-wins linking) and the turn's spans in [from - 24h, to + 24h), the
 // list's turn window. Spans that name another conversation are excluded; spans without a
-// conversation id stay, as in the list's turn grouping.
+// conversation id stay, as in the list's turn grouping. trace_id is internal: it keys the
+// subagent lineage read (codexAgents.js) and is never returned.
 export function codexDetailSql(from, to, q, conversationId, turnId) {
   return {
     turns: codexTurnSql(from, to, q, { conversationId }),
     completions: codexCompletionSql(from, to, q, { conversationId }),
     spans: {
-      sql: `SELECT span_id, parent_id, span_name, start_ms, duration_ms,
+      sql: `SELECT span_id, parent_id, span_name, start_ms, duration_ms, TraceId AS trace_id,
     ${SPAN_ATTRIBUTE_ALLOWLIST.codex.map(column).join(", ")},
     count() OVER () AS total_spans
 FROM (
@@ -609,7 +611,12 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     : codexLimitsSql(q, task.conversationId, turnStart, count(entry.turn.end_ms) ?? turnStart);
   const [rows, limitRows] = await Promise.all([run(sql.spans.sql, sql.spans.params),
     limitsSql ? run(limitsSql.sql, limitsSql.params) : []]);
+  const detail = foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
+  // Subagent turns linked through the trace's parent-span chain; their own completions price them.
+  const spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
+  const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
+  const agents = await codexAgents(owner, { turnId: task.turnId, startMs: turnStart, endMs: count(entry.turn.end_ms),
+    traceIds, tracesPartial: detail.truncated }, detail.task, spawnSpanIds, { from, to, run, prices });
   // Codex emits no MCP or plugin session events: its environment is not collected.
-  return { ...foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows),
-    environment: null, owner };
+  return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, environment: null, owner };
 }

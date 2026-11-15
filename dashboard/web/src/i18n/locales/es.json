@@ -1989,5 +1989,17 @@
   "m6488293ef11c": "Cost → Detalles de Codex → Métricas de todo el período",
   "mbf672b9454ab": "Mejoras en la estabilidad del cambio de idioma",
   "me6725bf311bb": "La app incluye los catálogos de los cinco idiomas, por lo que los cambios de idioma se aplican de inmediato incluso durante el despliegue.",
-  "mb9834780ac07": "Parte inferior de la barra lateral → Idioma"
+  "mb9834780ac07": "Parte inferior de la barra lateral → Idioma",
+  "mdf62edb62607": "Llamadas de subagentes",
+  "ma5f1a83f15da": "Este es un turno de subagente que el turno principal ejecutó al llamar a la herramienta {0}.",
+  "mbac6e1b660b1": "Abrir turno principal",
+  "m850bec9b93cc": "Total con subagentes: {0} llamadas a LLM · Coste {1}",
+  "mc6dc5f0f3a29": "No hay turnos de subagentes vinculados mediante trace.",
+  "mdaa24361cf11": "{0} llamadas a spawn_agent·followup_task no se incluyen en el total porque no se encontró ningún trace de un turno de subagente.",
+  "me9647623a44e": "Solo se comprobaron algunos subagentes. El total es un subtotal parcial.",
+  "mb94cdf6330f5": "Codex ejecuta los subagentes en conversaciones separadas. Las conexiones se identifican mediante la cadena de span principal en el trace, por lo que no se muestran las llamadas de dispositivos o versiones que no envían un trace. Los costes son estimaciones calculadas a partir de los registros de finalización de cada subagente.",
+  "mdbd1ade42624": "Turnos de subagentes",
+  "m0d31ae34c7ed": "Método de llamada",
+  "m2668bc818e5b": "Abrir",
+  "m0bd87b5900b9": "Recuento vinculado mediante los spans padre del trace"
 }

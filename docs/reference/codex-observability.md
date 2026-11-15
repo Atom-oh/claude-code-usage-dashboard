@@ -74,6 +74,7 @@ for operating steps. Do not publish raw configuration, headers, prompts or logs.
 | Runtime settings and prompt length | Conversation-start and prompt metadata | Start settings are snapshots. The dashboard displays prompt length, not prompt text. |
 | Runtime/turn/tool/skill counters and histograms | Native metrics | Independently labelled diagnostics, never added to log-derived usage or cost. |
 | Internal operations and parent relationships | Native spans | Observed span window, not guaranteed complete turn time. Overlapping durations are not summed. |
+| Subagent turns of a task | Native spans: subagent `session_task.turn` under the parent turn's `collaboration<tool>` span | Lineage only, within one TraceId; the subagents' calls and costs come from their own completion logs. Absent traces or collaboration spans leave the link unknown, not zero. |
 | LOC, commits, PR output and saved hours | Not present in this integration | Requires separate Git/CI/activity evidence; no causal ROI or work-time estimate is fabricated. |
 
 The observed metric families included process/startup, thread skills, plugin cache,

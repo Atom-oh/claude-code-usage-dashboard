@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T01:58:04.754518+00:00",
-  "source_messages": 1991,
+  "updated_at": "2026-11-15T06:01:54.101453+00:00",
+  "source_messages": 2003,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 1991,
-      "bytes": 153407,
-      "sha256": "14b0e82818bd832bfd7b8c78f4864f8af42172fd2121d01252cec5b95f93afc2"
+      "messages": 2003,
+      "bytes": 154383,
+      "sha256": "7f66d4594414c73059b91dd835567a940696508fb715991852493996e32eb41b"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 1991,
-      "bytes": 181303,
-      "sha256": "604cf96bf044eedc6ffe630f660833c2efd216a0b309f070953067140a827fd1"
+      "messages": 2003,
+      "bytes": 182451,
+      "sha256": "d41f1a99e327bc7df6a2284f2aa729dd87e1b267af2ed42b2e7d6baa9a571d06"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 1991,
-      "bytes": 189905,
-      "sha256": "94dee31005b6d6c9cdcfa78f18e6f0115e6f7e9ac7a557b891e2bea28275a591"
+      "messages": 2003,
+      "bytes": 191239,
+      "sha256": "eb6ab7d1aecb974d9e6a7c4f3fac2e8c357478e1f128abab691820e5ef5a3371"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 1991,
-      "bytes": 163042,
-      "sha256": "bce5140172e0d7c7b311a1e276dabc31978cfe6e6feb6e8c7525ce8ca6a003c9"
+      "messages": 2003,
+      "bytes": 164140,
+      "sha256": "db41de1e61194efa4585214571ccf17ac1503dfdafcaa7cb837fe519a1c6deda"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 1991,
-      "bytes": 145009,
-      "sha256": "282fa903089c6fbee2780119ac6b0c2392b304dee06b5ef6a753f762265d5562"
+      "messages": 2003,
+      "bytes": 145948,
+      "sha256": "6eaee67b3b5949c795a72222705cc69d335f8e7c3efdc2e2c767104b57c4f7f6"
     }
   ],
   "catalog_calls": [

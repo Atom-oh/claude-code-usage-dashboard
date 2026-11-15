@@ -1037,6 +1037,8 @@ const fakeRun = (tables) => async (sql, params) => {
       ? [header({ owner: tables.owner })] : [];
   if (sql.includes("GROUP BY owner"))
     return params.turnId === U1 && params.conversationId === "c1" ? [{ owner: tables.owner }] : [];
+  // Subagent lineage (codexAgents.js): no linked turns unless a table supplies them.
+  if (sql.includes("op.dispatch.inter_agent_communication")) return tables.agents?.(params) ?? [];
   // Claude spans are gated by the header; Codex spans carry the exact user.
   if (sql.includes("count() OVER ()"))
     return params.userExact === undefined || tables.owner === params.userExact ? [llm("a", 0, { total_spans: "1" })] : [];
@@ -1068,6 +1070,36 @@ test("detail for another user's task returns 404", async () => {
   assert.equal(seen.length, 1);
   const codex = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
   assert.equal(codex.task.id, `codex:c1:${U1}`);
+});
+
+test("the Codex detail links subagent turns through the trace and never returns trace ids", async () => {
+  const child = uuid(7);
+  const lineage = [
+    { trace_id: "tr1", span_id: "g", parent_id: "x", name: "collaborationspawn_agent", conversation: "c1", turn: U1, start_ms: "0" },
+    { trace_id: "tr1", span_id: "d", parent_id: "g", name: "dispatch_tool_call_with_state", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "i", parent_id: "d", name: "op.dispatch.inter_agent_communication", conversation: "", turn: "", start_ms: "0" },
+    { trace_id: "tr1", span_id: "c", parent_id: "i", name: "session_task.turn", conversation: "", turn: child, start_ms: "0" },
+    { trace_id: "tr1", span_id: "r", parent_id: "c", name: "run_turn", conversation: "sub", turn: child, start_ms: "0" },
+  ];
+  const seen = [];
+  const run = async (sql, params) => {
+    seen.push(params);
+    if (sql.includes("op.dispatch")) return lineage;
+    if (sql.includes("count() OVER ()"))
+      return [{ span_id: "g", parent_id: "", span_name: "collaborationspawn_agent", start_ms: String(ms("2026-11-05T01:00:01Z")),
+        duration_ms: "5", trace_id: "tr1", total_spans: "1" }];
+    if (sql.includes("GROUP BY turn_id"))
+      return params.conversationIds ? [turn({ conversation_id: "sub", turn_id: child })] : [turn({ in_bucket: 1 })];
+    if (sql.includes("otel_logs") && params.conversationIds) return [completion("2026-11-05T01:00:05Z", { conversation_id: "sub" })];
+    return [];
+  };
+  const detail = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
+  assert.equal(detail.task.subagents, 1);
+  assert.deepEqual(detail.agents.children.map(c => [c.id, c.tool, c.llm_calls]), [[`codex:sub:${child}`, "spawn_agent", 2]]);
+  assert.ok(Math.abs(detail.agents.children[0].cost_usd - unitCost) < 1e-12);
+  assert.deepEqual([detail.agents.spawn_calls, detail.agents.unlinked_calls], [1, 0]);
+  assert.ok(!JSON.stringify(detail).includes("tr1"));
+  assert.ok(seen.filter(p => p.traceIds).every(p => p.traceIds.join() === "tr1" && p.userExact === "kim@x.com"));
 });
 
 test("a context turn starting before the bucket is not a detail of this bucket", async () => {
