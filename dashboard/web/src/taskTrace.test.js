@@ -149,6 +149,16 @@ test("contextSummary: peak, main first/last, biggest compaction and limit shares
   expect([empty.peak, empty.compactions, empty.mainLast, empty.points]).toEqual([null, null, null, 0]);
 });
 
+test("contextSummary counts Codex compactions from the turn total, not the bounded events", () => {
+  const ev = { start_ms: 1, pre_tokens: null, post_tokens: null, trigger: null, success: null };
+  // A truncated span list drew 2 of the turn's 5 compactions: the summary says 5.
+  expect(contextSummary({ compactions: [ev, ev], compactions_total: 5, compactions_partial: true }).compactions).toBe(5);
+  expect(contextSummary({ compactions: [], compactions_total: 0, compactions_partial: false }).compactions).toBe(0);
+  // Unknown stays unknown; Claude (no total) counts its events.
+  expect(contextSummary({ compactions: null, compactions_total: null }).compactions).toBeNull();
+  expect(contextSummary({ compactions: [ev] }).compactions).toBe(1);
+});
+
 test("modelUsage folds call sources into one row per model, most expensive first", () => {
   const rows = modelUsage([
     call("a", "main", "claude-haiku-5-5", "sdk", 0.01),

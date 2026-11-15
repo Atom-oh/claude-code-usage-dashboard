@@ -224,6 +224,8 @@ export function contextLines(points = [], sourceOf = () => null) {
 
 // Summary of the detail's `context` (per-call input context, Claude compactions, Codex
 // limits). Unknown inputs stay null: no peak without a known point, no share without a limit.
+// A Codex detail's `compactions_total` (the turn row's count) outranks its events, which a
+// truncated span list may show only in part.
 export function contextSummary(context) {
   const points = (context?.points || []).filter((p) => observedNumber(p.tokens) !== null);
   let peak = null;
@@ -243,7 +245,8 @@ export function contextSummary(context) {
   return {
     points: points.length, missing: observedNumber(context?.missing) ?? 0, partial: Boolean(context?.partial),
     peak, mainFirst: main[0]?.tokens ?? null, mainLast: main.length > 1 ? main.at(-1).tokens : null,
-    compactions: compactions === null ? null : compactions.length, biggestCompaction: biggest,
+    compactions: observedNumber(context?.compactions_total) ?? (compactions === null ? null : compactions.length),
+    biggestCompaction: biggest,
     autoCompactLimit: limit, contextWindow: window, limitShare: share(limit), windowShare: share(window),
   };
 }

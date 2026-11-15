@@ -11,7 +11,8 @@ import { SPAWN_SPANS, agentCount, codexAgents } from "./codexAgents.js";
 import { codexSkillsSql, foldCodexSkills, foldCodexTools } from "./codexActivity.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
-  foldCodexTask, codexRetries, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions, namesTurnOnTools } from "./taskTraces.js";
+  foldCodexTask, codexRetries, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions, namesTurnOnTools,
+  emitsTurnCompactions } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
   llm: ["model", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens", "ttft_ms",
@@ -559,14 +560,16 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
   // span list, so truncation does not withhold them. Retries (tries minus runs) and compactions
   // come from the same turn row as the list and stay null for a turn without run spans. Codex
   // has no permission-wait evidence: that rule is omitted.
-  // Events come from the raw rows (the newest SPAN_BOUND spans); the turn row's count says
-  // whether a truncated list is missing some.
-  const known = count(turn.legacy_calls) > 0 ? count(turn.compactions) : null;
+  // Compactions are known only for a turn with run spans on a version that emits turn-tagged
+  // compaction spans (0.161+). Events come from the raw rows (the newest SPAN_BOUND spans), so
+  // a truncated list may show fewer: `compactions_total` is the turn row's count, and
+  // `compactions_partial` says some events are missing.
+  const known = count(turn.legacy_calls) > 0 && emitsTurnCompactions(turn.app_version) ? count(turn.compactions) : null;
   const events = known === null ? null : ordered.filter(({ r }) => r.span_name === "codex.compaction")
     .map(({ start }) => ({ start_ms: start !== null && t0 !== null ? start - t0 : null, pre_tokens: null,
       post_tokens: null, trigger: null, success: null }));
-  const context = { ...contextSeries(calls, t0, limited), compactions: events, limits: foldLimits(limitRows),
-    ...(events ? { compactions_partial: events.length < known } : {}) };
+  const context = { ...contextSeries(calls, t0, limited), compactions: events, compactions_total: known,
+    limits: foldLimits(limitRows), ...(events ? { compactions_partial: events.length < known } : {}) };
   return { task, lanes, spans, truncated: total > rows.length, span_total: total,
     why: whyRules({ task, calls, lanes, retries: codexRetries(turn), waitMs: null }), context };
 }
