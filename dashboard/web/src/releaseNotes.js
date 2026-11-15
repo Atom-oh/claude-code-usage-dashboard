@@ -10,6 +10,63 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.11.0",
+    "date": "2026-11-15",
+    "summary": "공유 화면에서 팀 이름을 이메일처럼 가릴 수 있습니다. Reliability에서 Codex 지표를 볼 수 있고, Claude 비용의 백엔드 구분이 더 정확해졌습니다.",
+    "items": [
+      {
+        "kind": "new",
+        "title": "팀 이름 마스킹",
+        "body": "여러 사람이 보는 화면(데모 등)에서 팀 이름을 앞 두 글자와 짧은 식별값으로 가립니다. 기본값은 배포 설정(지정하지 않으면 이메일 마스킹과 같음)을 따르고, 관리자가 설정 화면에서 켜기·끄기로 바꿀 수 있습니다. 표시 이름을 붙인 팀은 그 이름을 그대로 보여 줍니다. 화면과 CSV 표시만 바꾸며 API 응답은 그대로입니다.",
+        "to": null,
+        "where": "설정 → 팀 이름 마스킹 (admin)",
+        "refs": [
+          292
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "Reliability의 Codex 지표 표시",
+        "body": "Codex 상세의 Metrics가 거의 모든 기간에서 조회 한도 초과로 표시되던 문제를 고쳤습니다. 약 8일까지의 기간에서 턴 처리 시간·첫 토큰 시간·도구 호출·토큰 타일이 확인된 값으로 표시되고, 일부를 확인하지 못하면 그 사실을 함께 알립니다.",
+        "to": null,
+        "where": "Reliability → Codex 상세",
+        "refs": [
+          297
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "이어 쓴 세션의 Claude 비용 백엔드",
+        "body": "Bedrock으로 시작해 Claude 로그인으로 이어 쓴 세션의 비용이 모델별 비용에서 백엔드 미제공으로 표시되던 문제를 고쳤습니다. 로그인 이후 사용분은 Anthropic으로 구분합니다.",
+        "to": null,
+        "where": "Cost → 모델별 비용",
+        "refs": [
+          295
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "Codex 효율 카드의 전체 구간 지표",
+        "body": "기간 안에 사용량을 수집하지 못한 요청이 하나라도 있으면 전체 구간 패널의 타일 네 개가 비어 보이던 문제를 고쳤습니다. 완료 응답 기준일 때는 HTTP 요청·세션 지표만 보여 주고, 보류한 값의 이유를 함께 안내합니다.",
+        "to": null,
+        "where": "Cost → Codex 상세 → 전체 구간 지표",
+        "refs": [
+          294
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "언어 전환 안정화",
+        "body": "다섯 언어 카탈로그를 앱에 함께 담아, 배포 중에도 언어를 바꾸면 바로 적용됩니다.",
+        "to": null,
+        "where": "사이드바 아래쪽 → 언어",
+        "refs": [
+          296
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.10.0",
     "date": "2026-11-14",
     "summary": "모든 대시보드 화면과 사용설명서를 다섯 언어로 살펴보고, 한국어 내레이션과 영어 자막의 상세 소개 영상으로 주요 사용 흐름을 익힐 수 있습니다.",

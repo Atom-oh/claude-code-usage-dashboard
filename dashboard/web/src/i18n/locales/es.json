@@ -1975,5 +1975,19 @@
   "mf4a53b277b13": "Activado",
   "m6609ccb10fbd": "Desactivado",
   "m64ce1b37ca97": "Guardar configuración de enmascaramiento",
-  "m6a630c788363": "No hay un almacén de configuración disponible, así que se sigue la configuración del despliegue. Puede cambiarse durante el despliegue con TEAM_MASK_ENABLED (Terraform team_mask_enabled)."
+  "m6a630c788363": "No hay un almacén de configuración disponible, así que se sigue la configuración del despliegue. Puede cambiarse durante el despliegue con TEAM_MASK_ENABLED (Terraform team_mask_enabled).",
+  "m36408895d9fd": "Ahora puedes ocultar los nombres de los equipos, como las direcciones de correo electrónico, en las pantallas compartidas. Puedes ver las métricas de Codex en Reliability, y el desglose de los costos de Claude por backend ahora es más preciso.",
+  "m41b6e20d5ba7": "En las pantallas que ven varias personas (como las demostraciones), los nombres de equipo se enmascaran con los dos primeros caracteres y un identificador corto. De forma predeterminada, se sigue la configuración de despliegue (si no se especifica, se aplica el mismo enmascaramiento que a las direcciones de correo electrónico), y admin puede activar o desactivar esta opción desde la página Configuración. Los equipos que tengan un nombre visible mostrarán ese nombre tal cual. Esto solo cambia lo que se muestra en pantalla y en CSV; las respuestas de API no cambian.",
+  "m310ac7be73ac": "Configuración → Enmascaramiento del nombre de equipo (admin)",
+  "m80a69594529e": "Métricas de Codex en Reliability",
+  "mc80f45a992ba": "Se corrigió un problema por el que Metrics en los detalles de Codex mostraba «Límite de consulta superado» en casi todos los intervalos. Para intervalos de hasta unos 8 días, las tarjetas de duración media del turno, tiempo medio hasta el primer token, llamadas a herramientas por turno y tokens por turno ahora muestran valores confirmados. Si no se pueden confirmar algunos valores, también se indicará.",
+  "mcdc04fb46188": "Reliability → Detalles de Codex",
+  "ma2347d9e391f": "Backend de costos de Claude para sesiones reanudadas",
+  "mee72421a59dd": "Se corrigió un problema por el que los costos de las sesiones iniciadas con Bedrock y continuadas tras iniciar sesión en Claude aparecían como backend no disponible en los costos por modelo. El uso posterior al inicio de sesión ahora se atribuye a Anthropic.",
+  "m1e7e926b5b5e": "Métricas de todo el período en la tarjeta de eficiencia de Codex",
+  "mf31f1b9d0ff4": "Se corrigió un problema por el que los cuatro mosaicos del panel de todo el período aparecían vacíos si no se podía recopilar el uso de al menos una solicitud. Cuando se toman como base las respuestas completadas, solo se muestran las métricas de solicitudes HTTP y sesiones, junto con el motivo por el que se omiten otros valores.",
+  "m6488293ef11c": "Cost → Detalles de Codex → Métricas de todo el período",
+  "mbf672b9454ab": "Mejoras en la estabilidad del cambio de idioma",
+  "me6725bf311bb": "La app incluye los catálogos de los cinco idiomas, por lo que los cambios de idioma se aplican de inmediato incluso durante el despliegue.",
+  "mb9834780ac07": "Parte inferior de la barra lateral → Idioma"
 }
