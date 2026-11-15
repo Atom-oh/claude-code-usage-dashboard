@@ -159,6 +159,8 @@ const excluded = [
 insert([...t1Spans, ...t2Spans.slice(0, 3)]);
 insert([duplicate, ...t2Spans.slice(3), ...t3Spans, ...t4Spans]);
 insert([...t5Spans, ...t6Spans, ...t7Spans, ...excluded, t1Spans[3]]);
+// A version-less span of T5 in its own insert: its row's empty version must never win a merge.
+insert([span("shell", t5, "2026-10-18T18:05:02.000Z", { version: "", conversation: "conv-d" })]);
 
 // --- Raw codexTurnSql rows against the rollup read (grouped by TurnId, states merged). ---
 const from = new Date("2026-10-18T00:00:00Z"), to = new Date("2026-10-19T00:00:00Z");
@@ -176,7 +178,7 @@ const rollupSql = `SELECT turn_id, toUInt8(min_start >= {from:DateTime} AND min_
       min(StartTs) AS min_start, max(EndTs) AS max_end,
       uniqExactMerge(SamplingSpans) AS sampling_calls, uniqExactMerge(LegacySpans) AS legacy_calls,
       uniqExactMerge(SamplingTries) AS sampling_tries, uniqExactMerge(Compactions) AS compactions,
-      anyLast(AppVersion) AS app_version, groupUniqArrayMerge(SamplingModels) AS sampling_models,
+      max(AppVersion) AS app_version, groupUniqArrayMerge(SamplingModels) AS sampling_models,
       groupUniqArrayMerge(LegacyModels) AS legacy_models, uniqExactMerge(SpawnCalls) AS spawn_calls,
       max(NamesTurnOnTools) AS names_turn
     FROM claude_code.${TURNS_ROLLUP_TABLE}
@@ -223,7 +225,10 @@ check([byId[t2].llm_calls, byId[t2].sampling_span, byId[t2].models, byId[t2].sam
   ["2", "run_sampling_request", [astra], "2", 0], "T2 legacy turn on 0.163.0");
 check([byId[t3].conversation_id, byId[t3].app_version, byId[t3].compactions, byId[t3].llm_calls], ["", "", "1", "0"],
   "T3 synthetic id without conversation or version");
-check([byId[t5].spawn_calls, byId[t5].names_turn], ["1", 1], "T5 1.0.0-beta follow-up");
+check([byId[t5].spawn_calls, byId[t5].names_turn, byId[t5].app_version], ["1", 1, "1.0.0-beta"],
+  "T5 1.0.0-beta follow-up keeps its version over a version-less span");
+check(rows(`SELECT AppVersion AS v FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t5}' ORDER BY v`),
+  [{ v: "" }, { v: "1.0.0-beta" }], "T5 keeps an empty-version row for the merge to resolve");
 check(rows(`SELECT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t2}' GROUP BY TurnHour ORDER BY hour`),
   [{ hour: "2026-10-18 13:00:00" }, { hour: "2026-10-18 14:00:00" }], "non-v7 turn keeps one row per span hour");
 check(rows(`SELECT DISTINCT toString(TurnHour) AS hour FROM claude_code.${TURNS_ROLLUP_TABLE} WHERE TurnId = '${t4}'`),

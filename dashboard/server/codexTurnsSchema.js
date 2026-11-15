@@ -21,7 +21,7 @@ export const TURNS_ROLLUP_COLUMNS = [
   ["Compactions", "AggregateFunction(uniqExact, UInt64)"],
   ["SpawnCalls", "AggregateFunction(uniqExact, UInt64)"],
   ["NamesTurnOnTools", "SimpleAggregateFunction(max, UInt8)"],
-  ["AppVersion", "SimpleAggregateFunction(anyLast, String)"],
+  ["AppVersion", "SimpleAggregateFunction(max, String)"],
 ];
 const ORDER = "UserIdentity, TurnHour, TurnId";
 
@@ -93,7 +93,7 @@ export function codexTurnsTransform(where = "1") {
   uniqExactStateIf(span_key, SpanName = 'codex.compaction') AS Compactions,
   uniqExactStateIf(span_key, ${SPAWN()}) AS SpawnCalls,
   max(span_names_turn) AS NamesTurnOnTools,
-  anyIf(span_version, span_version != '') AS AppVersion
+  maxIf(span_version, span_version != '') AS AppVersion
 FROM (
   ${codexTurnSpans(where)}
 )
@@ -138,7 +138,7 @@ export function codexTurnsVerifySql() {
   const lower = `${from} - INTERVAL 1 HOUR`, upper = `${to} + INTERVAL 24 HOUR`;
   const scope = `HAVING min(TurnHour) >= ${from} AND min(TurnHour) < ${to}`;
   const pairs = ["conversations", "start_ts", "end_ts", "sampling", "legacy", "sampling_models",
-    "legacy_models", "tries", "compactions", "spawns", "names_turn"];
+    "legacy_models", "tries", "compactions", "spawns", "names_turn", "version"];
   return `SELECT throwIf(${to} <= ${from}
   OR toStartOfHour(${from}) != ${from} OR toStartOfHour(${to}) != ${to},
   'Codex turns verification requires a positive hour-aligned UTC window');
@@ -149,8 +149,7 @@ FROM (
     ifNull(t.present, 0) = 1 AS t_present, ifNull(r.present, 0) = 1 AS r_present,
     toUInt8(r_present AND r.end_ts >= ${to} + INTERVAL 23 HOUR) AS clipped,
     toUInt8(NOT (t_present AND r_present) OR (NOT clipped AND (length(t.conversations) > 1
-      OR ${pairs.map(name => `t.${name} != r.${name}`).join("\n      OR ")}
-      OR NOT hasAll(if(empty(r.versions), [''], r.versions), t.versions)))) AS differs
+      OR ${pairs.map(name => `t.${name} != r.${name}`).join("\n      OR ")}))) AS differs
   FROM (
     SELECT UserIdentity, TurnId, toUInt8(1) AS present,
       arraySort(groupUniqArrayMerge(Conversations)) AS conversations,
@@ -160,7 +159,7 @@ FROM (
       arraySort(groupUniqArrayMerge(LegacyModels)) AS legacy_models,
       uniqExactMerge(SamplingTries) AS tries, uniqExactMerge(Compactions) AS compactions,
       uniqExactMerge(SpawnCalls) AS spawns, max(NamesTurnOnTools) AS names_turn,
-      groupUniqArray(AppVersion) AS versions
+      max(AppVersion) AS version
     FROM claude_code.${TURNS_ROLLUP_TABLE}
     WHERE TurnHour >= ${lower} AND TurnHour < ${upper}
     GROUP BY UserIdentity, TurnId
@@ -178,7 +177,7 @@ FROM (
       uniqExactIf(span_key, SpanName = 'codex.compaction') AS compactions,
       uniqExactIf(span_key, ${SPAWN()}) AS spawns,
       max(span_names_turn) AS names_turn,
-      groupUniqArrayIf(span_version, span_version != '') AS versions
+      maxIf(span_version, span_version != '') AS version
     FROM (
     ${codexTurnSpans(`Timestamp >= ${lower} AND Timestamp < ${upper}`)}
     )
