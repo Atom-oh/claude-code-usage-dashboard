@@ -373,9 +373,18 @@ ledger to equal its version list, so run steps 3-5 only from merged `main`.
    activation. Expired raw rows cannot be reconstructed, so hours before the first backfilled hour
    are a coverage gap, not an error.
 
+   Run it as the reader (`otel_reader`, Secret `clickhouse-reader`), not the writer. The reader's
+   `readonly` profile may reject `SET param_...` and `ch` passes no flags, so bind the window as
+   `clickhouse-client` `--param_` flags the way the migration 010 verify does, with the password
+   passed on stdin as `ch` does. If a window exceeds the reader's `max_execution_time`, verify
+   shorter hour-aligned windows.
+
    ```bash
-   { echo "SET param_verifyFrom='2026-11-01 00:00:00', param_verifyTo='2026-11-02 00:00:00';"
-     cat clickhouse-verify-012.sql; } | CH_USER=otel_writer CH_SECRET=clickhouse-writer ch
+   ch_pw=$(kube get secret clickhouse-reader -o jsonpath='{.data.CH_PASSWORD}' | base64 -d)
+   { printf '%s\n' "$ch_pw"; cat clickhouse-verify-012.sql; } | kube exec -i "$POD" -c clickhouse -- sh -c \
+     'IFS= read -r CLICKHOUSE_PASSWORD; export CLICKHOUSE_PASSWORD; exec clickhouse-client --user otel_reader --multiquery "$@"' \
+     sh --param_verifyFrom='2026-11-01 00:00:00' --param_verifyTo='2026-11-02 00:00:00'
+   unset ch_pw
    ```
 
 6. Activate by setting `CODEX_TURNS_READ_FROM` (Terraform `codex_turns_read_from`, compose and
