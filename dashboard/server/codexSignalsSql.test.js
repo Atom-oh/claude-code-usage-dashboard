@@ -291,6 +291,33 @@ test("Codex signal SQL against isolated ClickHouse", {
     assert.deepEqual(result.traces, [
       { trace_id: "capped-conflict", span_count: null, wall_ms: null, errors: null, spans: [], partial: true }]);
   });
+  await t.test("interior decreases do not depend on part or thread read order", () => {
+    // Separate inserts with merges stopped keep each point in its own part, so parallel
+    // reads can deliver a series' points in any order.
+    execute("SYSTEM STOP MERGES claude_code.codex_metrics_sum");
+    // The series starts inside the window, so its latest value is the whole increase.
+    const row = { ...base, Attributes: { model: "order-fixture" }, StartTimeUnix: "2026-09-15 00:01:00",
+      IsMonotonic: true, AggregationTemporality: 2 };
+    const at = (minute) => `2026-09-15 00:${String(minute).padStart(2, "0")}:00`;
+    // A healthy series delivered newest first, with a later redelivery of an older point.
+    for (const [minute, value] of [[40, 40], [30, 30], [20, 20], [10, 10], [20, 20], [5, 5]])
+      insert("sum", [{ ...row, MetricName: "codex.order.healthy", TimeUnix: at(minute), Value: value }]);
+    // A reset in the middle of the window, also delivered out of order.
+    for (const [minute, value] of [[40, 45], [10, 10], [30, 3], [20, 20], [5, 5]])
+      insert("sum", [{ ...row, MetricName: "codex.order.reset", TimeUnix: at(minute), Value: value }]);
+    const runs = [1, 2, 3, 4, 5].map(() => metric("sum", { model: "order-fixture" }, {}));
+    execute("SYSTEM START MERGES claude_code.codex_metrics_sum");
+    for (const result of runs) {
+      const healthy = result.metrics.find((r) => r.name === "codex.order.healthy");
+      assert.equal(healthy.partial, false);
+      assert.equal(healthy.value, 40);
+      assert.equal(healthy.points, 6, "stored redeliveries count as points");
+      const reset = result.metrics.find((r) => r.name === "codex.order.reset");
+      assert.equal(reset.partial, true);
+      assert.equal(reset.value, null);
+    }
+  });
+
   for (const type of ["sum", "histogram", "exponential_histogram"]) {
     await t.test(`${type} retains every latest baseline tie after a long export history`, () => {
       const metricName = `codex.baseline-scale.${type}`;

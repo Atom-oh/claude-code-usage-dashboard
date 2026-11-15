@@ -245,12 +245,11 @@ test("cumulative series fold in one scan to their latest and baseline points", (
     // Latest ties by highest and lowest payload expose a conflicting retry.
     assert.match(series, /maxIf\(tuple\(ts, p\), w\) AS last_hi, minIf\(tuple\(-ts, p\), w\) AS last_lo/);
     assert.match(series, /maxIf\(tuple\(ts, p\), NOT w\) AS base_hi, minIf\(tuple\(-ts, p\), NOT w\) AS base_lo/);
-    // Positive steps beyond the net change reveal an interior decrease.
-    assert.match(series, /deltaSumTimestampIf\(p\.2, ts, w\) AS rise_2/);
-    assert.equal(/deltaSumTimestampIf\(p\.3, ts, w\) AS rise_3/.test(series), type !== "sum");
-    const tolerance = (index) => new RegExp(`rise_${index} > \\(last_hi\\.2\\.${index} - first_lo\\.2\\.${index}\\)\\s*\\+ 1e-9`);
-    assert.equal(tolerance(2).test(sql), type === "sum", "histogram counts compare exactly");
-    if (type !== "sum") assert.match(sql, tolerance(3));
+    // Interior decreases compare consecutive points sorted per series, independent of read order.
+    assert.match(series, /arraySort\(groupArrayIf\(tuple\(ts, p\.2(, p\.3)?\), w\)\) AS seq/);
+    assert.equal(/tuple\(ts, p\.2, p\.3\)/.test(series), type !== "sum");
+    assert.match(sql, /arrayExists\(\(x, y\) -> y\.2 < x\.2/);
+    assert.doesNotMatch(sql, /deltaSumTimestamp|1e-9/);
     assert.match(sql, /ARRAY JOIN if\(has_base, \[0, 1\], \[0\]\) AS baseline_row/);
     // DELTA keeps exact point deduplication and conflict detection.
     const delta = sql.slice(sql.indexOf("delta_points AS"));

@@ -3,11 +3,12 @@ import { toChDateTime } from "./clickhouse.js";
 import { resolveBackend, backendSql } from "./backend.js";
 
 const LIMIT = 50000;
-// Stored rows one cumulative metric query may scan (window plus baseline lookback). Measured
-// 2026-11-14 on production: 50M sum rows took 3.5 s and 233M histogram rows 16.7 s; the
-// four performance metrics read about 2M rows a day (10.7M for two days plus lookback,
-// 0.84 s). Over the budget the signal reports "limited".
-export const SCAN_LIMIT = 50000000;
+// Stored rows one cumulative metric query may scan (window plus baseline lookback). The
+// per-series sorted value arrays dominate memory: measured 2026-11-14 on production, 43M
+// histogram rows ran in 5.8 s and 47M exceeded the reader's 3.7 GiB query limit. The four
+// performance metrics read about 2.2M rows a day, so 25M covers about eight days.
+// Over the budget the signal reports "limited".
+export const SCAN_LIMIT = 25000000;
 const TYPES = ["sum", "gauge", "histogram", "exponential_histogram"];
 const ordered = (o = {}) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
 const number = (v) => v !== null && v !== undefined && v !== "" && typeof v !== "boolean"
@@ -90,10 +91,13 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
   // in the three-day baseline lookback. The fold's difference of the two equals the sum of
   // its consecutive differences, provided no step decreases. SQL therefore carries
   // every check the fold made on interior points as invalid_samples on the latest point:
-  // invalid samples, a decrease (positive steps exceeding the net change, or the first
-  // point below the baseline) and a conflicting retry at either endpoint (maximum and
-  // minimum payload at the latest timestamp differ). An interior conflict that leaves the
-  // series monotonic cannot change the difference and is not reported. `points` counts
+  // invalid samples, a decrease (a consecutive pair in timestamp order whose value, or a
+  // histogram's count or sum, falls; or the first point below the baseline) and a
+  // conflicting retry at either endpoint (the maximum and minimum flags/count/sum/min/max
+  // or value at that timestamp differ; histogram buckets are not compared). The in-window
+  // values are sorted per series before comparison, so the result does not depend on part
+  // or thread read order. An interior conflict that leaves the series monotonic cannot
+  // change the difference and is not reported. `points` counts
   // stored in-window data points, including identical redeliveries. A scan budget, not the
   // point count, bounds the work; DELTA points keep their exact deduplication.
   const payload = histogram
@@ -101,11 +105,12 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
     : "tuple(sample_flags, sample_value)";
   const scan = `TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalTo:DateTime}`;
   const withinScan = "(SELECT scanned FROM scan_probe) <= {signalScanLimit:UInt64}";
-  // Integer counts compare exactly; Float64 sums keep a relative tolerance.
-  const decrease = (index, exact = false) => `(rise_${index} > (last_hi.2.${index} - first_lo.2.${index})${exact ? "" : `
-      + 1e-9 * greatest(1, abs(last_hi.2.${index}))`}
-      OR has_base AND first_lo.2.${index} < base_hi.2.${index})`;
-  const decreasing = `temporality = 2 AND ${histogram ? "1" : "monotonic"} AND (${decrease(2, histogram)}${histogram ? ` OR ${decrease(3)}` : ""})`;
+  // `seq` holds the in-window (ts, value[, sum]) tuples sorted by timestamp, then value.
+  const fall = `arrayExists((x, y) -> y.2 < x.2${histogram ? " OR y.3 < x.3" : ""},
+      arrayPopBack(seq), arrayPopFront(seq))`;
+  const belowBase = (index) => `has_base AND first_lo.2.${index} < base_hi.2.${index}`;
+  const decreasing = `temporality = 2 AND ${histogram ? "1" : "monotonic"} AND (${fall}
+      OR ${belowBase(2)}${histogram ? ` OR ${belowBase(3)}` : ""})`;
   const point = "if(baseline_row, base_hi, last_hi)";
   const compacted = `SELECT toString(fromUnixTimestamp64Nano(${point}.1, 'UTC')) AS timestamp,
     toString(toTimeZone(started, 'UTC')) AS start, '${type}' AS type, ${identity},
@@ -138,8 +143,7 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames, sc
         maxIf(tuple(ts, p), NOT w) AS base_hi, minIf(tuple(-ts, p), NOT w) AS base_lo,
         temporality = 2 AND countIf(NOT w) > 0 AS has_base,
         countIf(w AND NOT point_valid) AS invalid_points,
-        deltaSumTimestampIf(p.2, ts, w) AS rise_2${histogram ? `,
-        deltaSumTimestampIf(p.3, ts, w) AS rise_3,
+        arraySort(groupArrayIf(tuple(ts, p.2${histogram ? ", p.3" : ""}), w)) AS seq${histogram ? `,
         countIf(w AND sample_count > 0 AND sample_sum = 0) AS sum_ambiguous_points` : ""}
       FROM (
         SELECT *, toUnixTimestamp64Nano(t) AS ts, t >= {signalFrom:DateTime} AS w, ${payload} AS p,
