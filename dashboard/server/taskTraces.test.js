@@ -1333,6 +1333,8 @@ test("codex turn SQL counts tries and compactions per span id", () => {
   const { sql, params } = codexTurnSql(from, to, validateTaskQuery({ userExact: "a" }, both));
   assert.match(sql, /uniqIf\(SpanId, SpanName = 'try_run_sampling_request'\) AS sampling_tries/);
   assert.match(sql, /uniqIf\(SpanId, SpanName = 'codex\.compaction'\) AS compactions/);
+  // The per-span counts read SpanId from the deduplicated span subquery, which must select it.
+  assert.match(sql, /SELECT Timestamp, SpanName, SpanId,\n/);
   assert.match(sql, /anyIf\(span_version, span_version != ''\) AS app_version/);
   assert.match(sql, /ResourceAttributes\['service\.version'\] AS span_version/);
   assert.ok(!Object.values(params).some(v => String(v).includes("try_run_sampling_request")));
