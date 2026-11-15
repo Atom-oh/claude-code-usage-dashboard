@@ -2061,5 +2061,16 @@
   "m1aea22dc55a1": "Claude details → Query period",
   "m325d2fac09e3": "Collector login information and connection",
   "m693db7bcc313": "Connect Claude Code and Codex usage using the login email approved in your browser. Codex uses a local OTLP/gRPC connection, and user information and update settings are preserved when reinstalling.",
-  "m9de4819a2bd2": "Collector connection → Install/reinstall"
+  "m9de4819a2bd2": "Collector connection → Install/reinstall",
+  "m91351df15b05": "Connect more subagents in Codex Task details and show retry and compaction counts. Details for long Codex sessions also open without timing out.",
+  "m479a6b0e04c4": "Expanded Codex subagent connections",
+  "m60965a9e0851": "Link Codex CLI's spawn_agent and send_input, as well as child tasks from Codex versions before 0.166, as subagents in Task details, and show each turn's LLM calls and estimated cost.",
+  "m3c1ef40a0535": "Codex retries and compaction",
+  "m82d3aab11799": "You can see the number of model request retries and compactions in Codex Task details. Compaction is collected from Codex 0.161 onward, and you'll be notified when only partial data is shown.",
+  "me25bf7deda89": "Distinguishing 0 subagents from not collected",
+  "m8c057e1173a7": "If there is enough evidence that no subagent calls were made, show 0; if this cannot be confirmed, show not collected.",
+  "ma09d3e1a8c17": "Users → Task details → Subagents",
+  "me97f3606af3c": "Details for long Codex sessions",
+  "m7f52daa6a268": "The details view for very long Codex sessions opens without timing out. In these cases, subagent costs may be shown as only partially confirmed.",
+  "m7b1b4c8fd309": "Users → Task details"
 }
