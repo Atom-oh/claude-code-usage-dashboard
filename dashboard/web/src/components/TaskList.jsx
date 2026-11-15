@@ -115,8 +115,9 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
     { key: "workflows", label: translate("m7e991f82224a"), render: (v) => <Workflows runs={v} onPick={setWorkflow} /> },
     { key: "llm_calls", label: translate("m5570150cd696"), render: (v) => orMissing(v) },
     { key: "subagents", label: translate("m7d688dae8673"), render: (v) => orMissing(v) },
-    // Spawn and follow-up calls (not a subagent count); only Codex 0.166+ turns are collected.
-    { key: "subagent_calls", label: translate("mdf62edb62607"), hint: translate("m5657e573bb06"),
+    // Spawn and follow-up calls (not a subagent count); collected only for Codex 0.166+ turns read
+    // from the turn rollup (CODEX_TURNS_READ_FROM).
+    { key: "subagent_calls", label: translate("mdf62edb62607"), hint: translate("mb914b9145517"),
       render: (v, r) => r.client === "codex" ? orMissing(v) : "—" },
     { key: "tokens", label: translate("m1e3af36b77f5"), render: (v) => <TokenBar tokens={v} /> },
     { key: "observed_tokens", label: translate("m217dbc642634"), render: (v, r) => observedNumber(v) === null ? translateSource(MISSING)
