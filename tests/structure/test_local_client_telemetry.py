@@ -31,8 +31,46 @@ theme = "dark"
         self.assertEqual(setup.codex_config(rendered, True), rendered)
         self.assertEqual(setup.toml_load(setup.codex_config(rendered, False)), setup.toml_load(original))
         self.assertFalse(parsed["otel"]["log_user_prompt"])
-        for key, signal in [("exporter", "logs"), ("metrics_exporter", "metrics"), ("trace_exporter", "traces")]:
-            self.assertEqual(parsed["otel"][key], {"otlp-http": {"endpoint": "http://127.0.0.1:4318/v1/" + signal, "protocol": "json"}})
+        for key in ["exporter", "metrics_exporter", "trace_exporter"]:
+            self.assertEqual(parsed["otel"][key], {"otlp-grpc": {"endpoint": "http://127.0.0.1:4317"}})
+
+    def test_codex_legacy_http_exporters_move_to_grpc(self):
+        base = 'model = "m"\n[tui]\ntheme = "dark"\n'
+        # The previous managed block (with markers) is replaced on rerun.
+        managed = base + "\n" + setup.BEGIN + "\n" + setup.LEGACY_CODEX_OTEL + setup.END + "\n"
+        rendered = setup.codex_config(managed, True)
+        self.assertEqual(setup.toml_load(rendered)["otel"], setup.toml_load(setup.CODEX_OTEL)["otel"])
+        self.assertEqual(rendered.count("[otel]"), 1)
+        # A hand-written copy of the previous default (no markers) is cut out and managed.
+        for original in [base + "\n" + setup.LEGACY_CODEX_OTEL,
+                         'model = "m"\n\n' + setup.LEGACY_CODEX_OTEL + '\n[tui]\ntheme = "dark"\n']:
+            with self.subTest(original=original):
+                rendered = setup.codex_config(original, True)
+                parsed = setup.toml_load(rendered)
+                self.assertEqual(parsed["otel"], setup.toml_load(setup.CODEX_OTEL)["otel"])
+                self.assertEqual({k: v for k, v in parsed.items() if k != "otel"},
+                                 {k: v for k, v in setup.toml_load(original).items() if k != "otel"})
+                self.assertIn(setup.BEGIN, rendered)
+                self.assertEqual(setup.codex_config(rendered, True), rendered)
+        # Written as dotted keys it cannot be cut out exactly: it stays (the Collector still
+        # receives HTTP) instead of failing setup.
+        dotted = 'model = "m"\n' + "".join("otel." + line + "\n" for line in setup.LEGACY_CODEX_OTEL.splitlines()[1:])
+        self.assertEqual(setup.toml_load(dotted)["otel"], setup.toml_load(setup.LEGACY_CODEX_OTEL)["otel"])
+        self.assertEqual(setup.codex_config(dotted, True), dotted)
+
+    def test_codex_launcher_overrides_match_the_configured_exporter_kind(self):
+        self.assertEqual(setup.codex_exporter_kind({}), "otlp-grpc")
+        self.assertEqual(setup.codex_exporter_kind(setup.toml_load(setup.CODEX_OTEL)), "otlp-grpc")
+        self.assertEqual(setup.codex_exporter_kind(setup.toml_load(setup.LEGACY_CODEX_OTEL)), "otlp-http")
+        grpc = setup.codex_exporter_override("exporter", "logs", "otlp-grpc", {"x-ccdash-backend": "bedrock-mantle"})
+        self.assertEqual(grpc, 'otel.exporter={otlp-grpc={endpoint="http://127.0.0.1:4317",'
+                               'headers={"x-ccdash-backend"="bedrock-mantle"}}}')
+        self.assertEqual(setup.codex_exporter_override("trace_exporter", "traces", "otlp-http"),
+                         'otel.trace_exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/traces",protocol="json"}}')
+        # Each override parses as the value Codex merges into the configured table.
+        for kind in ["otlp-grpc", "otlp-http"]:
+            value = setup.codex_exporter_override("exporter", "logs", kind).split("=", 1)[1]
+            self.assertEqual(list(setup.toml_load("v=" + value)["v"]), [kind])
 
     def test_manual_disabled_or_partial_otel_is_not_silently_skipped(self):
         for original in ['[otel]\nexporter="none"\n', 'otel.exporter="none"\n', '["otel"]\nexporter="none"\n',

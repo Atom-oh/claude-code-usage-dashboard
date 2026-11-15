@@ -131,6 +131,22 @@ def validate_arguments(arguments, endpoint):
         index += 1
 
 
+def configured_exporter_kind(env):
+    """Exporter kind already in the user's Codex config. Codex merges `-c otel.<exporter>`
+    into that table, and two kinds in one exporter fail its config load, so the overrides
+    follow it: OTLP/gRPC when the config already uses it (managed local setup), else the
+    qualified loopback OTLP/HTTP JSON."""
+    root = env.get("CODEX_HOME") or (str(Path(env["HOME"]) / ".codex") if env.get("HOME") else "")
+    if not root:
+        return "otlp-http"
+    path = Path(root) / "config.toml"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return "otlp-http"
+    return "otlp-grpc" if re.search(r"(?m)^[^#\n]*\botlp-grpc\b", text) else "otlp-http"
+
+
 def launch_command(env, arguments):
     config = settings(env)
     if "codex" not in config["enabledClients"]:
@@ -153,12 +169,12 @@ def launch_command(env, arguments):
     ]
     # The native providers can build their own resources. Carry deployment
     # provenance on every loopback request as well as in the resource.
+    kind = configured_exporter_kind(env)
     for key, signal in [("exporter", "logs"), ("metrics_exporter", "metrics"), ("trace_exporter", "traces")]:
-        overrides.append(
-            'otel.' + key + '={otlp-http={endpoint="http://127.0.0.1:4318/v1/'
-            + signal + '",protocol="json",headers={"x-ccdash-backend"='
-            + json.dumps(attributes["backend"]) + '}}}'
-        )
+        target = ('otlp-grpc={endpoint="http://127.0.0.1:4317"' if kind == "otlp-grpc"
+                  else 'otlp-http={endpoint="http://127.0.0.1:4318/v1/' + signal + '",protocol="json"')
+        overrides.append('otel.' + key + '={' + target + ',headers={"x-ccdash-backend"='
+                         + json.dumps(attributes["backend"]) + '}}}')
     if config["endpoint"] == "mantle":
         overrides += [
             'model_provider="amazon-bedrock"',
