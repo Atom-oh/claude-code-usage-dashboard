@@ -23,7 +23,7 @@ FROM (
       OR t.compactions != r.compactions
       OR t.spawns != r.spawns
       OR t.names_turn != r.names_turn
-      OR NOT hasAll(if(empty(r.versions), [''], r.versions), t.versions)))) AS differs
+      OR t.version != r.version))) AS differs
   FROM (
     SELECT UserIdentity, TurnId, toUInt8(1) AS present,
       arraySort(groupUniqArrayMerge(Conversations)) AS conversations,
@@ -33,7 +33,7 @@ FROM (
       arraySort(groupUniqArrayMerge(LegacyModels)) AS legacy_models,
       uniqExactMerge(SamplingTries) AS tries, uniqExactMerge(Compactions) AS compactions,
       uniqExactMerge(SpawnCalls) AS spawns, max(NamesTurnOnTools) AS names_turn,
-      groupUniqArray(AppVersion) AS versions
+      max(AppVersion) AS version
     FROM claude_code.codex_turns_v1
     WHERE TurnHour >= {verifyFrom:DateTime('UTC')} - INTERVAL 1 HOUR AND TurnHour < {verifyTo:DateTime('UTC')} + INTERVAL 24 HOUR
     GROUP BY UserIdentity, TurnId
@@ -51,7 +51,7 @@ FROM (
       uniqExactIf(span_key, SpanName = 'codex.compaction') AS compactions,
       uniqExactIf(span_key, SpanName IN ('collaborationspawn_agent', 'collaborationfollowup_task', 'multi_agent_v1spawn_agent')) AS spawns,
       max(span_names_turn) AS names_turn,
-      groupUniqArrayIf(span_version, span_version != '') AS versions
+      maxIf(span_version, span_version != '') AS version
     FROM (
     SELECT if(match(turn_id_raw, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
       toStartOfHour(toDateTime(intDiv(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4))))), 1000), 'UTC')),

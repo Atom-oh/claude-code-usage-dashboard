@@ -25,7 +25,7 @@ test("table columns are the spec's turn row plus the retry, compaction, spawn an
     ["Compactions", "AggregateFunction(uniqExact, UInt64)"],
     ["SpawnCalls", "AggregateFunction(uniqExact, UInt64)"],
     ["NamesTurnOnTools", "SimpleAggregateFunction(max, UInt8)"],
-    ["AppVersion", "SimpleAggregateFunction(anyLast, String)"],
+    ["AppVersion", "SimpleAggregateFunction(max, String)"],
   ]);
 });
 
@@ -63,7 +63,7 @@ test("view takes Codex turn spans and keys every count by span id", () => {
     "uniqExactStateIf(span_key, SpanName = 'try_run_sampling_request') AS SamplingTries",
     "uniqExactStateIf(span_key, SpanName = 'codex.compaction') AS Compactions",
     `uniqExactStateIf(span_key, SpanName IN (${SPAWN_SPANS.map(name => `'${name}'`).join(", ")})) AS SpawnCalls`,
-    "max(span_names_turn) AS NamesTurnOnTools", "anyIf(span_version, span_version != '') AS AppVersion",
+    "max(span_names_turn) AS NamesTurnOnTools", "maxIf(span_version, span_version != '') AS AppVersion",
     "WHERE TurnId != ''", "GROUP BY TurnHour, UserIdentity, TurnId",
   ]) assert.ok(sql.includes(part), part);
   // Raw `LIMIT 1 BY TraceId, SpanId` is reproduced by span-keyed sets, never by row counts.
@@ -112,6 +112,8 @@ test("verify compares merged rows with raw spans and keeps clipped turns out of 
     `r.end_ts >= ${VTO} + INTERVAL 23 HOUR`,
     "groupUniqArrayMerge(Conversations)", "uniqExactMerge(SamplingSpans)", "uniqExactMerge(SpawnCalls)",
     "length(t.conversations) > 1", "FULL OUTER JOIN", "USING (UserIdentity, TurnId)",
+    // The version is the largest non-empty one on both sides: deterministic, and empty never wins.
+    "max(AppVersion) AS version", "maxIf(span_version, span_version != '') AS version", "t.version != r.version",
   ]) assert.ok(sql.includes(part), part);
   // Output contract: one row per turn; a clipped turn never sets differs unless a side is missing.
   assert.match(sql, /SELECT turn_id, differs, clipped\nFROM \(/);

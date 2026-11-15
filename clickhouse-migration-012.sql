@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS claude_code.codex_turns_v1 ON CLUSTER 'replicated'
   Compactions AggregateFunction(uniqExact, UInt64) CODEC(ZSTD(1)),
   SpawnCalls AggregateFunction(uniqExact, UInt64) CODEC(ZSTD(1)),
   NamesTurnOnTools SimpleAggregateFunction(max, UInt8) CODEC(ZSTD(1)),
-  AppVersion SimpleAggregateFunction(anyLast, String) CODEC(ZSTD(1))
+  AppVersion SimpleAggregateFunction(max, String) CODEC(ZSTD(1))
 )
 ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{shard}/codex_turns_v1', '{replica}')
 PARTITION BY toYYYYMM(TurnHour)
@@ -43,7 +43,7 @@ SELECT TurnHour, UserIdentity, TurnId,
   uniqExactStateIf(span_key, SpanName = 'codex.compaction') AS Compactions,
   uniqExactStateIf(span_key, SpanName IN ('collaborationspawn_agent', 'collaborationfollowup_task', 'multi_agent_v1spawn_agent')) AS SpawnCalls,
   max(span_names_turn) AS NamesTurnOnTools,
-  anyIf(span_version, span_version != '') AS AppVersion
+  maxIf(span_version, span_version != '') AS AppVersion
 FROM (
   SELECT if(match(turn_id_raw, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
       toStartOfHour(toDateTime(intDiv(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4))))), 1000), 'UTC')),
@@ -84,9 +84,9 @@ SELECT throwIf(
     ('codex_turns_v1','Compactions','AggregateFunction(uniqExact, UInt64)'),
     ('codex_turns_v1','SpawnCalls','AggregateFunction(uniqExact, UInt64)'),
     ('codex_turns_v1','NamesTurnOnTools','SimpleAggregateFunction(max, UInt8)'),
-    ('codex_turns_v1','AppVersion','SimpleAggregateFunction(anyLast, String)'))) != 15,
+    ('codex_turns_v1','AppVersion','SimpleAggregateFunction(max, String)'))) != 15,
   'Codex turns schema columns differ; repair before recording migration 012');
 
-INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 12, '012-codex-turns', '2406f818a7361c32b082de26ccbe409c1a8de899f2c01663c4ee9565415dae9e'
+INSERT INTO claude_code.schema_migrations (version,name,checksum) SELECT 12, '012-codex-turns', 'e2eda01aa737622ce7eb2869daf253cdbe4ae356dd4dd1c27544a61a2ba0023b'
 WHERE (SELECT count() FROM claude_code.schema_migrations WHERE version=4) > 0
 AND (SELECT count() FROM claude_code.schema_migrations WHERE version=12) = 0;

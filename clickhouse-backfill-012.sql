@@ -18,7 +18,7 @@ SELECT TurnHour, UserIdentity, TurnId,
   uniqExactStateIf(span_key, SpanName = 'codex.compaction') AS Compactions,
   uniqExactStateIf(span_key, SpanName IN ('collaborationspawn_agent', 'collaborationfollowup_task', 'multi_agent_v1spawn_agent')) AS SpawnCalls,
   max(span_names_turn) AS NamesTurnOnTools,
-  anyIf(span_version, span_version != '') AS AppVersion
+  maxIf(span_version, span_version != '') AS AppVersion
 FROM (
   SELECT if(match(turn_id_raw, '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
       toStartOfHour(toDateTime(intDiv(reinterpretAsUInt64(reverse(unhex(concat(substring(turn_id_raw, 1, 8), substring(turn_id_raw, 10, 4))))), 1000), 'UTC')),
