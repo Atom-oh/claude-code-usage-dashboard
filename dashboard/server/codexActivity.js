@@ -16,19 +16,25 @@ const label = (value) => typeof value === "string" && LABEL.test(value) ? value 
 const INVOCATIONS = new Set(["explicit", "implicit"]);
 
 // The turn's skill invocations in the detail's span window. Ids are exact, so the window only
-// bounds the scan.
+// bounds the scan. Each delivered event counts once: an exporter retry stores the same
+// timestamp and attribute maps again, so rows are deduplicated on that identity (as the
+// completion read is) before grouping.
 export function codexSkillsSql(from, to, q, conversationId, turnId) {
   return {
-    sql: `SELECT LogAttributes['skill.name'] AS name,
-    LogAttributes['skill.invocation_type'] AS invocation,
-    LogAttributes['skill.scope'] AS scope,
-    count() AS calls
-FROM claude_code.otel_logs
-PREWHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}
-  AND EventName = 'codex.skill_invocation'
-  AND ${EXACT_USER}
-WHERE LogAttributes['conversation.id'] = {conversationId:String}
-  AND LogAttributes['turn.id'] = {turnId:String}
+    sql: `SELECT name, invocation, scope, count() AS calls
+FROM (
+    SELECT LogAttributes['skill.name'] AS name,
+        LogAttributes['skill.invocation_type'] AS invocation,
+        LogAttributes['skill.scope'] AS scope,
+        cityHash64(Timestamp, mapSort(ResourceAttributes), mapSort(LogAttributes)) AS identity_hash
+    FROM claude_code.otel_logs
+    PREWHERE Timestamp >= {logFrom:DateTime} AND Timestamp < {logTo:DateTime}
+      AND EventName = 'codex.skill_invocation'
+      AND ${EXACT_USER}
+    WHERE LogAttributes['conversation.id'] = {conversationId:String}
+      AND LogAttributes['turn.id'] = {turnId:String}
+    LIMIT 1 BY identity_hash
+)
 GROUP BY name, invocation, scope
 ORDER BY calls DESC, name
 LIMIT ${SKILL_LIMIT + 1}`,
@@ -49,9 +55,10 @@ export function foldCodexSkills(rows) {
   return { skills, skills_limited: rows.length > SKILL_LIMIT };
 }
 
-// Tool calls of the turn by tool name from the folded detail spans (each Codex tool call is
-// one span carrying tool_name). Durations sum the known ones; a truncated detail counts only
-// the returned spans.
+// Tool calls of the turn by tool name from the folded detail spans (current Codex emits each
+// tool call, collaboration tools included, as one span carrying tool_name). Durations sum the
+// known span durations, so concurrent calls of one tool add up beyond wall time; a truncated
+// detail counts only the returned spans.
 export function foldCodexTools(spans, truncated) {
   const byName = new Map();
   for (const s of spans) {

@@ -1087,7 +1087,7 @@ test("the Codex detail links subagent turns through the trace and never returns 
     if (sql.includes("op.dispatch")) return lineage;
     if (sql.includes("count() OVER ()"))
       return [{ span_id: "g", parent_id: "", span_name: "collaborationspawn_agent", start_ms: String(ms("2026-11-05T01:00:01Z")),
-        duration_ms: "5", trace_id: "tr1", total_spans: "1" }];
+        duration_ms: "5", trace_id: "tr1", a_tool_name: "collaborationspawn_agent", total_spans: "1" }];
     if (sql.includes("GROUP BY turn_id"))
       return params.conversationIds ? [turn({ conversation_id: "sub", turn_id: child })] : [turn({ in_bucket: 1 })];
     if (sql.includes("otel_logs") && params.conversationIds) return [completion("2026-11-05T01:00:05Z", { conversation_id: "sub" })];
@@ -1099,6 +1099,9 @@ test("the Codex detail links subagent turns through the trace and never returns 
   assert.ok(Math.abs(detail.agents.children[0].cost_usd - unitCost) < 1e-12);
   assert.deepEqual([detail.agents.spawn_calls, detail.agents.unlinked_calls], [1, 0]);
   assert.ok(!JSON.stringify(detail).includes("tr1"));
+  // Native collaboration spans carry tool_name: the spawn is a tool call, not an internal span.
+  assert.deepEqual(detail.activity.tools.map(t => [t.name, t.calls]), [["collaborationspawn_agent", 1]]);
+  assert.equal(detail.spans[0].internal, undefined);
   assert.ok(seen.filter(p => p.traceIds).every(p => p.traceIds.join() === "tr1" && p.userExact === "kim@x.com"));
 });
 

@@ -580,7 +580,8 @@ test("a Codex turn lists its skills and tool calls with MCP tools marked", async
   body = activityDetail({ skills: [{ name: "superpowers:systematic-debugging", invocation: "implicit", scope: "user", calls: 2 },
     { name: "co-agent:pr-autofix", invocation: "explicit", scope: "user", calls: 1 }], skills_limited: false,
   tools: [{ name: "exec_command", mcp: false, calls: 3, duration_ms: 1500, duration_partial: false, aborted: 0 },
-    { name: "mcp__awsdocsread_documentation", mcp: true, calls: 1, duration_ms: null, duration_partial: true, aborted: 1 }],
+    { name: "mcp__awsdocsread_documentation", mcp: true, calls: 1, duration_ms: null, duration_partial: true, aborted: 1 },
+    { name: "apply_patch", mcp: false, calls: 2, duration_ms: 3000, duration_partial: true, aborted: 0 }],
   tools_partial: false });
   mount({ taskId: CODEX_ID });
   const card = await screen.findByRole("region", { name: "이 턴에서 쓴 스킬·도구" });
@@ -593,6 +594,10 @@ test("a Codex turn lists its skills and tool calls with MCP tools marked", async
   expect(rows[2].textContent).toContain("MCP");
   expect(rows[2].textContent).toContain("중단 1회");
   expect(rows[2].textContent).toContain("미수집");
+  // A known subtotal of span times carries the partial mark.
+  expect(rows[3].textContent).toContain("(부분합)");
+  expect(rows[1].textContent).not.toContain("(부분합)");
+  expect(within(card).getByRole("columnheader", { name: "span 시간 합" })).toBeTruthy();
 });
 
 test("a Codex turn without recorded skills or tools says none were recorded", async () => {

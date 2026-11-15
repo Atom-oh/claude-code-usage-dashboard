@@ -726,7 +726,7 @@ either way. Without `userExact` (a shared task link) the owner is resolved: the 
 interaction's identity, or the single identity on the Codex turn's spans of that
 conversation (none or two: 404). Any reader can already pass any exact user, so this adds no
 access. Response `{task, lanes, spans, truncated, span_total, why, context, environment, owner}`
-(Codex adds `agents`), `owner` being the exact identity the task belongs to:
+(Codex adds `agents` and `activity`), `owner` being the exact identity the task belongs to:
 
 - `task`: the list row (same fold, same totals) for that task; Codex adds
   `completions_without_span` (linked completions matching no model-call span).
@@ -748,9 +748,11 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   `ttft_ms`, `attempt`, `error_class`, `status_code`, `stop_reason`, `query_source_safe`,
   `effort`, `speed`; tool `tool_name`, `subagent_type`, `skill_name`,
   `anthropic.mcp.server.name`, `bash_command_class`, `success`, `error_class`; wait
-  `decision`, `source`; Codex `model`, `tool_name`, `aborted`. A Codex tool span without
-  `tool_name` is one of Codex's own operations (turn scaffolding, `mcp.runtime.*`,
-  `codex.tool_blocking`) and carries `internal: true`; the UI hides those by default.
+  `decision`, `source`; Codex `model`, `tool_name`, `aborted`. Current Codex puts `tool_name`
+  on every tool-call span (collaboration tools included), so a Codex tool span without it is
+  treated as one of Codex's own operations (turn scaffolding, `mcp.runtime.*`,
+  `codex.tool_blocking`) and carries `internal: true`. This is a heuristic tied to that
+  emission; the UI hides those spans by default and says how many.
 - `truncated`/`span_total`: at most the newest 5000 spans. Truncated Claude details null
   whole-task and lane totals and `task.models` (the newest spans' models are not the
   task's) and return no `why`; Codex totals do not depend on spans.
@@ -808,7 +810,8 @@ access. Response `{task, lanes, spans, truncated, span_total, why, context, envi
   `tools` are the returned spans carrying `tool_name`, grouped as `{name, mcp, calls,
   duration_ms, duration_partial, aborted}` by call count, at most 50; `mcp` marks
   `mcp__<server><tool>` names (Codex joins server and tool, so they are not split) and
-  `duration_ms` sums known span durations (null when none is known). `tools_partial` marks a
+  `duration_ms` sums known span durations, so concurrent calls add up beyond wall time (null
+  when none is known). Skill events are deduplicated on timestamp and attribute maps first. `tools_partial` marks a
   truncated detail or more than 50 tools. Empty lists mean nothing was recorded, not that
   nothing was used.
 

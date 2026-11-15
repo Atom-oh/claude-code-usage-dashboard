@@ -10,6 +10,9 @@ test("the skill read binds the turn's exact ids and owner and selects only label
   assert.match(sql, /LogAttributes\['conversation\.id'\] = \{conversationId:String\}/);
   assert.match(sql, /LogAttributes\['turn\.id'\] = \{turnId:String\}/);
   assert.doesNotMatch(sql, /plugin_id|skill\.path/);
+  // A redelivered event (same timestamp and attribute maps) counts once, before grouping.
+  assert.match(sql, /cityHash64\(Timestamp, mapSort\(ResourceAttributes\), mapSort\(LogAttributes\)\) AS identity_hash/);
+  assert.ok(sql.indexOf("LIMIT 1 BY identity_hash") < sql.indexOf("GROUP BY name"));
   assert.deepEqual([params.conversationId, params.turnId, params.userExact], ["c1", "t1", "kim@x.com"]);
   assert.equal(params.logFrom, "2026-11-04 00:00:00");
   assert.equal(params.logTo, "2026-11-06 01:00:00");

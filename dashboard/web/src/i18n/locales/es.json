@@ -2004,7 +2004,7 @@
   "m0bd87b5900b9": "Recuento vinculado mediante los spans padre del trace",
   "m203f80842740": "Abrir turno de subagente #{0}",
   "m11cf787f3c11": "Skills y herramientas usados en este turno",
-  "m734e27062552": "{0} ({1}, {2} veces)",
+  "m734e27062552": "{0} ({1}, ×{2})",
   "m4268a8e02583": "explícito",
   "m67e7ba0fc025": "automático",
   "mb57872ccd2ff": "No se registraron eventos de invocación de skills en este turno.",
@@ -2012,8 +2012,9 @@
   "m4da09def7978": "No se registraron span de llamadas a herramientas en este turno.",
   "m24e46b503f01": "Solo se incluyeron algunos span o, como hay muchas herramientas, solo se muestran algunos.",
   "ma26970acc182": "Los skills se cuentan a partir de los registros codex.skill_invocation y las llamadas a herramientas, de los span que contienen tool_name. Los nombres de herramientas MCP (mcp__…) combinan el nombre del servidor y el de la herramienta, por lo que no se separan.",
-  "me1a23d5c2d10": "Abortado {0} veces",
+  "me1a23d5c2d10": "Abortadas: {0}",
   "m4d74eb05b9b5": "Se ocultaron {0} span de operaciones internas de Codex.",
   "m0cf412ff8552": "Mostrar todo",
-  "m88fe8ae661ed": "Ocultar span de operaciones internas"
+  "m88fe8ae661ed": "Ocultar span de operaciones internas",
+  "m07cdad7a7167": "Tiempo total de span"
 }

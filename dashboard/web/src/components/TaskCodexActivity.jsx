@@ -36,7 +36,7 @@ export function TaskCodexActivity({ activity }) {
         <thead><tr className="text-left text-[12px] text-ink-500">
           <th className={th}>{translate("m36c416ead2ce")}</th>
           <th className={`${th} text-right`}>{translate("m7ed9c4cb0ba9")}</th>
-          <th className={`${th} text-right`}>{translate("mce075704a738")}</th>
+          <th className={`${th} text-right`}>{translate("m07cdad7a7167")}</th>
         </tr></thead>
         <tbody>{tools.map((t) => <tr key={t.name} className="border-t border-ink-100">
           <td className="px-2 py-1 [overflow-wrap:anywhere]">

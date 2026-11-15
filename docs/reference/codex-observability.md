@@ -74,7 +74,7 @@ for operating steps. Do not publish raw configuration, headers, prompts or logs.
 | Runtime settings and prompt length | Conversation-start and prompt metadata | Start settings are snapshots. The dashboard displays prompt length, not prompt text. |
 | Runtime/turn/tool/skill counters and histograms | Native metrics | Independently labelled diagnostics, never added to log-derived usage or cost. |
 | Internal operations and parent relationships | Native spans | Observed span window, not guaranteed complete turn time. Overlapping durations are not summed. |
-| Skills and tool calls of a task | `codex.skill_invocation` logs (conversation and turn ids); native spans with `tool_name` | Skill name, invocation type and scope only. MCP tool names join server and tool (`mcp__<server><tool>`), so the server is not separated. Missing events mean not recorded, not unused. |
+| Skills and tool calls of a task | `codex.skill_invocation` logs (conversation and turn ids); native spans with `tool_name` | Skill name, invocation type and scope only. MCP tool names join server and tool (`mcp__<server><tool>`), so the server is not separated. Per-tool times sum span durations, so concurrent calls exceed wall time. Missing events mean not recorded, not unused. |
 | Subagent turns of a task | Native spans: subagent `session_task.turn` under the parent turn's `collaboration<tool>` span | Lineage only, within one TraceId; the subagents' call counts come from their turns' model-call spans and costs from their own completion logs. Absent traces or collaboration spans leave the link unknown, not zero. |
 | LOC, commits, PR output and saved hours | Not present in this integration | Requires separate Git/CI/activity evidence; no causal ROI or work-time estimate is fabricated. |
 
