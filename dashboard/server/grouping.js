@@ -1,3 +1,4 @@
+import { backendSql } from "./backend.js";
 // A/B 그룹(bedrock vs enterprise) 판별 규칙 — 실측 후 고칠 지점은 이 파일 하나로 모은다.
 //
 // Workshop Studio 시나리오에서는 EXPERIMENT_GROUP 환경변수를 EC2에 정적으로 심을 수 없다
@@ -71,7 +72,8 @@ export function groupCte({ provider = false } = {}) {
 WITH session_group AS (
     SELECT
         SessionId,
-        ${LEGACY_GROUP} AS grp
+        ${LEGACY_GROUP} AS grp,
+        toUInt8(0) AS provider_bedrock
     FROM claude_code.otel_metrics_sum_hourly
     WHERE SessionId != ''
     GROUP BY SessionId
@@ -93,7 +95,8 @@ WITH session_provider AS (
             p.provider_first_party = 1 AND r.org = 1, 'enterprise',
             p.provider_first_party = 1, 'unknown',
             r.legacy_grp
-        ) AS grp
+        ) AS grp,
+        toUInt8(p.provider_bedrock = 1) AS provider_bedrock
     FROM (
         SELECT
             SessionId,
@@ -121,3 +124,19 @@ export const GROUP_CTE = groupCte({ provider: PROVIDER_GROUPS });
 // ponytail: ClickHouse 기본 설정(join_use_nulls=0)에서 LEFT JOIN 미매칭은 NULL이 아니라
 // String 기본값('')을 반환한다 — coalesce(ug.grp, 'unknown')은 그래서 무력화됐었다.
 export const GROUP_EXPR = "if(ug.grp = '' OR ug.grp IS NULL, 'unknown', ug.grp)";
+
+// Claude row backend: enterprise sessions are Anthropic. A row whose own data point carried
+// organization.id (`orgExpr`) and a bare claude-* id is Anthropic too: only a Claude login
+// emits that pair, and a resumed session can cross from Bedrock to a login, so the per-row
+// signal outranks the session channel. A session whose client reported
+// anthropic.provider = 'bedrock' (provider mode only; the legacy CTE always yields 0) serves
+// bare claude-* ids from Bedrock runtime, since Bedrock Mantle serves only non-Anthropic
+// models; otherwise the model id decides (backend.js), and a bare id stays unknown.
+// Callers whose per-row organization evidence can be scrubbed (task traces from device
+// collectors) pass `provider: false`, so an ambiguous bare id stays unknown.
+export function claudeBackendSql(modelExpr, tagExpr = "''", orgExpr = "", { provider = true } = {}) {
+  return `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic',
+    ${orgExpr ? `(${orgExpr}) AND startsWith(${modelExpr}, 'claude-'), 'anthropic',
+    ` : ""}${provider ? `ug.provider_bedrock = 1 AND startsWith(${modelExpr}, 'claude-'), 'bedrock-runtime',
+    ` : ""}${backendSql(modelExpr, tagExpr)})`;
+}

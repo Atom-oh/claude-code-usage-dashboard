@@ -1,8 +1,7 @@
 import { query as rawQuery, toChDateTime } from "./clickhouse.js";
 import { nacCostSql, withNacParams } from "./nonAnthropicCost.js";
-import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
+import { GROUP_CTE, GROUP_EXPR, claudeBackendSql } from "./grouping.js";
 import { withComputedCost, normalizeModelId, rollupComputedCost, costAtTtl, costWithCacheSplit } from "./pricing.js";
-import { backendSql } from "./backend.js";
 import { rollupAdoption } from "./activity.js";
 import { foldModelCostCells, MODEL_COST_ROW_LIMIT, TEAM_TREND_TOP, USER_TREND_TOP } from "./modelCostTrend.js";
 import { permissionOccupancy, PERMISSION_SPAN_LIMIT } from "./productivityMetrics.js";
@@ -437,6 +436,18 @@ export function incFlat(metricFilter = "", spanMs = Infinity, includeObservation
   )`;
 }
 
+// Claude series whose data points carried organization.id. SeriesKey hashes Attributes,
+// so the flag is constant per series (measured 2026-11-14: no mixed series in 30 days).
+// The hourly rollup already folds it into has_org; reading Attributes on raw rows instead
+// cost 24x (0.14s → 3.4s over four days). Requires `{from}`/`{to}`; the scan covers the
+// counter lookback so baseline-only series resolve the same way.
+export const CLAUDE_ORG_SERIES_CTE = `claude_org_series AS (
+    SELECT DISTINCT SeriesKey FROM claude_code.otel_metrics_sum_hourly
+    WHERE has_org = 1 AND MetricName IN ('claude_code.cost.usage', 'claude_code.token.usage')
+      AND hour >= toStartOfHour({from:DateTime}) - INTERVAL ${LOOKBACK_DAYS} DAY AND hour < {to:DateTime}
+  )`;
+const ORG_SERIES_EXPR = "sk IN (SELECT SeriesKey FROM claude_org_series) AS Org";
+
 // from이 속한 버킷의 시작/끝 경계 — incBucketed의 first-bucket raw stitch(아래)가 이 경계로
 // "그 버킷 안에서 from 이후만" 만큼만 보정한다. bucket()과 동일한 HOUR/DAY 규칙을
 // {from:DateTime}에 그대로 적용해(분 버킷은 incBucketedRaw 담당이라 여기 안 옴), 실제
@@ -474,7 +485,7 @@ function fromBucketBounds(intervalHours) {
 // `t >= from`에서 `t >= startExpr`로 바꿔야 한다 — 안 그러면 보정된 첫 버킷의 t 라벨(=버킷
 // 시작, 항상 from보다 이르거나 같음)이 여전히 필터에 걸려 통째로 버려진다(라이브 클러스터로
 // 최초 구현에서 이 실수를 했다가 재현·발견: 보정값은 정확했는데 최종 합계에 안 들어갔었음).
-export function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
+export function incBucketed(intervalHours, bucketExpr, metricFilter = "", { org = false } = {}) {
   const { startExpr, endExpr } = fromBucketBounds(intervalHours);
   // cumulative(temp=2)의 첫 버킷 cum(=max(mv), rollup의 자연스러운 버킷-끝 값)은 delta처럼
   // least(endExpr,{to}) 캡을 받지 않는다(리뷰에서 지적) — 이론상 to가 그 버킷 "안"에서 끝나면
@@ -485,8 +496,9 @@ export function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
   // 재현 가능하고 UI(resolutionForSpan)는 이 조합을 만들지 않는다 — 방어적으로만 고치면 3번째
   // raw stitch 값이 더 필요해 복잡도가 이득보다 크다고 판단해 문서화로 남긴다.
   return `(
-    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
-        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
+    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value${org ? ", Org" : ""} FROM (
+        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,${org ? `
+            ${ORG_SERIES_EXPR},` : ""}
             if(temp = 2,
                 greatest(cum - greatest(lagInFrame(cum, 1, 0) OVER (
                     PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
@@ -527,10 +539,11 @@ export function incBucketed(intervalHours, bucketExpr, metricFilter = "") {
 // incBucketed의 원본 테이블 버전 — 차트 드래그 줌의 분(MINUTE) 버킷 전용. 줌 구간은 좁고 드물어
 // 콜드 허용(원본 스캔 비용은 lookback이 지배하지만 rollup으로 baseline만 따로 얻는 최적화는
 // 필요해질 때 한다). incBucketed와 동일한 이유로 3단 중첩(집계 → window → 바깥 WHERE) 필수.
-function incBucketedRaw(bucketExpr, metricFilter = "") {
+function incBucketedRaw(bucketExpr, metricFilter = "", { org = false } = {}) {
   return `(
-    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value FROM (
-        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,
+    SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision, Value${org ? ", Org" : ""} FROM (
+        SELECT t, SessionId, UserEmail, MetricName, Model, TokenType, Decision,${org ? `
+            ${ORG_SERIES_EXPR},` : ""}
             if(temp = 2,
                 greatest(cum - lagInFrame(cum, 1, 0) OVER (
                     PARTITION BY sk, SessionId, temp, UserEmail, MetricName, Model, TokenType, Decision ORDER BY t
@@ -551,10 +564,11 @@ function incBucketedRaw(bucketExpr, metricFilter = "") {
 
 // 시계열 쿼리 공용 진입점 — 그레인에 맞는 버킷식과 소스 테이블(rollup vs 원본)을 함께 고른다.
 // 호출부는 FROM ${b.sub} m + { ...b.params } 형태로 쓴다.
-function incBucket(intervalHours, metricFilter = "") {
+function incBucket(intervalHours, metricFilter = "", options = {}) {
   const raw = intervalHours < 1; // 분 버킷은 hour-그레인 rollup으로 만들 수 없다
   const b = bucket(intervalHours, raw ? "TimeUnix" : "hour");
-  return { sub: raw ? incBucketedRaw(b.expr, metricFilter) : incBucketed(intervalHours, b.expr, metricFilter), params: b.params, raw };
+  return { sub: raw ? incBucketedRaw(b.expr, metricFilter, options)
+    : incBucketed(intervalHours, b.expr, metricFilter, options), params: b.params, raw };
 }
 
 // intervalHours < 1 → MINUTE 버킷(차트 드래그 줌), < 24 → HOUR 버킷, >= 24 → DAY 버킷.
@@ -613,10 +627,10 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
   const b = to - from <= MAX_SNAPSHOT_RAW_RANGE_MS || fine
     ? { raw: true, params: {}, sub: incBucketedRaw(
       `if(TimeUnix >= {from:DateTime}, greatest(${rawBucket}, {from:DateTime}), ${rawBucket})`,
-      `${metricFilter} ${inputFilter.where}`) }
+      `${metricFilter} ${inputFilter.where}`, { org: true }) }
     // Hourly reads narrow the same partition dimensions: an unfiltered 90-day window
     // over every user's rollup exceeds the per-query memory limit for one-user views.
-    : incBucket(1, `${metricFilter} ${inputFilter.where}`);
+    : incBucket(1, `${metricFilter} ${inputFilter.where}`, { org: true });
   const f = filterCond({ ...filters, excludeUnknown: false },
     { user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
   // Hourly helpers can emit a baseline-only first bucket. Check actual samples
@@ -631,11 +645,11 @@ export async function clientClaudeRows(from, to, filters = {}, nativeSeconds, si
   const observed = b.raw ? "1" : `(m.t >= {from:DateTime} OR
     (m.SessionId, m.UserEmail, m.MetricName, m.Model, m.TokenType, m.Decision)
       IN (SELECT * FROM client_first_observations))`;
-  return query(`${GROUP_CTE}${firstObservations}, client_usage AS (
+  return query(`${GROUP_CTE}, ${CLAUDE_ORG_SERIES_CTE}${firstObservations}, client_usage AS (
     -- coding-client:claude-usage
     SELECT formatDateTime(greatest(m.t, {from:DateTime}), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS t,
       m.SessionId AS session, m.UserEmail AS user, ${normModel("m.Model")} AS model,
-      multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("m.Model", "''")}) AS backend,
+      ${claudeBackendSql("m.Model", "''", "m.Org")} AS backend,
       any(${GROUP_EXPR}) AS channel,
       countIf(m.MetricName = 'claude_code.token.usage' AND ${observed}) > 0 AS token_seen,
       countIf(m.MetricName = 'claude_code.cost.usage' AND ${observed}) > 0 AS cost_seen,
@@ -2249,13 +2263,13 @@ export async function permissionWaitOccupancy(from, to, filters = {}) {
 // gaps. Reported rates depend on client versions and are not invoice or AWS price evidence.
 export function effortMixSql(from, to, filters = {}, { byModel = false } = {}) {
   const f = filterCond(filters, { group: GROUP_EXPR, user: "m.UserEmail", model: "m.Model", teamViaSession: "m.SessionId" });
-  const backend = `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("m.Model", "''")})`;
+  const backend = claudeBackendSql("m.Model", "''", "m.Org");
   const earlyFilters = byModel
     ? `${filters.user ? " AND positionCaseInsensitive(source.UserEmail, {fUser:String}) > 0" : ""}
        ${filters.model ? ` AND positionCaseInsensitive(${normModel("source.Model")}, {fModel:String}) > 0` : ""}`
     : "";
   return { sql: `${byModel ? "/* coding-client:claude-effort */" : ""}
-    ${GROUP_CTE}
+    ${GROUP_CTE}${byModel ? `, ${CLAUDE_ORG_SERIES_CTE}` : ""}
     SELECT
         ${GROUP_EXPR} AS "group",
         if(m.Effort = '', 'unknown', m.Effort) AS effort,
@@ -2269,7 +2283,7 @@ export function effortMixSql(from, to, filters = {}, { byModel = false } = {}) {
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheRead')     AS cache_read_tokens,
         sumIf(m.inc, m.MetricName = 'claude_code.token.usage' AND m.TokenType = 'cacheCreation') AS cache_write_tokens
     FROM (
-        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, Effort, TokenType, any(UserEmail) AS UserEmail,
+        SELECT ${seriesKey} AS sk, SessionId, AggregationTemporality AS temp, MetricName, Model, Effort, TokenType, any(UserEmail) AS UserEmail,${byModel ? ` ${ORG_SERIES_EXPR},` : ""}
             max(TimeUnix >= {from:DateTime} AND TimeUnix < {to:DateTime}) AS InWindow,
             if(temp = 2,
                 greatest(maxIf(Value, TimeUnix < {to:DateTime}) - maxIf(Value, TimeUnix < {from:DateTime}), 0),
@@ -2617,7 +2631,7 @@ function claudeProductivityScope(filters) {
       AND positionCaseInsensitive(${model}, {clientModel:String}) > 0
       AND ({clientModelExact:String} = '' OR ${model} = {clientModelExact:String})
       AND ({clientBackend:String} = ''
-        OR multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql("h.Model", "''")}) = {clientBackend:String})
+        OR ${claudeBackendSql("h.Model", "''", "h.has_org = 1")} = {clientBackend:String})
   )` : "";
   const where = (session, user) => [
     `({clientUser:String} = '' OR positionCaseInsensitive(${user}, {clientUser:String}) > 0)`,

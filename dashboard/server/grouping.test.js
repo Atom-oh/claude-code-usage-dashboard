@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GROUP_CTE, PROVIDER_GROUPS, groupCte, parseProviderGroups } from "./grouping.js";
+import { GROUP_CTE, PROVIDER_GROUPS, claudeBackendSql, groupCte, parseProviderGroups } from "./grouping.js";
+import { resolveClaudeBackend } from "./backend.js";
 import { PROVIDER_TABLE, providerSchemaSql, providerBackfillSql } from "./claudeProviderSchema.js";
 
 test("provider grouping stays off by default and keeps the legacy CTE", () => {
@@ -21,7 +22,9 @@ test("provider CTE reads migration 009 and keeps session_group's shape", () => {
   assert.match(sql, /\), session_group AS \(/);
   assert.match(sql, new RegExp(`FROM claude_code\\.${PROVIDER_TABLE}\\b`));
   assert.match(sql, /r\.SessionId AS SessionId/);
-  assert.match(sql, /\) AS grp\n/);
+  assert.match(sql, /\) AS grp,\n\s*toUInt8\(p\.provider_bedrock = 1\) AS provider_bedrock\n/);
+  // Both variants expose provider_bedrock; the legacy CTE never claims provider evidence.
+  assert.match(groupCte(), /toUInt8\(0\) AS provider_bedrock/);
   assert.ok(sql.trimEnd().endsWith(")"), "consumers append `, next AS (...)`");
   // The legacy multiIf survives verbatim as the fallback for older clients.
   const legacy = groupCte().match(/multiIf\([\s\S]*?\n\s*\)/)[0];
@@ -81,4 +84,39 @@ test("provider backfill is bounded to one day", () => {
   const sql = providerBackfillSql();
   assert.match(sql, /dateDiff\('second', \{backfillFrom:DateTime\('UTC'\)\}, \{backfillTo:DateTime\('UTC'\)\}\) > 86400/);
   assert.match(sql, /TimeUnix >= \{backfillFrom:DateTime\('UTC'\)\} AND TimeUnix < \{backfillTo:DateTime\('UTC'\)\}/);
+});
+
+test("Claude backend: provider-reported Bedrock serves bare claude ids from runtime", () => {
+  const sql = claudeBackendSql("m.Model");
+  const order = ["= 'enterprise', 'anthropic'", "ug.provider_bedrock = 1 AND startsWith(m.Model, 'claude-'), 'bedrock-runtime'",
+    "'bedrock-mantle'"].map((branch) => sql.indexOf(branch));
+  assert.ok(order.every((index) => index > 0), "every branch is present");
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+  // JS mirror used for per-call task pricing.
+  assert.equal(resolveClaudeBackend("claude-opus-5-5", "enterprise", true), "anthropic");
+  assert.equal(resolveClaudeBackend("claude-opus-5-5", "bedrock", true), "bedrock-runtime");
+  assert.equal(resolveClaudeBackend("claude-fable-5[1m]", "bedrock", true), "bedrock-runtime");
+  // Without provider evidence (legacy heuristic or provider mode off) a bare id stays unknown.
+  assert.equal(resolveClaudeBackend("claude-opus-5-5", "bedrock", false), "unknown");
+  assert.equal(resolveClaudeBackend("global.anthropic.claude-opus-5-5", "bedrock", false), "bedrock-runtime");
+  // Non-Anthropic ids keep their own resolution even with provider evidence.
+  assert.equal(resolveClaudeBackend("openai.gpt-6-astra", "bedrock", true), "bedrock-mantle");
+});
+
+test("Claude backend: a login row in a Bedrock-channel session stays Anthropic", () => {
+  const sql = claudeBackendSql("m.Model", "''", "m.Org");
+  const order = ["= 'enterprise', 'anthropic'", "(m.Org) AND startsWith(m.Model, 'claude-'), 'anthropic'",
+    "ug.provider_bedrock = 1", "'bedrock-mantle'"].map((branch) => sql.indexOf(branch));
+  assert.ok(order.every((index) => index > 0), "every branch is present");
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+  // Callers without a per-row signal keep the session/model rules.
+  assert.doesNotMatch(claudeBackendSql("m.Model"), /\(\) AND/);
+  assert.equal(resolveClaudeBackend("claude-opus-5-5", "bedrock", false, true), "anthropic");
+  // The row signal outranks session-level provider evidence.
+  assert.equal(resolveClaudeBackend("claude-opus-5-5", "bedrock", true, true), "anthropic");
+  // It never reclassifies a prefixed Bedrock id.
+  assert.equal(resolveClaudeBackend("global.anthropic.claude-opus-5-5", "bedrock", false, true), "bedrock-runtime");
+  const noProvider = claudeBackendSql("m[1]", "''", "m[2] = '1'", { provider: false });
+  assert.doesNotMatch(noProvider, /provider_bedrock/);
+  assert.match(noProvider, /\(m\[2\] = '1'\) AND startsWith\(m\[1\], 'claude-'\), 'anthropic'/);
 });

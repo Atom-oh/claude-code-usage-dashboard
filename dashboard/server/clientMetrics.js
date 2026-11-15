@@ -4,7 +4,7 @@ import { selectClients } from "./clients.js";
 import { priceCodexUsage, codexModelSql } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
 import { observePricingModels } from "./pricingDiscovery.js";
-import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
+import { GROUP_CTE, GROUP_EXPR, claudeBackendSql } from "./grouping.js";
 import { clientQueryBatch } from "./clientQueryBatch.js";
 import { normalizeModelId, computeCost } from "./pricing.js";
 import { isNonAnthropicModel } from "./nonAnthropicCost.js";
@@ -505,8 +505,9 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
   // Keep known pairs apart from unknown pairs even inside malformed usage.
   const validPair = "in_n_valid AND out_n_valid AND in_n + out_n <= 9007199254740991";
   const session = isCodex ? "a['conversation.id']" : "SessionId";
+  // Claude request logs carry organization.id per record, like the metric data points.
   const backendExpr = (modelExpr, tagExpr) => isCodex ? backendSql(modelExpr, tagExpr)
-    : `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, tagExpr)})`;
+    : claudeBackendSql(modelExpr, tagExpr, "a['organization.id'] != ''");
   const user = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
   // Promoted identities let PREWHERE reject other users before reading wide maps.
   // The original map-derived predicate below remains the final semantic check.
