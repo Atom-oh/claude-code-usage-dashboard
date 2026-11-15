@@ -698,7 +698,14 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
     limitsSql ? run(limitsSql.sql, limitsSql.params) : [], run(skillsSql.sql, skillsSql.params)]);
   const detail = foldTaskDetail({ client: "codex", turn: entry.turn, linked: entry.linked, limited }, rows, [], limitRows);
   // Subagent turns linked through the trace's parent-span chain; their own completions price them.
-  const spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
+  let spawnSpanIds = detail.truncated ? null : rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
+  // On the rollup the turn row is unclipped but the spans stop at to + 24h: spawn calls read from
+  // clipped spans, or fewer than the row counts, are partial evidence (unknown, never a known zero).
+  if (rollup && spawnSpanIds !== null) {
+    const rowCalls = count(entry.turn.spawn_calls), end = count(entry.turn.end_ms);
+    if (end === null || end + 60000 > to.getTime() + SPAN_SLACK_MS || (rowCalls !== null && rowCalls > spawnSpanIds.length))
+      spawnSpanIds = null;
+  }
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
   const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
     traceIds, tracesPartial: detail.truncated, namesTurn: namesTurnOnTools(entry.turn.app_version) }, detail.task, spawnSpanIds, { from, to, run, prices, turnsBoundary });
