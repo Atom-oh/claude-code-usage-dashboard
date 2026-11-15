@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AGENT_DEPTH, AGENT_EXTRA_BUDGET_MS, AGENT_LIMIT, COMMUNICATION_CHILD_MS, LEGACY_CALL_SLACK_MS, LINEAGE_SPAN_LIMIT, LINK_WINDOW_MS, SPAWN_SPANS, agentCount,
-  codexCallLogSql, codexCommunicationSql, codexLineageSql, codexAgents, communicationLinks, codexTurnConversationSql, containingTurn, foldAgents, legacyNeeds, linkWindow,
+  codexCallLogSql, codexCommunicationSql, codexCompetingSendSql, codexLineageSql, codexAgents, communicationLinks, codexTurnConversationSql, containingTurn, foldAgents, legacyNeeds, linkWindow,
   resolveLegacy, walkLineage } from "./codexAgents.js";
 import { codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -563,6 +563,78 @@ test("a send links only from the sender conversation's turn running at the send"
   assert.deepEqual(communicationLinks(sends, turns.filter(t => t.conversation_id !== "root"), own).links, []);
 });
 
+test("a receiver turn belongs only to the latest send that can start it", () => {
+  // Two turns of root each send a follow-up to the busy sub1 before its next turn: only the later
+  // send (Q's) claims C1, so P's window lists no child and C1's parent is Q.
+  const Q = uuid(2);
+  const turns = [turn("root", P, "2026-11-05T01:00:00Z"), turn("root", Q, "2026-11-05T01:00:20Z"),
+    turn("sub1", C1, "2026-11-05T01:00:40Z")];
+  const sends = [send("followup", "root", "sub1", "2026-11-05T01:00:05Z"), send("followup", "root", "sub1", "2026-11-05T01:00:25Z")];
+  const qOwn = { conversationId: "root", turnId: Q, startMs: ms("2026-11-05T01:00:20Z"), endMs: ms("2026-11-05T01:00:30Z") };
+  assert.deepEqual(communicationLinks(sends, turns, own).links, []);
+  assert.deepEqual(communicationLinks(sends, turns, qOwn).links.map(l => [l.parent_turn, l.child_turn]), [[Q, C1]]);
+  const child = communicationLinks(sends, turns, { conversationId: "sub1", turnId: C1, startMs: ms("2026-11-05T01:00:40Z"),
+    endMs: ms("2026-11-05T01:00:50Z") });
+  assert.deepEqual([child.parent?.parent_turn, child.parent?.parent_conversation], [Q, "root"]);
+  // A later send of another conversation to sub1 takes C1 from both.
+  const stolen = [...sends, send("followup", "peer", "sub1", "2026-11-05T01:00:30Z")];
+  const peer = [...turns, turn("peer", G1, "2026-11-05T01:00:28Z")];
+  assert.deepEqual(communicationLinks(stolen, peer, qOwn).links, []);
+  assert.deepEqual(communicationLinks(stolen, peer, { conversationId: "sub1", turnId: C1, startMs: ms("2026-11-05T01:00:40Z"),
+    endMs: ms("2026-11-05T01:00:50Z") }).parent?.parent_conversation, "peer");
+});
+
+test("same-millisecond sends to one receiver resolve to the greatest sender id in every view", () => {
+  const A = uuid(3), B = uuid(4);
+  const turns = [turn("a", A, "2026-11-05T01:00:00Z"), turn("b", B, "2026-11-05T01:00:00Z"), turn("sub1", C1, "2026-11-05T01:00:08Z")];
+  const sends = [send("spawn", "b", "sub1", "2026-11-05T01:00:05Z"), send("followup", "a", "sub1", "2026-11-05T01:00:05Z")];
+  const view = (conversationId, turnId) => ({ conversationId, turnId, startMs: T0, endMs: T1 });
+  for (const order of [sends, [...sends].reverse()]) {
+    assert.deepEqual(communicationLinks(order, turns, view("a", A)).links, []);
+    assert.deepEqual(communicationLinks(order, turns, view("b", B)).links.map(l => [l.parent_turn, l.child_turn, l.tool_span]),
+      [[B, C1, "communication:spawn"]]);
+    const child = communicationLinks(order, turns, { conversationId: "sub1", turnId: C1, startMs: ms("2026-11-05T01:00:08Z"),
+      endMs: ms("2026-11-05T01:00:18Z") });
+    assert.deepEqual([child.parent?.parent_turn, child.parent?.parent_conversation], [B, "b"]);
+  }
+});
+
+test("the log-linked parent is the latest send's turn, or none when that turn is unresolved", () => {
+  const turns = [turn("up", C2, "2026-11-05T00:59:00Z", { end_ms: String(ms("2026-11-05T01:30:00Z")) }), ownTurn];
+  const sends = [send("spawn", "up", "root", "2026-11-05T00:59:40Z"), send("followup", "gone", "root", "2026-11-05T00:59:50Z")];
+  assert.equal(communicationLinks(sends, turns, own).parent, null);
+});
+
+test("competing sends of other conversations to the turn's receivers are read and can take the child", async () => {
+  const seen = [];
+  const sends = [send("spawn", "root", "sub1", "2026-11-05T01:00:05Z"), send("followup", "peer", "sub1", "2026-11-05T01:00:07Z")];
+  const run = commRun(seen, { sends, turns: [ownTurn, turn("sub1", C1, "2026-11-05T01:00:08Z")],
+    completions: [completion("sub1", "2026-11-05T01:00:09Z")] });
+  const out = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, run, prices: DEFAULT_CODEX_PRICING });
+  assert.deepEqual([out.children.length, out.known_zero, out.total.cost_usd], [0, false, rootTask.cost_usd]);
+  const competing = seen.find(s => s.sql.includes("codex.agent_communication") && s.params.receivers);
+  assert.deepEqual([competing?.params.receivers, competing?.params.userExact, competing?.params.conversationId], [["sub1"], "kim@x.com", "root"]);
+  // Without the competitor the child is the turn's.
+  const alone = await codexAgents("kim@x.com", commTurn, rootTask, [], { from, to, prices: DEFAULT_CODEX_PRICING,
+    run: commRun([], { sends: sends.slice(0, 1), turns: [ownTurn, turn("sub1", C1, "2026-11-05T01:00:08Z")],
+      completions: [completion("sub1", "2026-11-05T01:00:09Z")] }) });
+  assert.deepEqual(alone.children.map(c => c.id), [`codex:sub1:${C1}`]);
+});
+
+test("competing-send SQL binds owner, sender and receivers and reads the communication window", () => {
+  const { sql, params } = codexCompetingSendSql("kim@x.com", "root", ["sub1", "sub2"], T0, T1);
+  assert.match(sql, /PREWHERE[^]*EventName = 'codex\.agent_communication'[^]*\{userExact:String\}/);
+  assert.match(sql, /state'\] = 'send'/);
+  assert.match(sql, /receiver_thread_id'\] IN \{receivers:Array\(String\)\}/);
+  assert.match(sql, /sender_thread_id'\] != \{conversationId:String\}/);
+  assert.ok(!sql.includes("kim@x.com") && !sql.includes("sub1"));
+  assert.deepEqual([params.receivers, params.userExact, params.conversationId], [["sub1", "sub2"], "kim@x.com", "root"]);
+  const own = codexCommunicationSql("kim@x.com", "root", T0, T1).params;
+  assert.deepEqual([params.spanFrom, params.spanTo], [own.spanFrom, own.spanTo]);
+  // A competitor of a send at the slack's end (endMs + 1 s) may arrive 60 s later.
+  assert.ok(params.spanTo > "2026-11-05 01:01:11");
+});
+
 test("an unresolved send of the turn's window links nothing and is no known zero", async () => {
   const Q = uuid(2);
   const run = commRun([], { sends: [send("spawn", "root", "sub1", "2026-11-05T01:00:07Z")],
@@ -601,7 +673,9 @@ test("a send without a receiver turn of the owner does not link", () => {
 const commRun = (seen, { rows = [], sends = [], turns = [], completions = [] }) => async (sql, params) => {
   seen.push({ sql, params });
   if (sql.includes("op.dispatch")) return rows;
-  if (sql.includes("codex.agent_communication")) return sends;
+  if (sql.includes("codex.agent_communication")) return params.receivers
+    ? sends.filter(x => params.receivers.includes(x.receiver) && x.sender !== params.conversationId)
+    : sends.filter(x => x.sender === params.conversationId || x.receiver === params.conversationId);
   if (sql.includes("GROUP BY turn_id")) return turns.filter(t => params.conversationIds.includes(t.conversation_id));
   if (sql.includes("otel_logs")) return completions;
   throw new Error("unexpected SQL");
@@ -649,7 +723,8 @@ test("without trace links, communication logs link subagents with one owner-filt
   assert.deepEqual([out.subagents, out.spawn_calls, out.unlinked_calls, out.known_zero], [1, 0, 0, false]);
   assert.deepEqual([out.parent.id, out.parent.tool], [`codex:up:${C2}`, "spawn"]);
   assert.equal(seen.filter(s => s.sql.includes("GROUP BY turn_id")).length, 1);
-  assert.equal(seen.filter(s => s.sql.includes("codex.agent_communication")).length, 1);
+  // One read of the conversation's sends, one of other conversations' sends to its receivers.
+  assert.deepEqual(seen.filter(s => s.sql.includes("codex.agent_communication")).map(s => s.params.receivers ?? null), [null, ["sub1"]]);
   assert.ok(seen.every(s => s.params.userExact === "kim@x.com"));
   assert.ok(seen.every(s => !JSON.stringify(s.params.conversationIds ?? []).includes(C1)));
 });
@@ -684,7 +759,7 @@ test("a traced parent without traced children still reads the turn's communicati
   assert.deepEqual([out.parent.id, out.parent.tool], [`codex:up:${C2}`, "spawn_agent"]);
   assert.deepEqual(out.children.map(c => [c.id, c.tool]), [[`codex:sub1:${C1}`, "spawn"]]);
   assert.deepEqual([out.links_source, out.known_zero, agentCount(out)], ["log", false, 1]);
-  assert.equal(seen.filter(s => s.sql.includes("codex.agent_communication")).length, 1);
+  assert.equal(seen.filter(s => s.sql.includes("codex.agent_communication") && !s.params.receivers).length, 1);
   // The send's child turn is missing everywhere: the send still blocks a known zero, and the
   // traced parent stays.
   const lost = commRun([], { rows, sends: [send("spawn", "root", "theirs", "2026-11-05T01:00:02Z")], turns: [] });
