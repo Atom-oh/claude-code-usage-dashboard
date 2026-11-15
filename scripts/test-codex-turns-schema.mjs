@@ -177,6 +177,21 @@ const t8Spans = [
   span("codex.sampling", t8, "2026-10-18T10:10:00.000Z", { model: sol, conversation: "conv-h" }),
   span("codex.sampling", t8, "2026-10-18T11:20:00.000Z", { model: sol, conversation: "conv-h" }),
 ];
+// Verify boundaries (user E, outside the codexTurnSql parity reads, which clip at to + 24h).
+// T9: a v7 id whose spans all start 3.5 hours before its id time, inside the 1 day lead.
+// T10: a v7 id with a gap: its later span 3 days on still has the id hour (7 day age).
+// T11: a non-v7 id whose later span hour starts at verifyTo + 7 days: past the raw scan.
+const userE = "turns-e@example.test";
+const t9 = v7("2026-10-18T20:30:00.000Z", 9), t10 = v7("2026-10-18T12:20:00.000Z", 10);
+const t11 = "6c2d3e4f-5061-4a72-8c83-1d2e3f4a5b6c";
+const boundarySpans = [
+  span("codex.sampling", t9, "2026-10-18T17:00:00.000Z", { user: userE, model: sol, conversation: "conv-i" }),
+  span("shell", t9, "2026-10-18T17:10:00.000Z", { user: userE, conversation: "conv-i" }),
+  span("codex.sampling", t10, "2026-10-18T12:20:00.000Z", { user: userE, model: sol, conversation: "conv-j" }),
+  span("codex.sampling", t10, "2026-10-21T09:00:00.000Z", { user: userE, model: sol, conversation: "conv-j" }),
+  span("codex.sampling", t11, "2026-10-18T21:10:00.000Z", { user: userE, model: sol, conversation: "conv-k" }),
+  span("codex.sampling", t11, "2026-10-25T22:30:00.000Z", { user: userE, model: sol, conversation: "conv-k" }),
+];
 // One insert block of garbage-time v7 ids spread over 120 months (2050-2059, inside the DateTime
 // range, so nothing saturates). With id hours it would exceed max_partitions_per_insert_block and
 // fail the otel_traces insert (ClickHouse code 252, checked against the unbounded rule).
@@ -196,6 +211,7 @@ insert([...t1Spans, ...t2Spans.slice(0, 3)]);
 insert([duplicate, ...t2Spans.slice(3), ...t3Spans, ...t4Spans]);
 insert([...t5Spans, ...t6Spans, ...t7Spans, ...t8Spans, ...excluded, t1Spans[3]]);
 insert(garbageSpans);
+insert(boundarySpans);
 // A version-less span of T5 in its own insert: its row's empty version must never win a merge.
 insert([span("shell", t5, "2026-10-18T18:05:02.000Z", { version: "", conversation: "conv-d" })]);
 
@@ -289,15 +305,17 @@ for (const [params, label] of [[{ backfillFrom: "2026-10-18 00:00:00", backfillT
     /Codex turns backfill requires a positive interval of at most one day/, label);
   assertions++;
 }
+// Every day holding a fixture span, so the backfill alone rebuilds each turn.
+const days = ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-21", "2026-10-25"];
 for (let round = 0; round < 2; round++)
-  for (const date of ["2026-10-17", "2026-10-18", "2026-10-19"]) execute(backfill, day(date), ["--insert_deduplicate=0"]);
+  for (const date of days) execute(backfill, day(date), ["--insert_deduplicate=0"]);
 execute(backfill, { backfillFrom: "2026-10-18 14:00:00", backfillTo: "2026-10-19 14:00:00" }, ["--insert_deduplicate=0"]);
 const parts = rows(`SELECT count() AS n FROM system.parts WHERE active AND database = 'claude_code' AND table = '${TURNS_ROLLUP_TABLE}'`)[0];
 assert.ok(Number(parts.n) > 3, "repeated backfills must leave several unmerged parts");
 check(parity("repeated backfill"), live, "repeated backfill leaves every rollup read unchanged");
 // The backfill alone rebuilds what the view wrote.
 execute(`TRUNCATE TABLE claude_code.${TURNS_ROLLUP_TABLE}`);
-for (const date of ["2026-10-17", "2026-10-18", "2026-10-19"]) execute(backfill, day(date), ["--insert_deduplicate=0"]);
+for (const date of days) execute(backfill, day(date), ["--insert_deduplicate=0"]);
 check(parity("backfill only"), live, "backfill alone equals the live view");
 execute(`SYSTEM START MERGES claude_code.${TURNS_ROLLUP_TABLE}; OPTIMIZE TABLE claude_code.${TURNS_ROLLUP_TABLE} FINAL`);
 check(parity("merged"), live, "merged parts leave every rollup read unchanged");
@@ -319,7 +337,11 @@ const expected = [
   { hour: 9, turn_id: t3, differs: 0, clipped: 0 }, { hour: 9, turn_id: t3, differs: 0, clipped: 0 },
   { hour: 11, turn_id: t7, differs: 0, clipped: 0 },
   { hour: 13, turn_id: t2, differs: 0, clipped: 0 },
-  { hour: 14, turn_id: t4, differs: 0, clipped: 1 }, { hour: 14, turn_id: t1, differs: 0, clipped: 0 },
+  // T4's next-day spans are inside the 7 day raw scan, so it is compared.
+  { hour: 14, turn_id: t4, differs: 0, clipped: 0 }, { hour: 14, turn_id: t1, differs: 0, clipped: 0 },
+  { hour: 20, turn_id: t9, differs: 0, clipped: 0 },
+  { hour: 12, turn_id: t10, differs: 0, clipped: 0 },
+  { hour: 21, turn_id: t11, differs: 0, clipped: 1 },
   { hour: 16, turn_id: t6, differs: 1, clipped: 0 },
   { hour: 18, turn_id: t5, differs: 0, clipped: 0 },
   { hour: 10, turn_id: t8, differs: 0, clipped: 0 },
@@ -327,11 +349,14 @@ const expected = [
 ];
 const order = list => [...list].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 check(order(verified), order(expected), "verify: each turn once; only the two-conversation turn differs; the clipped turn is excluded");
-// A lost rollup row differs until a backfill restores it; a misaligned window is rejected.
-execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} DELETE WHERE TurnId = '${t1}'`, {}, ["--mutations_sync=2"]);
+// A lost rollup row differs until a backfill restores it, including a turn whose spans all lead
+// its id hour; a misaligned window is rejected.
+execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} DELETE WHERE TurnId IN ('${t1}', '${t9}')`, {}, ["--mutations_sync=2"]);
 check(verifyHour(14).find(r => r.turn_id === t1), { turn_id: t1, differs: 1, clipped: 0 }, "verify: missing rollup row differs");
+check(verifyHour(20).find(r => r.turn_id === t9), { turn_id: t9, differs: 1, clipped: 0 },
+  "verify: missing rollup row of a turn whose spans lead its id hour differs");
 execute(backfill, day("2026-10-18"), ["--insert_deduplicate=0"]);
-check(verifyHour(14).filter(r => r.differs === 1), [], "verify: backfill restores the row");
+check([14, 20].flatMap(hour => verifyHour(hour)).filter(r => r.differs === 1), [], "verify: backfill restores the rows");
 assert.throws(() => execute(verify, { verifyFrom: "2026-10-18 14:30:00", verifyTo: "2026-10-18 15:00:00" }),
   /hour-aligned/, "misaligned verify window");
 assertions++;

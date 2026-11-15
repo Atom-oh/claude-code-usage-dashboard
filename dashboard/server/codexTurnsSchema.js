@@ -145,13 +145,18 @@ ${codexTurnsTransform(`Timestamp >= ${from} AND Timestamp < ${to}`)};`;
 }
 
 // Activation gate: for turns whose first TurnHour is in one hour-aligned UTC window, the merged
-// rollup against raw spans in [verifyFrom - 1h, verifyTo + 24h), grouped by owner and turn id
-// (a non-v7 turn's hour rows merge). A turn whose raw end reaches verifyTo + 23h may be clipped by
-// that range: it is reported as clipped and kept out of differs. Any differs = 1 row blocks, as
-// does a turn with two conversations (reads pick one). A turn present on one side only differs.
+// rollup against raw spans, grouped by owner and turn id (a non-v7 turn's hour rows merge).
+// A turn keyed in the window has every span at or after verifyFrom - TURN_ID_MAX_LEAD_MS, and
+// every span on its id hour before verifyTo + TURN_ID_MAX_AGE_MS: the raw scan. Rollup rows
+// share its lower bound and run one lead past its end, so they hold every span the raw side
+// reads; a turn whose rollup end reaches the raw end may have spans past it and is reported as
+// clipped, kept out of differs. Any differs = 1 row blocks, as does a turn with two
+// conversations (reads pick one). A turn present on one side only differs.
 export function codexTurnsVerifySql() {
   const from = "{verifyFrom:DateTime('UTC')}", to = "{verifyTo:DateTime('UTC')}";
-  const lower = `${from} - INTERVAL 1 HOUR`, upper = `${to} + INTERVAL 24 HOUR`;
+  const hours = ms => `INTERVAL ${ms / HOUR_MS} HOUR`;
+  const lower = `${from} - ${hours(TURN_ID_MAX_LEAD_MS)}`, upper = `${to} + ${hours(TURN_ID_MAX_AGE_MS)}`;
+  const rowsUpper = `${to} + ${hours(TURN_ID_MAX_AGE_MS + TURN_ID_MAX_LEAD_MS)}`;
   const scope = `HAVING min(TurnHour) >= ${from} AND min(TurnHour) < ${to}`;
   const pairs = ["conversations", "start_ts", "end_ts", "sampling", "legacy", "sampling_models",
     "legacy_models", "tries", "compactions", "spawns", "names_turn", "version"];
@@ -163,7 +168,7 @@ SELECT turn_id, differs, clipped
 FROM (
   SELECT TurnId AS turn_id,
     ifNull(t.present, 0) = 1 AS t_present, ifNull(r.present, 0) = 1 AS r_present,
-    toUInt8(r_present AND r.end_ts >= ${to} + INTERVAL 23 HOUR) AS clipped,
+    toUInt8(t_present AND t.end_ts >= ${upper}) AS clipped,
     toUInt8(NOT (t_present AND r_present) OR (NOT clipped AND (length(t.conversations) > 1
       OR ${pairs.map(name => `t.${name} != r.${name}`).join("\n      OR ")}))) AS differs
   FROM (
@@ -177,7 +182,7 @@ FROM (
       uniqExactMerge(SpawnCalls) AS spawns, max(NamesTurnOnTools) AS names_turn,
       max(AppVersion) AS version
     FROM claude_code.${TURNS_ROLLUP_TABLE}
-    WHERE TurnHour >= ${lower} AND TurnHour < ${upper}
+    WHERE TurnHour >= ${lower} AND TurnHour < ${rowsUpper}
     GROUP BY UserIdentity, TurnId
     ${scope}
   ) AS t
