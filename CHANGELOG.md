@@ -45,8 +45,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
-- Prepare five-language dashboard captures and use English and Korean screenshots
-  in those public guides, with matching control names and synthetic provenance.
+- Show dashboard screenshots in the selected language throughout the public
+  guides, with matching control names and synthetic capture provenance.
 - Use a localized React calendar with an explicit completion control for each
   date or time selection; keep second precision and apply the range separately.
 - Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the

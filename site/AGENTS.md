@@ -38,6 +38,8 @@ and Korean VTT tracks, a poster and chapter navigation. Its owner is
 without applying its review score to newer artifacts.
 
 Use synthetic fixtures, masked reserved identities and fictional costs only.
+Guide screenshots use the actual React interface and the guide's language;
+keep screenshots and literal control names aligned across locales.
 English demo screenshots use translated DOM labels on the actual React component;
 they do not change product behavior. Keep file sizes, dimensions and checksums
 in `assets/media.json`. Shared images, CSS and videos have one owner in `assets/`.
