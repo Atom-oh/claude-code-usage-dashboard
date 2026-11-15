@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-15
+
 ### Added
 
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex

@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T08:47:12.539835+00:00",
-  "source_messages": 2039,
+  "updated_at": "2026-11-15T14:02:00.106654+00:00",
+  "source_messages": 2061,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2039,
-      "bytes": 156710,
-      "sha256": "03e91b1f3af30f774448ee232e13f290ffb67dff485985386dd297fbd4667cf2"
+      "messages": 2061,
+      "bytes": 158997,
+      "sha256": "0cfa183841def72da192bbfd9a5f080d3c747d9bad257a8015026aba9a97120c"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2039,
-      "bytes": 185212,
-      "sha256": "4411fc3e0e144e80b3f4d6473bce3b63b3b7ddb0aebda24de79a14179e905b62"
+      "messages": 2061,
+      "bytes": 187994,
+      "sha256": "e6f40d0090e570b51e69639d8ff05e904d1d27b165970cfe9f529455a58e964a"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2039,
-      "bytes": 194082,
-      "sha256": "864fa2d0f9c4440efd02525a3292ed50552e50342dd086e5a4afeaf97b443d5c"
+      "messages": 2061,
+      "bytes": 196914,
+      "sha256": "4bbdc8f5b44a24b082ad66f5383829b94600fb7647789ce930f2b3b48ca27046"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2039,
-      "bytes": 166477,
-      "sha256": "d8a488ef6bf92abe44be1a4a52f3c19c25de93ad502ec9970760fda84b7dad03"
+      "messages": 2061,
+      "bytes": 168997,
+      "sha256": "f2e9081e801b5dc26334eefa901de07cf307ff597e6f31a7af4dec9cf3a7dc2f"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2039,
-      "bytes": 148184,
-      "sha256": "e6d0387b0bd3f730c9c79a9caf5bbc68606f8f281fb23348cf29a15f09dad307"
+      "messages": 2061,
+      "bytes": 150392,
+      "sha256": "0e614be49604bb319db44d5d6a8ddec26ce24308e932c2e211f9342d6299cf9d"
     }
   ],
   "catalog_calls": [
@@ -1294,5 +1294,54 @@
       "m051986e644b8": "zh-CN keeps the catalog's existing term 采集 (collection/collector)",
       "me7f6707f549f": "en: ASCII apostrophe and clause punctuation"
     }
+  },
+  "release_112_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-15T13:57:52.924264+00:00",
+    "source_sha256": "902479f1f09e386cc0cf8e1e26d75a89b7f70c00fb85003c4e771f54ede77c33",
+    "output_sha256": "fddc0d06a37a9b40a5eb9c20b4de0ffa858abec88bdf1cd3d491daab49dc9963",
+    "added_message_count": 22,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "usage": {
+      "inputTokens": 816,
+      "outputTokens": 3209,
+      "totalTokens": 4025,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "added_keys": [
+      "m5b3dd029aca7",
+      "ma6d662d15e6a",
+      "m8d7025b69b1d",
+      "m89f7952f8901",
+      "m6c62cbb63475",
+      "m70ceacc9ca13",
+      "m57e65be6ad21",
+      "mceab291bb169",
+      "m8b91c07a28ca",
+      "mcf6cdd20424a",
+      "m5f7be3b313bd",
+      "me41721aa7a2a",
+      "mbf328b1356ec",
+      "m93d8c1b6ddea",
+      "mea9a6bc7ad58",
+      "m466da0edac30",
+      "m9692fb083ff2",
+      "m7c2e2430488e",
+      "m1aea22dc55a1",
+      "m325d2fac09e3",
+      "m693db7bcc313",
+      "m9de4819a2bd2"
+    ]
   }
 }
