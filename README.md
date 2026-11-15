@@ -179,5 +179,9 @@ Kiro where applicable. Failed or missing required review coverage is not a passi
 | Video | [video/AGENTS.md](video/AGENTS.md); separate pinned toolchain |
 
 Project documentation is English-only. The application remains Korean-first.
-The repository is proprietary; see [LICENSE](LICENSE). Package version `1.0.0` does
+The repository is source-available under the Functional Source License 1.1 with an Apache
+2.0 future license (FSL-1.1-ALv2); see [LICENSE](LICENSE). Internal use, non-commercial
+education and research, and professional services for licensees are permitted; offering it
+in a competing commercial product or service is not. Each version also becomes available
+under Apache-2.0 two years after it is published. Package version `1.0.0` does
 not imply a tagged release; see [CHANGELOG.md](CHANGELOG.md) for dated history.
