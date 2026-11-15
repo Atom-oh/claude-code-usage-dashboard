@@ -17,6 +17,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Run ClickHouse on m8g.2xlarge (32GiB) instead of c9g.2xlarge (16GiB) and raise the
+  read-only query memory limit from 4GB to 8GB per query (15GB per server for all reader
+  queries), with GROUP BY/ORDER BY spilling to disk at 4GB and spilled data capped at
+  10GB per query and 20GB per server. 30-day Codex insights queries failed at the old
+  limit.
 - Overview, Usage, Users, Reliability and Analytics no longer fail over 30 days with
   "too much client data": the 50,000-row bound now applies to each client instead of
   Claude and Codex combined, and the dashboard pod memory limit rises from 256Mi to

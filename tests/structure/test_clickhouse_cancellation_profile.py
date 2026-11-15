@@ -43,7 +43,12 @@ class ReaderCancellationProfile(unittest.TestCase):
         self.assertNotRegex(block, r'\b(response_code|response_page_path)\s*=')
 
     def test_memory_result_and_scan_ceilings_are_retained(self):
-        self.assertEqual(self.profile["readonly/max_memory_usage"], "4000000000")
+        self.assertEqual(self.profile["readonly/max_memory_usage"], "8000000000")
+        self.assertEqual(self.profile["readonly/max_memory_usage_for_user"], "15000000000")
+        self.assertEqual(self.profile["readonly/max_bytes_before_external_group_by"], "4000000000")
+        self.assertEqual(self.profile["readonly/max_bytes_before_external_sort"], "4000000000")
+        self.assertEqual(self.profile["readonly/max_temporary_data_on_disk_size_for_query"], "10000000000")
+        self.assertEqual(self.profile["readonly/max_temporary_data_on_disk_size_for_user"], "20000000000")
         self.assertEqual(self.profile["readonly/max_result_bytes"], "104857600")
         self.assertEqual(self.profile["readonly/max_rows_to_read"], "2000000000")
 
