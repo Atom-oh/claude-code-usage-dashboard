@@ -11,6 +11,7 @@ import {
   TURNS_ROLLUP_TABLE, codexTurnsBackfillSql, codexTurnsSchemaSql, namesTurnOnToolsSql, turnHourSql, turnHourMs,
 } from "../dashboard/server/codexTurnsSchema.js";
 import { codexTurnSql, namesTurnOnTools } from "../dashboard/server/taskTraces.js";
+import { rollupOwnerSql, rollupTurnSql } from "../dashboard/server/codexTurnsSource.js";
 import { SPAWN_SPANS } from "../dashboard/server/codexAgents.js";
 
 const container = process.argv[2];
@@ -190,49 +191,29 @@ insert([span("shell", t5, "2026-10-18T18:05:02.000Z", { version: "", conversatio
 
 // --- Raw codexTurnSql rows against the rollup read (grouped by TurnId, states merged). ---
 const from = new Date("2026-10-18T00:00:00Z"), to = new Date("2026-10-19T00:00:00Z");
-const rollupSql = `SELECT turn_id, toUInt8(min_start >= {from:DateTime} AND min_start < {to:DateTime}) AS in_bucket,
-    if(has(conversations, {conversation:String}), {conversation:String}, arrayMin(conversations)) AS conversation_id,
-    formatDateTime(min_start, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
-    toUnixTimestamp64Milli(min_start) AS start_ms, toUnixTimestamp64Milli(max_end) AS end_ms,
-    sampling_calls, legacy_calls, sampling_tries, compactions, app_version,
-    if(sampling_calls > 0, sampling_calls, legacy_calls) AS llm_calls,
-    if(sampling_calls > 0, 'codex.sampling', 'run_sampling_request') AS sampling_span,
-    if(sampling_calls > 0, sampling_models, legacy_models) AS models,
-    spawn_calls, names_turn
-  FROM (
-    SELECT TurnId AS turn_id, groupUniqArrayMerge(Conversations) AS conversations,
-      min(StartTs) AS min_start, max(EndTs) AS max_end,
-      uniqExactMerge(SamplingSpans) AS sampling_calls, uniqExactMerge(LegacySpans) AS legacy_calls,
-      uniqExactMerge(SamplingTries) AS sampling_tries, uniqExactMerge(Compactions) AS compactions,
-      max(AppVersion) AS app_version, groupUniqArrayMerge(SamplingModels) AS sampling_models,
-      groupUniqArrayMerge(LegacyModels) AS legacy_models, uniqExactMerge(SpawnCalls) AS spawn_calls,
-      max(NamesTurnOnTools) AS names_turn
-    FROM claude_code.${TURNS_ROLLUP_TABLE}
-    WHERE UserIdentity = {userExact:String}
-    GROUP BY TurnId
-  )
-  ORDER BY in_bucket DESC, start_ms ASC, turn_id ASC`;
 const spawnSql = `SELECT turn_id, toString(uniqExact(TraceId, SpanId)) AS spawn_calls FROM (
     SELECT coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn_id, TraceId, SpanId
     FROM claude_code.otel_traces
     WHERE ResourceAttributes['client'] = 'codex' AND SpanName IN {spawn:Array(String)}
       AND coalesce(nullIf(UserEmail, ''), nullIf(EndUserId, ''), '') = {userExact:String})
   WHERE turn_id != '' GROUP BY turn_id`;
-const sorted = row => ({ ...row, models: [...row.models].sort() });
-function rollupRows(user, conversation = "") {
-  return rows(rollupSql, { from: "2026-10-18 00:00:00", to: "2026-10-19 00:00:00", userExact: user, conversation })
-    .map(sorted);
-}
+const sorted = row => (row.models ? { ...row, models: [...row.models].sort() } : row);
+// A bound parameter in clickhouse-client text form.
+const text = value => Array.isArray(value) ? `['${value.join("','")}']` : String(value);
+const asRows = ({ sql, params }) => rows(sql, Object.fromEntries(Object.entries(params).map(([k, v]) => [k, text(v)]))).map(sorted);
+const strip = ({ spawn_calls, names_turn, ...row }) => row;
+const t6Link = row => (row.turn_id === t6 ? { ...row, conversation_id: "" } : row);
 function parity(phase) {
   const read = {};
   for (const user of [userA, userB, userC, userD]) {
-    const raw = codexTurnSql(from, to, { userExact: user });
-    const rawRows = rows(raw.sql, raw.params).map(sorted);
+    const q = { userExact: user };
+    const rawRows = asRows(codexTurnSql(from, to, q));
     const spawns = Object.fromEntries(rows(spawnSql, { userExact: user, spawn: `['${SPAWN_SPANS.join("','")}']` })
       .map(r => [r.turn_id, r.spawn_calls]));
-    // A two-conversation turn reads the conversation the raw read picked (the detail's link rule).
-    const rollup = rollupRows(user, user === userB ? rawRows.find(r => r.turn_id === t6)?.conversation_id ?? "" : "");
-    check(rollup.map(({ spawn_calls, names_turn, ...row }) => row), rawRows, `${phase}: rollup equals codexTurnSql for ${user}`);
+    const rollup = asRows(rollupTurnSql(from, to, q));
+    // Raw anyIf picks either conversation of a two-conversation turn; the rollup takes the smallest.
+    if (user === userB) check(rollup.find(r => r.turn_id === t6).conversation_id, "conv-e", "two conversations: smallest");
+    check(rollup.map(t6Link).map(strip), rawRows.map(t6Link), `${phase}: rollup equals codexTurnSql for ${user}`);
     check(Object.fromEntries(rollup.map(r => [r.turn_id, [r.spawn_calls, r.names_turn === 1]])),
       Object.fromEntries(rawRows.map(r => [r.turn_id, [spawns[r.turn_id] ?? "0", namesTurnOnTools(r.app_version)]])),
       `${phase}: spawn calls and version rule for ${user}`);
@@ -240,7 +221,31 @@ function parity(phase) {
   }
   return read;
 }
+// Filtered reads equal the raw reads (and raw rows filtered by start or id).
+function filters() {
+  const q = { userExact: userA };
+  const rawFor = options => asRows(codexTurnSql(from, to, q, options));
+  const rollupFor = options => asRows(rollupTurnSql(from, to, q, options)).map(strip);
+  for (const options of [{ conversationId: "conv-a" }, { conversationId: "conv-b" }, { conversationId: "conv-c" },
+    { conversationIds: ["conv-a", "conv-b"] }, { conversationIds: ["conv-c", "conv-h", "none"] }, { conversationId: "none" }])
+    check(rollupFor(options), rawFor(options), `filter ${JSON.stringify(options)} equals codexTurnSql`);
+  const all = rawFor({});
+  const t2Start = Number(all.find(r => r.turn_id === t2).start_ms), t1Start = Number(all.find(r => r.turn_id === t1).start_ms);
+  check(rollupFor({ startFrom: t2Start, startTo: t1Start }), all.filter(r => Number(r.start_ms) >= t2Start && Number(r.start_ms) < t1Start)
+    .map(r => ({ ...r, in_bucket: r.in_bucket })), "start window equals raw rows filtered by start");
+  check(rollupFor({ startFrom: t1Start }).map(r => r.turn_id), all.filter(r => Number(r.start_ms) >= t1Start).map(r => r.turn_id), "startFrom only");
+  // Detail competitors: one conversation, start in [s, ...).
+  check(rollupFor({ conversationId: "conv-b", startFrom: t2Start, startTo: t2Start + 1 }), rawFor({ conversationId: "conv-b" })
+    .filter(r => Number(r.start_ms) === t2Start), "conversation and start window");
+  for (const turnId of [t1, t4, t5, t8, t2, t3, "missing"])
+    check(rollupFor({ turnId }), all.filter(r => r.turn_id === turnId), `turnId ${turnId} equals the raw row (v7 pinned hour or merged hours)`);
+  // Owner: the id's hour, no user filter.
+  check(asRows(rollupOwnerSql(t1)), [{ owner: userA }], "rollupOwnerSql for the brief turn");
+  check(asRows(rollupOwnerSql(t6)), [{ owner: userB }], "rollupOwnerSql for the two-conversation turn");
+  check(asRows(rollupOwnerSql(v7("2026-10-18T15:00:00.000Z", 99))), [], "rollupOwnerSql without rows");
+}
 const live = parity("live view");
+filters();
 const byId = Object.fromEntries(live[userA].map(r => [r.turn_id, r]));
 check(Object.keys(byId).sort(), [t1, t2, t3, t4, t5, t8].sort(), "user A turns");
 check([byId[t1].llm_calls, byId[t1].legacy_calls, byId[t1].sampling_tries, byId[t1].compactions,
