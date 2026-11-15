@@ -50,6 +50,8 @@ execute(`CREATE TABLE claude_code.otel_traces (
 execute(migrationGuards);
 execute(codexTurnsSchemaSql());
 execute(`ALTER TABLE claude_code.${TURNS_ROLLUP_TABLE} REMOVE TTL`);
+// Physical-row checks below need the inserts' parts unmerged; merges restart before OPTIMIZE.
+execute(`SYSTEM STOP MERGES claude_code.${TURNS_ROLLUP_TABLE}`);
 
 // --- Turn hour and version rules: SQL equals the JS rule the reads use. ---
 const BRIEF_ID = "01a14f6d-7899-7a83-8000-000000000001";
@@ -287,7 +289,6 @@ for (const [params, label] of [[{ backfillFrom: "2026-10-18 00:00:00", backfillT
     /Codex turns backfill requires a positive interval of at most one day/, label);
   assertions++;
 }
-execute(`SYSTEM STOP MERGES claude_code.${TURNS_ROLLUP_TABLE}`);
 for (let round = 0; round < 2; round++)
   for (const date of ["2026-10-17", "2026-10-18", "2026-10-19"]) execute(backfill, day(date), ["--insert_deduplicate=0"]);
 execute(backfill, { backfillFrom: "2026-10-18 14:00:00", backfillTo: "2026-10-19 14:00:00" }, ["--insert_deduplicate=0"]);
