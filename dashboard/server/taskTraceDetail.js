@@ -559,8 +559,14 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
   // span list, so truncation does not withhold them. Retries (tries minus runs) and compactions
   // come from the same turn row as the list and stay null for a turn without run spans. Codex
   // has no permission-wait evidence: that rule is omitted.
-  const compactions = count(turn.legacy_calls) > 0 ? count(turn.compactions) : null;
-  const context = { ...contextSeries(calls, t0, limited), compactions, limits: foldLimits(limitRows) };
+  // Events come from the raw rows (the newest SPAN_BOUND spans); the turn row's count says
+  // whether a truncated list is missing some.
+  const known = count(turn.legacy_calls) > 0 ? count(turn.compactions) : null;
+  const events = known === null ? null : ordered.filter(({ r }) => r.span_name === "codex.compaction")
+    .map(({ start }) => ({ start_ms: start !== null && t0 !== null ? start - t0 : null, pre_tokens: null,
+      post_tokens: null, trigger: null, success: null }));
+  const context = { ...contextSeries(calls, t0, limited), compactions: events, limits: foldLimits(limitRows),
+    ...(events ? { compactions_partial: events.length < known } : {}) };
   return { task, lanes, spans, truncated: total > rows.length, span_total: total,
     why: whyRules({ task, calls, lanes, retries: codexRetries(turn), waitMs: null }), context };
 }

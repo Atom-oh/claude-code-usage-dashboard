@@ -1352,13 +1352,22 @@ test("namesTurnOnTools reads versions numerically", () => {
 });
 
 test("codex detail reports retries and compactions from the turn row", () => {
-  const run = (o) => foldTaskDetail({ client: "codex", turn: turn({ legacy_calls: "3", sampling_tries: "5",
-    compactions: "2", ...o }), linked: [] }, [], []);
+  const sp = (id, name, at) => ({ span_id: id, parent_id: "", span_name: name, start_ms: String(ms(at)),
+    duration_ms: "10", a_model: "", a_tool_name: "", a_aborted: "", total_spans: "2" });
+  const rows = [sp("c2", "codex.compaction", "2026-11-05T01:00:06Z"), sp("c1", "codex.compaction", "2026-11-05T01:00:02Z")];
+  const run = (o, r = rows) => foldTaskDetail({ client: "codex", turn: turn({ legacy_calls: "3", sampling_tries: "5",
+    compactions: "2", ...o }), linked: [] }, r, []);
   const ok = run({});
   assert.equal(ruleMap(ok).retries, 2);
-  assert.equal(ok.context.compactions, 2);
+  assert.deepEqual(ok.context.compactions.map(c => c.start_ms), [2000, 6000]);
+  assert.deepEqual(ok.context.compactions[0], { start_ms: 2000, pre_tokens: null, post_tokens: null, trigger: null, success: null });
+  assert.equal(ok.context.compactions_partial, false);
   const none = run({ legacy_calls: "0" });
   assert.ok(!("retries" in ruleMap(none)));
   assert.equal(none.context.compactions, null);
-  assert.equal(run({ compactions: "0" }).context.compactions, 0);
+  assert.deepEqual(run({ compactions: "0" }, []).context.compactions, []);
+  // Truncated span list: the turn row counts more compactions than the rows show.
+  const partial = run({ compactions: "4" });
+  assert.equal(partial.context.compactions.length, 2);
+  assert.equal(partial.context.compactions_partial, true);
 });
