@@ -396,6 +396,8 @@ test("context chart: Codex compactions without token counts are counted and draw
   const section = await screen.findByRole("region", { name: "컨텍스트 크기" });
   expect(within(section).getByRole("list", { name: "컨텍스트 요약" }).textContent).toMatch(/컴팩션 2/);
   expect(section.querySelectorAll("[data-compaction]").length).toBe(2);
+  // The note on Claude Code's reported compaction tokens is Claude-only.
+  expect(section.textContent).not.toContain("컴팩션 토큰은 Claude Code가 보고한 값");
 });
 
 test("context chart: a truncated Codex detail states the turn's full compaction count", async () => {
