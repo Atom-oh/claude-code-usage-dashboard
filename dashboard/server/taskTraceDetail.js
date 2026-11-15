@@ -194,7 +194,9 @@ const MINUTE_MS = 60000, HOUR_MS = 3600000;
 const ceilSecond = (ms) => Math.ceil(ms / 1000) * 1000;
 // A rollup detail's reads around its turn window [s, e] (docs/superpowers/specs/2026-11-15-codex-
 // turn-rollup-design.md, "Reads", Detail). Competitors: same-conversation turns starting in
-// [s, min(e + slack, to + 24h)); earlier turns cannot win a completion from this one. Completions:
+// [s, e + slack] and before to + 24h; earlier turns cannot win a completion from this one, and
+// linkCompletions links a completion at exactly e + slack, which a turn starting then wins (the
+// bound is inclusive: startTo is exclusive milliseconds, so e + slack + 1). Completions:
 // Timestamp in [max(s - 1h, from), min(e + 24h, to + 24h)) (link time is event.timestamp, and
 // collector time can lag). Spans and skills: [s - 1 min, min(e + 1 min, to + 24h)). The upper bounds
 // stop at the list's own reads, so a detail never links what its list row did not read. DateTime
@@ -202,7 +204,7 @@ const ceilSecond = (ms) => Math.ceil(ms / 1000) * 1000;
 export function codexTurnWindow(from, to, startMs, endMs) {
   const cap = to.getTime() + SPAN_SLACK_MS;
   return {
-    competitors: { startFrom: startMs, startTo: Math.min(endMs + COMPLETION_SLACK_MS, cap) },
+    competitors: { startFrom: startMs, startTo: Math.min(endMs + COMPLETION_SLACK_MS + 1, cap) },
     completions: { logFrom: new Date(Math.max(startMs - HOUR_MS, from.getTime())),
       logTo: new Date(Math.min(ceilSecond(endMs + SPAN_SLACK_MS), cap)) },
     spans: { spanFrom: new Date(startMs - MINUTE_MS), spanTo: new Date(Math.min(ceilSecond(endMs + MINUTE_MS), cap)) },
