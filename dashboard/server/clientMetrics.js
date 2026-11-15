@@ -11,6 +11,7 @@ import { isNonAnthropicModel } from "./nonAnthropicCost.js";
 import { backendSql } from "./backend.js";
 import * as queries from "./queries.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
+import { createObservedTokenParts, addObservedTokenParts, finishObservedTokenParts } from "./observedTokenParts.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS, isRejectedRequestGroup } from "./codexRequests.js";
 import { USER_TREND_TOP } from "./modelCostTrend.js";
 import { costSourceForRange, costSourceSql } from "./codexCostSource.js";
@@ -163,9 +164,11 @@ function accumulate(target, row, usage, missingScope) {
   if (missingScope) {
     target._missingUsage.add(missingScope);
     target._inputParts.missing = true;
+    if (target._tokenParts) target._tokenParts.missing = true;
   }
   if (usage) {
     addInputParts(target._inputParts, usage);
+    if (target._tokenParts) addObservedTokenParts(target._tokenParts, usage, row);
     addObservedTokens(target._observedTokens, usage.observed_tokens,
       Number(usage.observed_tokens_overflow) === 1);
     for (const k of TOKEN_KEYS) {
@@ -214,7 +217,7 @@ function claudeBasis(fallback, present) {
 
 function finish(target) {
   const { _sessions, _users, _backends, _missing, _missingUsage, _hasCost, _hasReportedCost, _hasEstimatedCost, _hasListEstimate,
-    _observedTokens, _inputParts, _reasons,
+    _observedTokens, _inputParts, _tokenParts, _reasons,
     _ops, _requestMs, _requestN, _ttftMs, _ttftN, ...out } = target;
   for (const k of _missing) out[k] = null;
   if (_missingUsage.size) {
@@ -295,8 +298,10 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
   if ([...budgets.values()].some(rows => rows > ROW_LIMIT))
     throw new ValidationError("too much client data", "narrow the requested date range");
   const totals = accumulator({});
-  const byClient = new Map(clients.map((client) => [client, accumulator({ client,
-    cost_basis: client === "claude" ? "client_reported" : "aws_list_estimate" })]));
+  const byClient = new Map(clients.map((client) => [client, {
+    ...accumulator({ client, cost_basis: client === "claude" ? "client_reported" : "aws_list_estimate" }),
+    _tokenParts: createObservedTokenParts(),
+  }]));
   const groups = { by_model: new Map(), by_user: new Map(), ...(!costView ? { by_project: new Map() } : {}), timeseries: new Map(),
     ...(costView ? { by_user_model: new Map() } : {}),
     ...(modelTime ? { by_model_time: new Map() } : {}) };
@@ -402,7 +407,15 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     const rows = backedRows(key).sort(compare);
     return compactTime ? compactTimeRows(rows) : rows;
   };
-  const by_client = [...byClient.values()].map((target) => ({ ...finishRow(target), observed_input: observedInput(target) }));
+  const by_client = [...byClient.values()].map((target) => {
+    const row = finishRow(target);
+    return { ...row, observed_input: observedInput(target),
+      observed_token_parts: finishObservedTokenParts(target._tokenParts, {
+        // ADR-016: identified rejection-only scopes have zero recorded completion usage.
+        emptyValue: row.request_rejections_only ? 0 : null,
+      }),
+    };
+  });
   const total = finishRow(totals);
   const userTime = modelTime ? foldUserTime(groups, userTimeRows, finishRow) : null;
   quality.missing_usage = missingUsage.size;

@@ -4,6 +4,7 @@ import { Card, ErrorBox, Loading } from "../components/Card.jsx";
 import { StatTile } from "../components/StatTile.jsx";
 import { DataTable } from "../components/DataTable.jsx";
 import { RingGauge, SeriesBarChart } from "../components/GroupCharts.jsx";
+import { ClientTokenComposition } from "../components/ClientTokenComposition.jsx";
 import { ModelCostTrend } from "../components/ModelCostTrend.jsx";
 import { SectionLabel } from "../components/SectionLabel.jsx";
 import { SegmentedControl } from "../components/SegmentedControl.jsx";
@@ -490,11 +491,7 @@ function ClientPanels({ page = "overview", data = {}, clients = data?.clients ||
           <Tiles row={total} columns={[TOKENS, ...TOKEN_PARTS, REASONING_TOKENS]} />
         </Card>
         {compare(USAGE, { title: translate("m205053711ad7") })}
-        <SeriesBarChart title={translate("md382a04533c1")} subtitle={translate("m05a8d473d0d5")}
-          rows={clientRows.flatMap((row) => TOKEN_PARTS.map((part) => ({
-            client: clientName(row.client), part: part.key, value: row[part.key],
-          })))} xKey="client" seriesKey="part" valueKey="value" horizontal
-          seriesLabel={(key) => TOKEN_PARTS.find((part) => part.key === key)?.label ?? key} />
+        <ClientTokenComposition rows={clientRows} parts={TOKEN_PARTS} help={translateSource(TOKEN_HELP)} />
         <ToolTable rows={tools} stale={stale} />
         <SkillTable api={skills} clients={selected} />
       </>;
