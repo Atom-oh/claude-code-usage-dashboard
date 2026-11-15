@@ -18,7 +18,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 ### Added
 
 - Migration 012 adds a Codex turn rollup (`codex_turns_v1`, with bounded backfill and
-  verify files); no dashboard read uses it yet.
+  verify files). With `CODEX_TURNS_READ_FROM` (Terraform `codex_turns_read_from`; verified,
+  hour-aligned UTC) set and the 7-day context inside it, the Codex task list and details
+  read the rollup instead of raw spans so long sessions stay inside the query budget;
+  unset keeps raw reads. Activation order: [Codex turns](docs/runbooks/schema-migrations.md#codex-turns-migration-012).
+- The task list shows a Codex "subagent calls" value (spawn and follow-up calls, not
+  subagents): a count for Codex 0.166+ turns, not collected before, and only while the
+  rollup read is active (not on raw reads).
 - Codex task details show retries (`try_run_sampling_request` spans beyond
   `run_sampling_request`, both counted exactly) in the why rules and count `codex.compaction`
   spans as context compactions (Codex 0.161+; earlier versions read as not collected),
@@ -57,6 +63,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   use, education, research and professional services are permitted, competing commercial
   products or services are not, and each version becomes Apache-2.0 two years after
   release. The packaged `APPLICATION_LICENSE` and both `package.json` files match.
+- With `CODEX_TURNS_READ_FROM` set, a Codex task detail whose list row comes from the turn
+  rollup reads the rollup too, over the turn's own window: later same-conversation turns
+  until its end plus 5 s, completions from an hour before it to a day after it, spans and
+  skills a minute either side, each stopping where the list's reads stop. Its values
+  equal its list row; a turn missing from the rollup reads raw. Subagent and parent turns
+  come from the rollup with their true start. Unset keeps raw reads.
 
 ### Fixed
 

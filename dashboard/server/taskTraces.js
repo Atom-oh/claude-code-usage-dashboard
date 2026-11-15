@@ -16,6 +16,7 @@ import { isNonAnthropicModel, requestListEstimate } from "./nonAnthropicCost.js"
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { COMPLETION_TOKEN_KEYS, priceCodexCompletion } from "./codexInsightsLogs.js";
 import { codexPrices } from "./priceCatalog.js";
+import { codexTurnsReadFrom, rollupTurnSql, turnsSourceForList } from "./codexTurnsSource.js";
 
 export const TASK_LIMIT = 20;
 // Subagent spans of a long task can start after the selected bucket ends (spec: ~12% of
@@ -434,9 +435,10 @@ export const emitsTurnCompactions = (version) => codexAtLeast(version, 161);
 // `identity` names it so the fold attaches it at most once. PREWHERE reads only promoted
 // columns (event, time, exact user); the map-derived checks repeat in WHERE. Only
 // allowlisted attributes leave the database. `conversationId` (task detail) keeps one conversation,
-// `conversationIds` several.
-export function codexCompletionSql(from, to, q, { conversationId = null, conversationIds = null } = {}) {
-  const params = { logFrom: toChDateTime(from), logTo: toChDateTime(new Date(to.getTime() + SPAN_SLACK_MS)),
+// `conversationIds` several. `logFrom`/`logTo` (Dates) replace the window (a rollup detail's turn window).
+export function codexCompletionSql(from, to, q, { conversationId = null, conversationIds = null, logFrom = null,
+  logTo = null } = {}) {
+  const params = { logFrom: toChDateTime(logFrom ?? from), logTo: toChDateTime(logTo ?? new Date(to.getTime() + SPAN_SLACK_MS)),
     userExact: q.userExact };
   if (conversationId !== null) params.conversationId = conversationId;
   if (conversationIds !== null) params.conversationIds = conversationIds;
@@ -515,6 +517,9 @@ export function foldCodexTask(turn, linked) {
     // No Codex attribute links a child thread to its parent turn; the task detail follows the
     // trace's parent-span chain instead (codexAgents.js). The list: unknown, not zero.
     subagents: null,
+    // Spawn/follow-up calls the turn names (Codex 0.166+); null when the source cannot say
+    // (raw reads, older versions): not collected is not zero.
+    subagent_calls: Number(turn.names_turn) > 0 ? count(turn.spawn_calls) : null,
     tokens: { ...sums, ...finishObservedTokens(observed, { partial: tokensPartial }) },
     cost_usd: Number.isFinite(cost) ? cost : null,
     cost_partial: unknownCost > 0 || (cost !== null && !Number.isFinite(cost)),
@@ -612,8 +617,9 @@ async function claudeTasks(from, to, q, run) {
   return { tasks: foldClaudeTasks(rows, costRows, { sort: q.sort }), considered: rows.length };
 }
 
-async function codexTasks(from, to, q, run, prices) {
-  const turnQuery = codexTurnSql(from, to, q), completionQuery = codexCompletionSql(from, to, q);
+async function codexTasks(from, to, q, run, prices, turnsBoundary) {
+  const turnQuery = turnsSourceForList(from, turnsBoundary) === "rollup" ? rollupTurnSql(from, to, q)
+    : codexTurnSql(from, to, q), completionQuery = codexCompletionSql(from, to, q);
   const [turns, completions] = await Promise.all([run(turnQuery.sql, turnQuery.params),
     run(completionQuery.sql, completionQuery.params)]);
   const limited = turns.length > CODEX_TURN_LIMIT || completions.length > CODEX_COMPLETION_LIMIT;
@@ -622,13 +628,14 @@ async function codexTasks(from, to, q, run, prices) {
   return { ...out, limited };
 }
 
-export async function userTasks(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices()) {
+export async function userTasks(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices(),
+  turnsBoundary = codexTurnsReadFrom) {
   const q = validateTaskQuery(raw, enabledClients);
   const coverage = { claude: "not_requested", codex: "not_requested" };
   let tasks = [], unattached = null;
   const [claude, codex] = await Promise.all([
     q.clients.includes("claude") ? claudeTasks(from, to, q, run) : null,
-    q.clients.includes("codex") ? codexTasks(from, to, q, run, prices) : null,
+    q.clients.includes("codex") ? codexTasks(from, to, q, run, prices, turnsBoundary) : null,
   ]);
   let candidates = null;
   if (claude) {

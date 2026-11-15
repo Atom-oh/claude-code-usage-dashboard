@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T13:19:01.134380+00:00",
-  "source_messages": 2040,
+  "updated_at": "2026-11-15T13:24:53.021716+00:00",
+  "source_messages": 2041,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2040,
-      "bytes": 156778,
-      "sha256": "2f459dcde0e8c96c8d3de7b44f145190ff44d96b5fc7692400a5306986b6925a"
+      "messages": 2041,
+      "bytes": 157096,
+      "sha256": "c2d87d58e0f019308d10941ab0bc2649b1722f4e334cb87c95faf2afe66beb00"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2040,
-      "bytes": 185298,
-      "sha256": "30e10a1692d56bad2f04663312517b65c04d02d4196c03ba5d9d9290f7e20684"
+      "messages": 2041,
+      "bytes": 185694,
+      "sha256": "ec51ab23f888914c03fe8fb24cd966d0f5322ed13dba9ed56116b6901509f2bd"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2040,
-      "bytes": 194178,
-      "sha256": "0da03b6ab85e3cc72b814f325050f2d1c884c971c90c7408edb363e531560432"
+      "messages": 2041,
+      "bytes": 194578,
+      "sha256": "952ea46711ddd5d6434438604c62419d1c45e3cb68a70d4829239db4a0ce55e7"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2040,
-      "bytes": 166551,
-      "sha256": "595a64a1c9fd39a4fe1274c930809cbacf9f26b2bae2f6f55fde4654903bb368"
+      "messages": 2041,
+      "bytes": 166875,
+      "sha256": "4b65a4b370aa016f3a094ce72c54455d979136b035583e89076b0651c380f7d9"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2040,
-      "bytes": 148254,
-      "sha256": "ea4fdddf4e0bd7a71b7f44ca79eb146aa34041162ab92b4f49b4455b9a536c28"
+      "messages": 2041,
+      "bytes": 148522,
+      "sha256": "56a5bac18ddee3bfa94ee3e8484d0269893780fe7304184a8e13f108c82db136"
     }
   ],
   "catalog_calls": [
@@ -708,6 +708,37 @@
         "mb1c9e46267bb"
       ],
       "removal": "2026-11-15: the Codex communication-log subagent fallback moved to a follow-up PR, so its two messages were removed from all five catalogs; the hashes and usage above still describe the original three-message call, and only m1167c444c874 remains applied."
+    },
+    {
+      "model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "date": "2026-11-15",
+      "source_sha256": "b9997a7927aaf8213ed0b62b6932b9a815cd8beaf04be29f55761f00280d6bfa",
+      "request_sha256": "5137b71ac9b5b9a398bce7c42393fe9d04763a2fbef789cd2c5305df1ad5af9f",
+      "output_sha256": "4005d99befa39907c527bb23f71ab517c648e885c645a666e1a838c036434ca0",
+      "usage": {
+        "inputTokens": 281,
+        "outputTokens": 475,
+        "totalTokens": 756,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "timestamp": "2026-11-15T09:47:00.548531+00:00",
+      "keys": [
+        "mb914b9145517"
+      ],
+      "messages": 1,
+      "superseded": {
+        "m5657e573bb06": "subagent-calls tooltip replaced: the value is also not collected outside the Codex turn rollup read, not only before Codex 0.166"
+      },
+      "host_corrections": {
+        "zh-CN": "catalog terms: 管理员 (operators) and 轮次汇总 (turn aggregation), as in the session-turn aggregation messages",
+        "ja": "catalog term 管理者 (operators), as in the session-turn aggregation messages"
+      },
+      "verification": "All five catalogs retain nonempty messages and matching positional placeholders."
     }
   ],
   "additional_messages": {
