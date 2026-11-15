@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { foldCodexMetrics, foldCodexTraces, buildMetricQuery, buildTraceQuery } from "./codexSignals.js";
+import { foldCodexMetrics, foldCodexTraces, buildMetricQuery, buildTraceQuery, SCAN_LIMIT } from "./codexSignals.js";
 
 const fields = (actual, expected) => {
   for (const [key, value] of Object.entries(expected)) assert.equal(actual[key], value, key);
@@ -25,8 +25,11 @@ test("selected metric names constrain window and cumulative baselines without re
     assert.match(sql, /mapSort\(Attributes\) AS attributes/);
     if (type !== "gauge") {
       assert.match(sql, /INTERVAL 3 DAY/);
-      assert.equal(sql.match(/MetricName IN \{signalMetricNames:Array\(String\)\}/g).length, 3);
-      assert.match(sql, /started\) IN/);
+      // Scan budget, cumulative fold, DELTA window and limit marker.
+      assert.equal(sql.match(/MetricName IN \{signalMetricNames:Array\(String\)\}/g).length, 4);
+      // Cumulative series group by a key over the full identity and start.
+      assert.match(sql, /cityHash64\(name, unit, scope, scope_version, scope_attributes, resource, attributes,[\s\S]*monotonic, started\) AS series_key/);
+      assert.match(sql, /GROUP BY series_key/);
     }
     assert.equal(buildMetricQuery(type, from, to).params.signalMetricNames, undefined);
   }
@@ -229,34 +232,47 @@ test("queries bind selectors, scope Codex, retain a counter baseline and reject 
   assert(!t.sql.includes(filters.user));
 });
 
-test("cumulative baseline timestamps are grouped before full-point deduplication", () => {
+test("cumulative series fold in one scan to their latest and baseline points", () => {
   for (const type of ["sum", "histogram", "exponential_histogram"]) {
     const { sql } = buildMetricQuery(type, from, to);
-    assert.match(sql, /baseline_times AS \(\s+SELECT[\s\S]*started, max\(t\) AS latest/);
-    const times = sql.slice(sql.indexOf("baseline_times AS"), sql.indexOf("baselines AS"));
-    assert.doesNotMatch(times, /SELECT DISTINCT|OVER/);
+    const series = sql.slice(sql.indexOf("cumulative_series AS"), sql.indexOf("delta_points AS"));
+    // One aggregate per series identity and start; no per-point DISTINCT or window.
+    assert.doesNotMatch(series, /SELECT DISTINCT|OVER/);
+    assert.match(series, /INTERVAL 3 DAY/);
     for (const dimension of ["name", "unit", "scope", "scope_version", "scope_attributes",
       "resource", "attributes", "service_name", "resource_schema_url", "scope_schema_url",
-      "temporality", "monotonic", "started"]) assert(times.includes(dimension));
-    assert.match(times, /GROUP BY[\s\S]*started/);
-    const points = sql.slice(sql.indexOf("baselines AS"), sql.indexOf("delta_points AS"));
-    assert.match(points, /SELECT DISTINCT/);
-    assert.match(points, /started, t\) IN \(\s+SELECT[\s\S]*started, latest FROM baseline_times/);
-    assert.doesNotMatch(sql, /max\(t\) OVER/);
-    assert.match(sql, /count\(\) OVER[\s\S]*AS variants/);
+      "temporality", "monotonic", "started"]) assert(series.includes(dimension));
+    // Latest ties by highest and lowest payload expose a conflicting retry.
+    assert.match(series, /maxIf\(tuple\(ts, p\), w\) AS last_hi, minIf\(tuple\(-ts, p\), w\) AS last_lo/);
+    assert.match(series, /maxIf\(tuple\(ts, p\), NOT w\) AS base_hi, minIf\(tuple\(-ts, p\), NOT w\) AS base_lo/);
+    // Interior decreases compare consecutive points sorted per series, independent of read order.
+    assert.match(series, /arraySort\(groupArrayIf\(tuple\(ts, p\.2(, p\.3)?\), w\)\) AS seq/);
+    assert.equal(/tuple\(ts, p\.2, p\.3\)/.test(series), type !== "sum");
+    assert.match(sql, /arrayExists\(\(x, y\) -> y\.2 < x\.2/);
+    assert.doesNotMatch(sql, /deltaSumTimestamp|1e-9/);
+    assert.match(sql, /ARRAY JOIN if\(has_base, \[0, 1\], \[0\]\) AS baseline_row/);
+    // DELTA keeps exact point deduplication and conflict detection.
+    const delta = sql.slice(sql.indexOf("delta_points AS"));
+    assert.match(delta, /SELECT DISTINCT/);
+    assert.match(delta, /count\(\) OVER[\s\S]*AS variants/);
   }
-  assert.doesNotMatch(buildMetricQuery("gauge", from, to).sql, /baseline_times/);
+  assert.doesNotMatch(buildMetricQuery("gauge", from, to).sql, /cumulative_series/);
 });
 
 test("an explicit SQL result limit cannot manufacture diagnostic observations", () => {
   assert.throws(() => foldCodexMetrics([{ ...point, result_limited: 1 }], from, to),
     /too much signal data/);
   for (const type of ["sum", "gauge", "histogram", "exponential_histogram"]) {
-    const { sql } = buildMetricQuery(type, from, to);
-    assert.match(sql, /limit_probe AS/);
+    const { sql, params } = buildMetricQuery(type, from, to);
     assert.match(sql, /toUInt8\(1\) AS result_limited/);
-    assert.match(sql, /\(SELECT points FROM limit_probe\) <= 50000/);
-    if (type !== "gauge") assert.match(sql, /FROM window_points WHERE temporality != 1 LIMIT 50001/);
+    if (type === "gauge") assert.match(sql, /\(SELECT points FROM limit_probe\) <= 50000/);
+    else {
+      // Cumulative work is bounded by stored rows scanned, not by points returned.
+      assert.match(sql, /scan_probe AS/);
+      assert.match(sql, /\(SELECT scanned FROM scan_probe\) <= \{signalScanLimit:UInt64\}/);
+      assert.equal(params.signalScanLimit, SCAN_LIMIT);
+      assert.equal(buildMetricQuery(type, from, to, {}, { scanLimit: 5 }).params.signalScanLimit, 5);
+    }
   }
   assert.equal(foldCodexMetrics([{ ...point, result_limited: 0 }], from, to).coverage.status, "observed");
 });

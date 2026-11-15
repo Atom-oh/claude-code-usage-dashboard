@@ -234,8 +234,37 @@ test("turn summaries weight histogram observations and withhold partial measurem
   ];
   show(data);
   fireEvent.click(screen.getByRole("button", { name: "성능" }));
-  expect(screen.getByText("평균 턴 처리 시간").closest(".shadow-card").textContent).toContain("40 ms");
-  expect(screen.getByText("턴당 평균 도구 호출").closest(".shadow-card").textContent).toContain("—");
+  const duration = screen.getByText("평균 턴 처리 시간").closest(".shadow-card").textContent;
+  expect(duration).toContain("40 ms");
+  expect(duration).not.toContain("일부 원본 통계 미확인");
+  const tools = screen.getByText("턴당 평균 도구 호출").closest(".shadow-card").textContent;
+  expect(tools).toContain("—");
+  expect(tools).toContain("일부 원본 통계 미확인");
+});
+
+test("turn summaries average the known groups and disclose withheld ones", () => {
+  const data = fixture();
+  data.metrics = [
+    { name: "codex.turn.e2e_duration_ms", count: 2, sum: 100 },
+    // A series without a baseline withholds its statistics.
+    { name: "codex.turn.e2e_duration_ms", count: null, sum: null, partial: true },
+    { name: "codex.turn.token_usage", dimensions: { token_type: "total" }, count: 4, sum: 400 },
+    { name: "codex.turn.token_usage", dimensions: { token_type: "total" }, count: 1, sum: null, partial: true },
+    // Another token type's gap does not mark the total tile.
+    { name: "codex.turn.token_usage", dimensions: { token_type: "input" }, count: null, sum: null, partial: true },
+    { name: "codex.turn.ttft.duration_ms", count: 3, sum: 30 },
+  ];
+  show(data);
+  fireEvent.click(screen.getByRole("button", { name: "성능" }));
+  const duration = screen.getByText("평균 턴 처리 시간").closest(".shadow-card").textContent;
+  expect(duration).toContain("50 ms");
+  expect(duration).toContain("일부 원본 통계 미확인");
+  const tokens = screen.getByText("턴당 평균 토큰").closest(".shadow-card").textContent;
+  expect(tokens).toContain("100");
+  expect(tokens).toContain("일부 원본 통계 미확인");
+  const ttft = screen.getByText("평균 턴 첫 토큰 시간").closest(".shadow-card").textContent;
+  expect(ttft).toContain("10 ms");
+  expect(ttft).not.toContain("일부 원본 통계 미확인");
 });
 
 test("shared effective bounds reach the API and a paused overview preserves detail controls", () => {

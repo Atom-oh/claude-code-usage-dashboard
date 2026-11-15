@@ -98,7 +98,23 @@ preserves the active detail tab and search.
 
 Metrics respect full series identity and delta/cumulative temporality. Cumulative
 series require a prior baseline or an observed start inside the range; unresolved
-baselines/regressions mark the aggregate partial. Histograms expose count and mean,
+baselines/regressions mark the aggregate partial. Codex re-exports every cumulative
+series each interval, so [codexSignals.js](../../dashboard/server/codexSignals.js) folds
+each series in SQL to its latest in-window point and its latest point in the three-day
+lookback. The interior checks travel with the latest point: invalid samples (including a
+point stamped before its series start), a decrease
+(a fall between consecutive in-window points sorted by timestamp, or a first point below
+the baseline) and a conflicting retry at either endpoint (histogram buckets are not
+compared; a NaN optional extremum equals itself, so it leaves count and sum available). Sorting per series makes the result independent of part and thread read order.
+An interior conflicting retry that keeps the series monotonic cannot change the result and
+is not reported. Cumulative `points` counts stored
+in-window points, including identical redeliveries; DELTA points stay exactly
+deduplicated. A stored-row budget (`SCAN_LIMIT`, window plus lookback per metric table)
+bounds cumulative reads; past it, or past the 50,000-row result guard (gauges: raw points),
+the signal is `limited`. In 2026-11 production the full metric list exceeded the
+budget for any range (the lookback alone holds about 65M sum and 115M histogram rows);
+the performance profile's four metrics read about 2.2M rows a day, so ranges up to about
+eight days fit; longer ranges report `limited`. Histograms expose count and mean,
 not invented percentiles of means. Export timestamps select metric periods, so
 boundary exports can span the requested start. Gauges are not usage counters.
 Collector 0.119 loses the presence bits of optional histogram Sum/Min/Max fields:

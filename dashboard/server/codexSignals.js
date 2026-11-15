@@ -3,6 +3,12 @@ import { toChDateTime } from "./clickhouse.js";
 import { resolveBackend, backendSql } from "./backend.js";
 
 const LIMIT = 50000;
+// Stored rows one cumulative metric query may scan (window plus baseline lookback). The
+// per-series sorted value arrays dominate memory: measured 2026-11-14 on production, 43M
+// histogram rows ran in 5.8 s and 47M exceeded the reader's 3.7 GiB query limit. The four
+// performance metrics read about 2.2M rows a day, so 25M covers about eight days.
+// Over the budget the signal reports "limited".
+export const SCAN_LIMIT = 25000000;
 const TYPES = ["sum", "gauge", "histogram", "exponential_histogram"];
 const ordered = (o = {}) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
 const number = (v) => v !== null && v !== undefined && v !== "" && typeof v !== "boolean"
@@ -33,12 +39,13 @@ const filter = (attributes, model = `${attributes}['model']`) => `
   AND ({signalModel:String} = '' OR positionCaseInsensitive(${model}, {signalModel:String}) > 0)
   AND ({signalBackend:String} = '' OR ${backendSql(model, "ResourceAttributes['backend']")} = {signalBackend:String})`;
 
-export function buildMetricQuery(type, from, to, filters = {}, { metricNames } = {}) {
+export function buildMetricQuery(type, from, to, filters = {}, { metricNames, scanLimit = SCAN_LIMIT } = {}) {
   if (!TYPES.includes(type)) throw new Error("unsupported metric table");
   const queryParams = { ...params(from, to, filters), ...(metricNames ? { signalMetricNames: metricNames } : {}) };
   const histogram = type.endsWith("histogram");
-  const identity = `name, unit, scope, scope_version, scope_attributes, resource, attributes,
-    service_name, resource_schema_url, scope_schema_url, temporality, monotonic`;
+  const identityColumns = ["name", "unit", "scope", "scope_version", "scope_attributes", "resource",
+    "attributes", "service_name", "resource_schema_url", "scope_schema_url", "temporality", "monotonic"];
+  const identity = identityColumns.join(", ");
   const source = `SELECT TimeUnix AS t, StartTimeUnix AS started,
     MetricName AS name, MetricUnit AS unit, ScopeName AS scope, ScopeVersion AS scope_version,
     mapSort(ScopeAttributes) AS scope_attributes, mapSort(ResourceAttributes) AS resource,
@@ -63,18 +70,14 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames } =
   const distinctSource = source.replace("SELECT ", "SELECT DISTINCT ");
   const window = `${distinctSource}
     AND TimeUnix >= {signalFrom:DateTime} AND TimeUnix < {signalTo:DateTime}`;
-  // Non-DELTA points already exceeding the shared result guard cannot become a
-  // usable diagnostic by adding baselines or aggregated DELTA rows. Return one
-  // explicit limit marker before scanning history or transferring their payloads.
-  const limitProbe = `SELECT count() AS points FROM (
-    SELECT 1 FROM window_points ${type === "gauge" ? "" : "WHERE temporality != 1"} LIMIT 50001)`;
-  const withinLimit = "(SELECT points FROM limit_probe) <= 50000";
-  const limitMarker = `${raw}, toUInt8(1) AS result_limited FROM window_points
-    WHERE ${type === "gauge" ? "" : "temporality != 1 AND "}NOT (${withinLimit}) LIMIT 1`;
-  if (type === "gauge") return { sql: `WITH window_points AS (${window}), limit_probe AS (${limitProbe})
+  // Gauge points already exceeding the shared result guard return one explicit
+  // limit marker before transferring their payloads.
+  if (type === "gauge") return { sql: `WITH window_points AS (${window}), limit_probe AS (
+      SELECT count() AS points FROM (SELECT 1 FROM window_points LIMIT 50001))
     SELECT * FROM (
-      ${raw}, toUInt8(0) AS result_limited FROM window_points WHERE ${withinLimit}
-      UNION ALL (${limitMarker})
+      ${raw}, toUInt8(0) AS result_limited FROM window_points WHERE (SELECT points FROM limit_probe) <= 50000
+      UNION ALL (${raw}, toUInt8(1) AS result_limited FROM window_points
+        WHERE (SELECT points FROM limit_probe) > 50000 LIMIT 1)
     ) ORDER BY timestamp LIMIT 50001`, params: queryParams };
   const valid = `bitAnd(sample_flags, 1) = 0 AND ${histogram
     ? "sample_count <= 9007199254740991 AND isFinite(sample_sum) AND sample_sum >= 0"
@@ -82,39 +85,90 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames } =
   // Exporter 0.119 collapses absent optional Sum/Min/Max to zero. A positive
   // source value proves presence; zero does not (except the sum of zero samples).
   const extremes = "isFinite(sample_min) AND isFinite(sample_max) AND sample_min > 0 AND sample_max >= sample_min";
+  // Codex re-exports every cumulative series each interval (~120M points in two days of
+  // 2026-11 production for about 20k series), so raw points cannot cross the result guard.
+  // Each cumulative series folds in SQL to its latest in-window point and its latest point
+  // in the three-day baseline lookback. The fold's difference of the two equals the sum of
+  // its consecutive differences, provided no step decreases. SQL therefore carries
+  // every check the fold made on interior points as invalid_samples on the latest point:
+  // invalid samples, a decrease (a consecutive pair in timestamp order whose value, or a
+  // histogram's count or sum, falls; or the first point below the baseline) and a
+  // conflicting retry at either endpoint (the maximum and minimum flags/count/sum/min/max
+  // or value at that timestamp differ; histogram buckets are not compared). The in-window
+  // values are sorted per series before comparison, so the result does not depend on part
+  // or thread read order. An interior conflict that leaves the series monotonic cannot
+  // change the difference and is not reported. `points` counts
+  // stored in-window data points, including identical redeliveries. A scan budget, not the
+  // point count, bounds the work; DELTA points keep their exact deduplication.
+  const payload = histogram
+    ? "tuple(sample_flags, toFloat64(sample_count), sample_sum, sample_min, sample_max)"
+    : "tuple(sample_flags, sample_value)";
+  const scan = `TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalTo:DateTime}`;
+  const withinScan = "(SELECT scanned FROM scan_probe) <= {signalScanLimit:UInt64}";
+  // `seq` holds the in-window (ts, value[, sum]) tuples sorted by timestamp, then value.
+  const fall = `arrayExists((x, y) -> y.2 < x.2${histogram ? " OR y.3 < x.3" : ""},
+      arrayPopBack(seq), arrayPopFront(seq))`;
+  const belowBase = (index) => `has_base AND first_lo.2.${index} < base_hi.2.${index}`;
+  const decreasing = `temporality = 2 AND ${histogram ? "1" : "monotonic"} AND (${fall}
+      OR ${belowBase(2)}${histogram ? ` OR ${belowBase(3)}` : ""})`;
+  // NaN never equals itself, so a lone export with a NaN optional extremum would count as a
+  // conflicting retry and withhold its count and sum; compare the text form instead, where
+  // NaN equals NaN. The fold still treats non-finite extrema as unknown.
+  const differ = (a, b) => `toString(${a}) != toString(${b})`;
+  const point = "if(baseline_row, base_hi, last_hi)";
+  const compacted = `SELECT toString(fromUnixTimestamp64Nano(${point}.1, 'UTC')) AS timestamp,
+    toString(toTimeZone(started, 'UTC')) AS start, '${type}' AS type, ${identity},
+    ${point}.2.1 AS flags, ${histogram
+      ? `${point}.2.2 AS count, ${point}.2.3 AS sum, ${point}.2.4 AS min, ${point}.2.5 AS max, '' AS distribution`
+      : `${point}.2.2 AS value`},
+    if(baseline_row, toUInt64(1), window_points) AS points,
+    if(baseline_row, toUInt64(0), invalid_points + toUInt64(${decreasing})
+      + toUInt64(${differ("last_hi.2", "last_lo.2")} OR has_base AND ${differ("base_hi.2", "base_lo.2")})) AS invalid_samples,
+    toUInt64(0) AS extremes_missing,
+    ${histogram ? `if(baseline_row, toUInt64(${point}.2.2 > 0 AND ${point}.2.3 = 0), sum_ambiguous_points)` : "toUInt64(0)"} AS sum_ambiguous,
+    toUInt8(0) AS result_limited
+    FROM cumulative_series ARRAY JOIN if(has_base, [0, 1], [0]) AS baseline_row`;
+  const scanMarker = `${raw}, toUInt8(1) AS result_limited FROM (${source}
+      AND TimeUnix >= {signalFrom:DateTime} AND TimeUnix < {signalTo:DateTime})
+    WHERE NOT (${withinScan}) LIMIT 1`;
   // DELTA starts advance each export. Deduplicate full points before combining
   // their intervals; retain every resource/scope/label identity, but not each start.
-  // Cumulative baselines retain the start boundary and ALL ties at the latest
-  // timestamp so a conflicting retry cannot become an arbitrary prior value.
-  // Find that timestamp with one state per series before DISTINCT reads payloads.
-  // A window over every prior export retains and sorts the three-day history.
-  return { sql: `WITH window_points AS (${window}), limit_probe AS (${limitProbe}),
-    baseline_times AS (
-      SELECT ${identity}, started, max(t) AS latest FROM (
-        ${source}
-        AND AggregationTemporality = 2
-        AND ${withinLimit}
-        AND TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalFrom:DateTime}
-        AND (${identity}, started) IN (
-          SELECT ${identity}, started FROM window_points WHERE temporality = 2)
-      ) GROUP BY ${identity}, started
+  return { sql: `WITH scan_probe AS (
+      SELECT count() AS scanned FROM claude_code.codex_metrics_${type}
+      WHERE startsWith(MetricName, 'codex.')
+        ${metricNames ? "AND MetricName IN {signalMetricNames:Array(String)}" : ""} AND ${scan}
     ),
-    baselines AS (
-      ${distinctSource}
-      AND AggregationTemporality = 2
-      AND ${withinLimit}
-      AND TimeUnix >= {signalFrom:DateTime} - INTERVAL 3 DAY AND TimeUnix < {signalFrom:DateTime}
-      AND (${identity}, started, t) IN (
-        SELECT ${identity}, started, latest FROM baseline_times)
+    cumulative_series AS (
+      SELECT ${identityColumns.map((c) => `any(${c}) AS ${c}`).join(", ")},
+        any(started) AS started,
+        countIf(w) AS window_points,
+        maxIf(tuple(ts, p), w) AS last_hi, minIf(tuple(-ts, p), w) AS last_lo,
+        minIf(tuple(ts, p), w) AS first_lo,
+        maxIf(tuple(ts, p), NOT w) AS base_hi, minIf(tuple(-ts, p), NOT w) AS base_lo,
+        temporality = 2 AND countIf(NOT w) > 0 AS has_base,
+        countIf(w AND NOT point_valid) AS invalid_points,
+        arraySort(groupArrayIf(tuple(ts, p.2${histogram ? ", p.3" : ""}), w)) AS seq${histogram ? `,
+        countIf(w AND sample_count > 0 AND sample_sum = 0) AS sum_ambiguous_points` : ""}
+      FROM (
+        SELECT *, toUnixTimestamp64Nano(t) AS ts, t >= {signalFrom:DateTime} AS w, ${payload} AS p,
+          -- Per point: the outer any() aliases shadow identity columns inside aggregates.
+          -- A cumulative point stamped before its own start is malformed; the fold rejected it.
+          (${valid}) AND (temporality != 2 OR t >= started) AS point_valid,
+          cityHash64(${identity}, started) AS series_key
+        FROM (${source} AND AggregationTemporality != 1 AND ${scan} AND ${withinScan})
+      )
+      -- A 64-bit key over the full identity groups far faster than the maps themselves.
+      GROUP BY series_key
+      HAVING window_points > 0
     ),
     delta_points AS (
       SELECT *, (${valid}) AND variants = 1 AS valid FROM (
         SELECT *, count() OVER (PARTITION BY ${identity}, started, t) AS variants
-        FROM window_points WHERE temporality = 1 AND ${withinLimit})
+        FROM (${distinctSource} AND AggregationTemporality = 1
+          AND TimeUnix >= {signalFrom:DateTime} AND TimeUnix < {signalTo:DateTime} AND ${withinScan}))
     )
     SELECT * FROM (
-      ${raw}, toUInt8(0) AS result_limited FROM window_points WHERE temporality != 1 AND ${withinLimit}
-      UNION ALL ${raw}, toUInt8(0) AS result_limited FROM baselines
+      ${compacted}
       UNION ALL
       SELECT toString(toTimeZone(max(t), 'UTC')) AS timestamp,
         toString(toTimeZone(min(started), 'UTC')) AS start, '${type}' AS type, ${identity},
@@ -128,8 +182,8 @@ export function buildMetricQuery(type, from, to, filters = {}, { metricNames } =
         ${histogram ? "countIf(valid AND sample_count > 0 AND sample_sum = 0)" : "toUInt64(0)"} AS sum_ambiguous,
         toUInt8(0) AS result_limited
       FROM delta_points GROUP BY ${identity}
-      UNION ALL (${limitMarker})
-    ) ORDER BY timestamp LIMIT 50001`, params: queryParams };
+      UNION ALL (${scanMarker})
+    ) ORDER BY timestamp LIMIT 50001`, params: { ...queryParams, signalScanLimit: scanLimit } };
 }
 
 const monotonic = (row) => ![false, 0, "0", "false"].includes(row.monotonic);

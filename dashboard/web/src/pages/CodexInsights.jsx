@@ -50,16 +50,19 @@ const SPANS = localize([text("name", "Span"), numeric("count", "건수"), numeri
 const TRACE_DETAIL = localize([text("name", "작업"), text("span_id", "Span ID"), text("parent_span_id", "부모 Span ID"),
   text("model", "모델"), text("tool_name", "도구"), text("effort", "Effort"),
   { key: "start_time", label: "시작 (브라우저 시간)", render: formatClientTimestamp, toText: formatClientTimestamp }, numeric("duration_ms", "시간 (ms)"), text("status", "상태")]);
+const metricRows = (rows, name, tokenType) => (rows || []).filter((r) => r.name === name
+  && (!tokenType || r.dimensions?.token_type === tokenType));
+const knownStats = (r) => r.count != null && r.sum != null;
+// Mean over the groups whose count and sum are known. Codex cumulative series without a
+// baseline or with a regression withhold their statistics; partialHint discloses them.
 function metricMean(rows, name, tokenType) {
-  const selected = (rows || []).filter((r) => r.name === name
-    && (!tokenType || r.dimensions?.token_type === tokenType));
-  if (!selected.length || selected.some((r) => r.count == null || r.sum == null)) return null;
-  const count = selected.reduce((n, r) => n + r.count, 0);
-  return count > 0 ? selected.reduce((n, r) => n + r.sum, 0) / count : null;
+  const known = metricRows(rows, name, tokenType).filter(knownStats);
+  const count = known.reduce((n, r) => n + r.count, 0);
+  return count > 0 ? known.reduce((n, r) => n + r.sum, 0) / count : null;
 }
 const milliseconds = (value) => value == null ? "—" : `${formatObserved(value)} ms`;
-const partialHint = (rows, name) => rows?.some((r) => r.name === name && r.partial)
-  ? translate("m671de31ae493") : undefined;
+const partialHint = (rows, name, tokenType) => metricRows(rows, name, tokenType)
+  .some((r) => r.partial || !knownStats(r)) ? translate("m671de31ae493") : undefined;
 
 export default function CodexInsights(props) {
   const _locale = useLocale();
@@ -147,7 +150,7 @@ function CodexInsightsBody({ api, enabled = true, sections }) {
               <StatTile label={translate("me36fde2306f5")} value={formatObserved(metricMean(data?.metrics, "codex.turn.tool.call"))}
                 hint={partialHint(data?.metrics, "codex.turn.tool.call")} />
               <StatTile label={translate("mfe1bf2436492")} value={formatObserved(metricMean(data?.metrics, "codex.turn.token_usage", "total"))}
-                hint={partialHint(data?.metrics, "codex.turn.token_usage")}
+                hint={partialHint(data?.metrics, "codex.turn.token_usage", "total")}
                 help={translate("m23ed08363d8d")} />
             </div>
             <DataTable title={translate("m2939628cbdde")} subtitle={translate("m2aba4071bf3f")}
