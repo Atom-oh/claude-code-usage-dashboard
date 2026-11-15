@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { validateTaskQuery, claudeTaskListSql, claudeCostSql, foldClaudeTasks,
   claudeCallCost, userTasks, TASK_LIMIT, codexTurnSql, codexCompletionSql, attachCompletions,
   sortTasks, taskCacheKey, CODEX_TURN_LIMIT, linkCompletions, isUniqueTurnId, COST_CANDIDATES,
-  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES } from "./taskTraces.js";
+  workflowPairs, WORKFLOW_RUN_ID, claudeCostRows, COST_ID_PARAM_BYTES, codexRetries, namesTurnOnTools } from "./taskTraces.js";
 import { computeCost } from "./pricing.js";
 import { GROUP_EXPR } from "./grouping.js";
 import { DEFAULT_CODEX_PRICING, priceCodexUsage } from "./codexPricing.js";
@@ -1327,4 +1327,38 @@ test("the Claude detail carries the session environment and never the raw sessio
   assert.ok(!JSON.stringify(out).includes("sess-secret-1"));
   const codex = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, base, DEFAULT_CODEX_PRICING);
   assert.equal(codex.environment, null);
+});
+
+test("codex turn SQL counts tries and compactions per span id", () => {
+  const { sql, params } = codexTurnSql(from, to, validateTaskQuery({ userExact: "a" }, both));
+  assert.match(sql, /uniqIf\(SpanId, SpanName = 'try_run_sampling_request'\) AS sampling_tries/);
+  assert.match(sql, /uniqIf\(SpanId, SpanName = 'codex\.compaction'\) AS compactions/);
+  assert.match(sql, /anyIf\(span_version, span_version != ''\) AS app_version/);
+  assert.match(sql, /ResourceAttributes\['service\.version'\] AS span_version/);
+  assert.ok(!Object.values(params).some(v => String(v).includes("try_run_sampling_request")));
+});
+
+test("codex retries are tries minus runs and unknown without runs", () => {
+  assert.equal(codexRetries({ legacy_calls: "3", sampling_tries: "5" }), 2);
+  assert.equal(codexRetries({ legacy_calls: "3", sampling_tries: "3" }), 0);
+  assert.equal(codexRetries({ legacy_calls: "0", sampling_tries: "5" }), null);
+  assert.equal(codexRetries({ legacy_calls: "3", sampling_tries: "2" }), null);
+  assert.equal(codexRetries({ legacy_calls: "3" }), null);
+});
+
+test("namesTurnOnTools reads versions numerically", () => {
+  for (const v of ["0.166.0", "0.169.0", "0.166.0-alpha.5.1", "1.0.0"]) assert.equal(namesTurnOnTools(v), true, v);
+  for (const v of ["0.165.0", "0.99.9", "", null, undefined]) assert.equal(namesTurnOnTools(v), false, String(v));
+});
+
+test("codex detail reports retries and compactions from the turn row", () => {
+  const run = (o) => foldTaskDetail({ client: "codex", turn: turn({ legacy_calls: "3", sampling_tries: "5",
+    compactions: "2", ...o }), linked: [] }, [], []);
+  const ok = run({});
+  assert.equal(ruleMap(ok).retries, 2);
+  assert.equal(ok.context.compactions, 2);
+  const none = run({ legacy_calls: "0" });
+  assert.ok(!("retries" in ruleMap(none)));
+  assert.equal(none.context.compactions, null);
+  assert.equal(run({ compactions: "0" }).context.compactions, 0);
 });

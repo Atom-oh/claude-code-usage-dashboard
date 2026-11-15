@@ -11,7 +11,7 @@ import { SPAWN_SPANS, agentCount, codexAgents } from "./codexAgents.js";
 import { codexSkillsSql, foldCodexSkills, foldCodexTools } from "./codexActivity.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
-  foldCodexTask, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
+  foldCodexTask, codexRetries, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
   llm: ["model", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens", "ttft_ms",
@@ -556,12 +556,13 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
   const lanes = [{ id: "main", label: "main", kind: "main", spawned_by: null, llm_calls: task.llm_calls,
     cost_usd: task.cost_usd, cost_partial: task.cost_partial }];
   // Codex totals come from the turn aggregate and linked completions, not from the bounded
-  // span list, so truncation does not withhold them. Codex has no retry or permission-wait
-  // evidence: those rules are omitted.
-  // Codex sends no compaction event this detail reads: compactions are unavailable (null).
-  const context = { ...contextSeries(calls, t0, limited), compactions: null, limits: foldLimits(limitRows) };
+  // span list, so truncation does not withhold them. Retries (tries minus runs) and compactions
+  // come from the same turn row as the list and stay null for a turn without run spans. Codex
+  // has no permission-wait evidence: that rule is omitted.
+  const compactions = count(turn.legacy_calls) > 0 ? count(turn.compactions) : null;
+  const context = { ...contextSeries(calls, t0, limited), compactions, limits: foldLimits(limitRows) };
   return { task, lanes, spans, truncated: total > rows.length, span_total: total,
-    why: whyRules({ task, calls, lanes, retries: null, waitMs: null }), context };
+    why: whyRules({ task, calls, lanes, retries: codexRetries(turn), waitMs: null }), context };
 }
 
 // Pure fold. Claude: task = { client: "claude", ...interaction header row }, evidence = cost
