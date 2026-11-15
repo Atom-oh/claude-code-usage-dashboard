@@ -1,0 +1,104 @@
+{
+  "source_revision": "20194a75d359f5077843c7b93e2902eb4b1ed30a",
+  "fixture_sha256": "2d65a32f71e58f2ded3adfae193a6eb958f5ce6b6b0934dcf7271f78f759a197",
+  "privacy": "Synthetic directory values and counts; no live APIs or account data.",
+  "checks": [
+    {
+      "locale": "en",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "zh-CN",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "ja",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "es",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "ko",
+      "width": 1440,
+      "errors": 0
+    },
+    {
+      "locale": "en",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "zh-CN",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "ja",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "es",
+      "width": 390,
+      "errors": 0
+    },
+    {
+      "locale": "ko",
+      "width": 390,
+      "errors": 0
+    }
+  ],
+  "images": [
+    {
+      "name": "guide-en-settings.png",
+      "locale": "en",
+      "bytes": 365247,
+      "sha256": "e5f6c4308518f4f2e08ca522cda17cb5270256433f8981a1c47a043800ecbc2f",
+      "width": 2880,
+      "height": 2200,
+      "pixel_scale": 2
+    },
+    {
+      "name": "guide-zh-CN-settings.png",
+      "locale": "zh-CN",
+      "bytes": 367513,
+      "sha256": "78e48841d2470869f8da3a1e3c6b1eeb5830f1511699bf72ec4279389aba15fc",
+      "width": 2880,
+      "height": 2200,
+      "pixel_scale": 2
+    },
+    {
+      "name": "guide-ja-settings.png",
+      "locale": "ja",
+      "bytes": 373838,
+      "sha256": "fde66f1a0379a688d0945f5c2a74e13dad43070d2bb1b2c9d37a22db636d4e05",
+      "width": 2880,
+      "height": 2200,
+      "pixel_scale": 2
+    },
+    {
+      "name": "guide-es-settings.png",
+      "locale": "es",
+      "bytes": 410753,
+      "sha256": "dadb46e4f11c397ee7cf31e5f69efeb64882d6bdc26d414bf336e27741262801",
+      "width": 2880,
+      "height": 2200,
+      "pixel_scale": 2
+    },
+    {
+      "name": "guide-ko-settings.png",
+      "locale": "ko",
+      "bytes": 310905,
+      "sha256": "786bdbb88d08ac5a5c34724e8ca09ae7aeb00b7d4928714aabf8634d58c8ff54",
+      "width": 2880,
+      "height": 2200,
+      "pixel_scale": 2
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # Visual guide assets
 
-These captures use current React components with fixed synthetic responses, Korean
-UI labels, reserved `example.test` identities and fictional prices. The independent
+These captures use current React components with fixed synthetic responses, the
+selected application language, reserved `example.test` identities and fictional prices. The independent
 fixtures preserve cost/token subtotals, exact-user filtering, task cost bases,
 missing attempts and the cost-equation/decomposition relationship. They are not a
 production-data, authentication or vendor-pricing test.
@@ -9,15 +9,20 @@ production-data, authentication or vendor-pricing test.
 Start Vite on loopback port 4178 from `dashboard/web`, then run from the repository:
 
 ```bash
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium node scripts/docs-capture/capture.mjs
-node scripts/docs-capture/capture.mjs --only tools,mcp
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium node scripts/docs-capture/capture.mjs --locale en
+node scripts/docs-capture/capture.mjs --locale ja --only tools,mcp
+node scripts/docs-capture/settings.mjs --localized
 ```
 
-The second command uses Playwright's installed Chromium unless the environment
-variable is set. `evidence.json` records source/fixture hashes, dimensions, errors
-and image checks. Capture requests outside the loopback origin are blocked.
-Generated images belong to `site/assets/img/guide-*.png`. The current lock also
-includes companion captures for more detailed views.
+The supported locale codes are `ko`, `en`, `ja`, `zh-CN` and `es`. Commands use
+Playwright's installed Chromium unless the environment variable is set.
+`DOCS_CAPTURE_SOURCE_REVISION` may name the full source commit; capture refuses
+it if the checked-out web source differs.
+`localized-evidence-<locale>.json` and `settings-localized-evidence.json` record
+source/fixture hashes, dimensions, errors and image checks. Capture requests
+outside the loopback origin are blocked. Generated images belong to
+`site/assets/img/guide-<locale>-*.png`. The original Korean capture and its
+historical `evidence.json` remain available without `--locale`.
 
 `system.architecture.json` defines the logical device path and authenticated read
 path. Archify 2.16 validated source evidence and delivered the interactive HTML

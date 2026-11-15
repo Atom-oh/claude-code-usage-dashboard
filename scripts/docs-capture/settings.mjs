@@ -10,8 +10,12 @@ import { apiResponse } from "./fixtures.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(new URL("../../dashboard/web/package.json", import.meta.url));
 const { chromium } = require("playwright");
-const base = "http://127.0.0.1:4185";
-const sourceRevision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const localized = process.argv.includes("--localized");
+const base = localized ? "http://127.0.0.1:4178" : "http://127.0.0.1:4185";
+const sourceRevision = process.env.DOCS_CAPTURE_SOURCE_REVISION
+  || execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+assert.match(sourceRevision, /^[0-9a-f]{40}$/, "Capture source revision must be a full commit hash");
+execFileSync("git", ["diff", "--quiet", sourceRevision, "--", "dashboard/web/src"], { cwd: root });
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const settings = {
   available: true, reason: null, poolId: "ap-northeast-2_Example",
@@ -30,7 +34,7 @@ const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || chromium.executablePath(),
   headless: true, args: ["--no-sandbox"],
 });
-const errors = [], checks = [];
+const errors = [], checks = [], images = [];
 let image;
 try {
   for (const width of [1440, 390]) for (const locale of ["en", "zh-CN", "ja", "es", "ko"]) {
@@ -51,7 +55,11 @@ try {
         return route.abort();
       }
       let data;
-      if (url.pathname === "/api/settings/teams") data = settings;
+      if (url.pathname === "/api/settings/display") data = {
+        available: true, reason: null,
+        teamMask: { deployment: true, override: null, effective: true }, version: null,
+      };
+      else if (url.pathname === "/api/settings/teams") data = settings;
       else if (url.pathname === "/api/settings/teams/preview") data = preview;
       else {
         data = apiResponse(url);
@@ -69,7 +77,7 @@ try {
       throw error;
     });
     await page.evaluate(() => document.fonts.ready);
-    assert.equal(await page.locator('input[type="radio"]').count(), 2);
+    assert.equal(await page.locator('input[type="radio"]').count(), 5);
     assert.equal(await page.getByRole("alert").count(), 0);
     const dimensions = await page.evaluate(() => ({ viewport: innerWidth, content: document.documentElement.scrollWidth }));
     assert(dimensions.content <= dimensions.viewport + 1, `Overflow at ${locale}/${width}`);
@@ -82,23 +90,25 @@ try {
         assert(!/[가-힣]/.test(menu), `Korean Settings navigation remains in ${locale}`);
       }
     }
-    if (locale === "en" && width === 1440) {
-      const target = new URL("../../site/assets/img/guide-settings.png", import.meta.url);
+    if (width === 1440 && (localized || locale === "en")) {
+      const name = localized ? `guide-${locale}-settings.png` : "guide-settings.png";
+      const target = new URL(`../../site/assets/img/${name}`, import.meta.url);
       await page.screenshot({ path: fileURLToPath(target), animations: "disabled" });
       const bytes = await readFile(target);
-      image = { name: "guide-settings.png", bytes: bytes.length, sha256: sha(bytes),
+      image = { name, locale, bytes: bytes.length, sha256: sha(bytes),
         width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), pixel_scale: 2 };
+      images.push(image);
     }
     checks.push({ locale, width, errors: 0 });
     await context.close();
   }
   assert.deepEqual(errors, []);
-  await writeFile(new URL("settings-evidence.json", import.meta.url), JSON.stringify({
+  await writeFile(new URL(localized ? "settings-localized-evidence.json" : "settings-evidence.json", import.meta.url), JSON.stringify({
     source_revision: sourceRevision, fixture_sha256: sha(await readFile(new URL(import.meta.url))),
     privacy: "Synthetic directory values and counts; no live APIs or account data.",
-    checks, image,
+    checks, ...(localized ? { images } : { image }),
   }, null, 2) + "\n");
-  console.log(JSON.stringify({ settings_checks: checks.length, image, errors }));
+  console.log(JSON.stringify({ settings_checks: checks.length, ...(localized ? { images } : { image }), errors }));
 } finally {
   await browser.close();
 }

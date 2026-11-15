@@ -52,7 +52,8 @@
       "model": "openai.gpt-6-luna",
       "bytes": 23045,
       "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
-      "output_sha256": "030b31b2a2fdf70843653d8b8bb8881157945b0ee5718e417269223ddb61b91c"
+      "output_sha256": "030b31b2a2fdf70843653d8b8bb8881157945b0ee5718e417269223ddb61b91c",
+      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
     },
     {
       "locale": "ja",
@@ -124,9 +125,9 @@
       "path": "ko/index.html",
       "status": "TRANSLATED",
       "model": "openai.gpt-6-luna",
-      "bytes": 20945,
-      "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
-      "output_sha256": "68b3c79cc7e084aab73840129475176276d1a0d251fa14dabf850e541cc36f8b"
+      "bytes": 21077,
+      "source_sha256": "c1dec140a163c94086fcbe5d5c6add0df16bd02266f86fec6b1c5a5840e7948a",
+      "output_sha256": "74aee769ab56e184ebb89f46d8c17d33ed3d5dde7ca3dd06d954c6a84e4e9125"
     },
     {
       "locale": "ko",
@@ -200,7 +201,8 @@
       "model": "openai.gpt-6-luna",
       "bytes": 18217,
       "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
-      "output_sha256": "fe0c43bbb9a1fc45b4badfd4e9b9b661f95d5ba8de2278491967f056c5e5a398"
+      "output_sha256": "fe0c43bbb9a1fc45b4badfd4e9b9b661f95d5ba8de2278491967f056c5e5a398",
+      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
     },
     {
       "locale": "zh-CN",
@@ -234,9 +236,9 @@
       "path": "ko/user-guide.html",
       "model": "openai.gpt-6-luna",
       "status": "TRANSLATED",
-      "bytes": 86196,
-      "output_sha256": "a7c3496aa2a0a9c11b45f56781c116b70d7863f271fd376cf9dff1f583ba8558",
-      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
+      "bytes": 86701,
+      "output_sha256": "311394cc5188d1ca313ffbc8394d12a216cacd6cd2431d5cf7b139eeaa2a76ea",
+      "source_sha256": "dff71dac70db47cc2002c9c135327d3980c1350ee0170842e5d04f6de777a862"
     },
     {
       "locale": "ja",
@@ -246,7 +248,8 @@
       "status": "TRANSLATED",
       "bytes": 97087,
       "output_sha256": "0bbf37e2f46c8aa8b93ac6a7ab755cbff468db151bb74fc52dc548881b28559e",
-      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
+      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2",
+      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
     },
     {
       "locale": "zh-CN",
@@ -256,7 +259,8 @@
       "status": "TRANSLATED",
       "bytes": 70591,
       "output_sha256": "2cf809b7559b16ec73fb34f1a9b31b370a702a2415a090b52c36c7ab396a3165",
-      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
+      "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2",
+      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
     },
     {
       "locale": "es",
@@ -266,7 +270,8 @@
       "model": "openai.gpt-6-luna",
       "bytes": 20666,
       "source_sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0",
-      "output_sha256": "6f4411bf45149d01df934710a6d1f16de5d0049e7421e6a4619fdfe5265f3c93"
+      "output_sha256": "6f4411bf45149d01df934710a6d1f16de5d0049e7421e6a4619fdfe5265f3c93",
+      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
     },
     {
       "locale": "es",
@@ -276,7 +281,8 @@
       "model": "openai.gpt-6-luna",
       "bytes": 83809,
       "source_sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2",
-      "output_sha256": "7c4154a1e059e7c1c2d1ebbd5c595d256b86f9651cdd4e170e129e72359d8f79"
+      "output_sha256": "7c4154a1e059e7c1c2d1ebbd5c595d256b86f9651cdd4e170e129e72359d8f79",
+      "source_status": "Previous English source; localized screenshots and matching guide copy follow in the second review unit."
     },
     {
       "locale": "es",
@@ -402,7 +408,7 @@
     },
     "index": {
       "path": "index.html",
-      "sha256": "0ff739413050c19007ef6d53136e32ce7e5846320e5852168fd3bcee0eee73c0"
+      "sha256": "c1dec140a163c94086fcbe5d5c6add0df16bd02266f86fec6b1c5a5840e7948a"
     },
     "installation": {
       "path": "installation.html",
@@ -414,7 +420,7 @@
     },
     "user-guide": {
       "path": "user-guide.html",
-      "sha256": "14379e0570fea49487c40ebe7aa5fb20d97814eee758d3051f9e699079e0eac2"
+      "sha256": "dff71dac70db47cc2002c9c135327d3980c1350ee0170842e5d04f6de777a862"
     }
   },
   "last_updated": "2026-11-14",
@@ -1007,5 +1013,50 @@
       ],
       "host_integration": "Aligned literal Settings references in the Japanese and Spanish introductory paragraphs with the delegated native menu names."
     }
+  },
+  "localized_guide_captures_2026_11_15": {
+    "date": "2026-11-15",
+    "model": "openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "region": "us-east-1",
+    "scope": "Updated guide screenshot caption, introduction, and time-picker alt text.",
+    "source_sha256": "bccf9874894a26249bbf8575000724ea024d5e276dca312f0b02582ef8de1c03",
+    "response_sha256": "b09e42a39cecc6b3bf5e8619c79616516d9d32ed87502fddcf4736d98296fa70",
+    "usage": {
+      "inputTokens": 113,
+      "outputTokens": 470,
+      "totalTokens": 583,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "host_corrections": [
+      "Used the existing dashboard catalogs for exact on-screen control names, including parameterized labels.",
+      "Used formal Spanish phrasing for the screenshot caption and time-picker description.",
+      "Replaced language-specific screenshot paths and intrinsic dimensions.",
+      "The first review unit links the English and Korean guides; remaining locales follow separately."
+    ]
+  },
+  "calendar_guide_instruction_2026_11_15": {
+    "date": "2026-11-15",
+    "requested_model": "openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "region": "us-east-1",
+    "scope": "Guide instructions for the new calendar and per-field completion.",
+    "source_sha256": "b93244aa52e9f1e41298473f079e3feb0b49d03bbe8a58df6c16b4c23aeb544c",
+    "response_sha256": "a9c6c0df723fbcb87c8d3a185c828284a545a7949092edf7f5d978587dfea245",
+    "usage": {
+      "inputTokens": 100,
+      "outputTokens": 486,
+      "totalTokens": 586,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "host_corrections": [
+      "The first review unit applies English and Korean instructions; remaining locales follow separately."
+    ]
   }
 }

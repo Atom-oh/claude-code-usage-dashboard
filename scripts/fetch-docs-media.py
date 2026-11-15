@@ -12,6 +12,13 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = "video/docs-demo/media.lock.json"
 REPOSITORY = "Atom-oh/claude-code-usage-dashboard"
+LOCALIZED_GUIDE_LOCALES = ("ko", "en", "ja", "zh-CN", "es")
+LOCALIZED_GUIDE_VIEWS = (
+    "analytics", "collector", "cost", "cost-summary", "economics", "executive",
+    "installation", "mcp", "overview", "plugins", "reliability", "settings",
+    "skills", "task-call", "task-context", "task-list", "task-trace", "time-range",
+    "tools", "trends", "unit-cost", "usage", "user-detail", "users",
+)
 PATHS = frozenset({
     "video/product-tour/audio/welcome.mp3",
     "video/product-tour/audio/architecture.mp3",
@@ -105,7 +112,11 @@ PATHS = frozenset({
     "video/docs-demo/remotion/public/model.mp3",
     "video/docs-demo/remotion/public/hosting.mp3",
     "video/docs-demo/remotion/public/background.wav",
-})
+}) | frozenset(
+    f"site/assets/img/guide-{locale}-{view}.png"
+    for locale in LOCALIZED_GUIDE_LOCALES
+    for view in LOCALIZED_GUIDE_VIEWS
+)
 MAX_FILE_BYTES = 8_000_000
 # The detailed nine-minute tour has two explicitly bounded delivery files.
 # All screenshots, fonts, speech clips and older media retain the 8 MB limit.

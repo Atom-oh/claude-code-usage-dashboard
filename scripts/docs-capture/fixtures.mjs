@@ -256,6 +256,16 @@ export function apiResponse(url) {
     case "/api/clients/overview":
     case "/api/clients/activity": return overview(url);
     case "/api/clients/productivity": return { by_client: [] };
+    case "/api/clients/skills": {
+      const range = bounds(url);
+      return { clients: ["claude"], skill_limit: 200, effective_range: { ...range, requested_to: range.to },
+        by_client: [{ client: "claude", skills_limited: false,
+          skills: [
+            { skill: "synthetic:docs-check", calls: 24, explicit: 24, automatic: 0, nested: 0, users: 3, sessions: 24 },
+            { skill: "synthetic:trace-review", calls: 16, explicit: 0, automatic: 16, nested: 0, users: 3, sessions: 16 },
+            { skill: "synthetic:release-notes", calls: 8, explicit: 0, automatic: 0, nested: 8, users: 3, sessions: 8 },
+          ], totals: { skills: 3, calls: 48, explicit: 24, automatic: 16, nested: 8 } }] };
+    }
     case "/api/clients/token-economics": return economics(url);
     case "/api/clients/claude-effort": {
       // The computed fallback call is excluded by the real endpoint's contract.
@@ -286,7 +296,7 @@ export function apiResponse(url) {
         lastSeenAt: "2026-11-14T11:58:00Z", revokedAt: null, renewedAt: null, reuseDetectedAt: null },
     ], nextCursor: null };
     case "/api/installation": return { state: "attention", checkedAt: "2026-11-14T12:00:00Z",
-      release: { version: "1.8.0-synthetic", revision: "synthetic-guide" },
+      release: { version: "1.11.0-synthetic", revision: "synthetic-guide" },
       authentication: { state: "oidc_configured" }, database: { state: "reachable", readonly: "confirmed",
         readonlyCheckedAt: "2026-11-14T11:58:00Z" },
       clients: [{ client: "claude", state: "receiving", latest: "2026-11-14T11:58:00Z" },

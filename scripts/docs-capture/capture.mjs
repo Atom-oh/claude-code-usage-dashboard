@@ -8,20 +8,30 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { apiResponse, from, to, task, validateFixtures } from "./fixtures.mjs";
+import { label, message, supportedLocales } from "./locale-labels.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(path.join(root, "dashboard/web/package.json"));
 const { chromium } = require("playwright");
-const args = process.argv.slice(2), onlyAt = args.indexOf("--only");
+const args = process.argv.slice(2), onlyAt = args.indexOf("--only"), localeAt = args.indexOf("--locale");
 assert.ok(onlyAt < 0 || args[onlyAt + 1], "--only needs comma-separated capture names");
+assert.ok(localeAt < 0 || args[localeAt + 1], "--locale needs a supported locale");
+const locale = localeAt < 0 ? "ko" : args[localeAt + 1];
+assert.ok(supportedLocales.includes(locale), `Unsupported locale: ${locale}`);
+const localized = localeAt >= 0;
+const localeTag = { ko: "ko-KR", en: "en-US", ja: "ja-JP", "zh-CN": "zh-CN", es: "es-ES" }[locale];
+const prefix = localized ? `guide-${locale}-` : "guide-";
 const only = onlyAt < 0 ? null : new Set(args[onlyAt + 1].split(",").map((n) => n.replace(/^guide-/, "").replace(/\.png$/, "")));
 const base = "http://127.0.0.1:4178";
 const output = path.join(root, "site/assets/img");
-const evidencePath = new URL("evidence.json", import.meta.url);
+const evidencePath = new URL(localized ? `localized-evidence-${locale}.json` : "evidence.json", import.meta.url);
 const viewport = { width: 1440, height: 1000 }, scale = 2;
 const fixedTime = "2026-11-14T12:00:00.000Z";
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || chromium.executablePath();
-const sourceRevision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const sourceRevision = process.env.DOCS_CAPTURE_SOURCE_REVISION
+  || execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+assert.match(sourceRevision, /^[0-9a-f]{40}$/, "Capture source revision must be a full commit hash");
+execFileSync("git", ["diff", "--quiet", sourceRevision, "--", "dashboard/web/src"], { cwd: root });
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const sourceFiles = (await readdir(path.join(root, "dashboard/web/src"), { recursive: true, withFileTypes: true }))
   .filter((d) => d.isFile()).map((d) => path.join(d.parentPath, d.name)).sort();
@@ -36,7 +46,8 @@ await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--no-sandbox"] });
 let context, page;
 try {
-  context = await browser.newContext({ viewport, deviceScaleFactor: scale, timezoneId: "UTC", locale: "ko-KR" });
+  context = await browser.newContext({ viewport, deviceScaleFactor: scale, timezoneId: "UTC", locale: localeTag });
+  await context.addInitScript((value) => localStorage.setItem("ccdash.locale", value), locale);
   page = await context.newPage();
   page.setDefaultTimeout(12000);
   await page.clock.setFixedTime(new Date(fixedTime));
@@ -58,7 +69,20 @@ try {
       return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: error.message }) });
     }
   });
-  const card = (title) => page.getByText(title, { exact: true })
+  const t = (source) => {
+    const templates = {
+      "Claude Code 모델별 비용 추이": ["ma2957473ba62", ["Claude Code", message("mf9f4d4113aa1", locale)]],
+      "Claude Code 드라이버 분해": ["m1c10a150bc3e", ["Claude Code"]],
+      "Claude Code · 단위 비용 추이": ["m63b6536bd06c", ["Claude Code"]],
+      "Tool / MCP 사용 현황 — bedrock": ["mac5da77c2d6f", ["bedrock"]],
+      "도구 권한 결정 — bedrock": ["m9eb2acc1adb8", ["bedrock"]],
+      "MCP 커넥터 사용 현황 — bedrock": ["m558d6db6f523", ["bedrock"]],
+      "Skill 사용 분포 — bedrock": ["m3e8bea620661", ["bedrock"]],
+      "Skill 발동 방식 — bedrock": ["mf193bbffe651", ["bedrock"]],
+    };
+    return templates[source] ? message(templates[source][0], locale, templates[source][1]) : label(source, locale);
+  };
+  const card = (title) => page.getByText(t(title), { exact: true })
     .locator('xpath=ancestor::div[contains(@class,"shadow-card")]').first();
   async function settled() {
     await page.waitForLoadState("networkidle");
@@ -67,6 +91,7 @@ try {
   }
   async function goto(route, detail = false) {
     await page.goto(`${base}${route}?${query}${detail ? "&view=detail" : ""}`);
+    await page.waitForFunction((value) => document.documentElement.lang === value, locale);
     await settled();
   }
   async function capture(name, locator = null, notes = "") {
@@ -74,10 +99,11 @@ try {
     await settled();
     await page.mouse.move(5, 5);
     const text = await (locator || page.locator("main")).innerText();
-    assert.ok(text.trim().length > 80, `${name} has no useful content`);
+    assert.ok(text.trim().length > (name === "time-range" ? 20 : 80), `${name} has no useful content`);
     assert.ok(!text.includes("NaN") && !text.includes("Infinity"), `${name} invalid numeric output`);
-    assert.equal(await page.getByRole("alert").count(), 0, `${name} contains an error alert`);
-    const target = path.join(output, `guide-${name}.png`);
+    // The calendar's live region announces focused days; it is not an error.
+    assert.equal(await page.locator('[role="alert"]:not(.react-datepicker__aria-live)').count(), 0, `${name} contains an error alert`);
+    const target = path.join(output, `${prefix}${name}.png`);
     let clip = null;
     if (locator) {
       await locator.scrollIntoViewIfNeeded();
@@ -112,7 +138,7 @@ try {
     if (!wanted(name)) return;
     await scrollTo(first);
     await settled();
-    assert.equal(await page.getByRole("alert").count(), 0, `${name} contains an error alert`);
+    assert.equal(await page.locator('[role="alert"]:not(.react-datepicker__aria-live)').count(), 0, `${name} contains an error alert`);
     const content = `${await first.innerText()}\n${await last.innerText()}`;
     assert.ok(content.length > 80 && !/NaN|Infinity/.test(content), `${name} invalid content`);
     const a = await first.boundingBox(), b = await last.boundingBox();
@@ -120,7 +146,7 @@ try {
       width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x), height: b.y + b.height - a.y };
     assert.ok(clip.height <= viewport.height && clip.y >= 0 && clip.y + clip.height <= viewport.height + 1,
       `${name}: contiguous section does not fit viewport (${JSON.stringify(clip)})`);
-    const target = path.join(output, `guide-${name}.png`);
+    const target = path.join(output, `${prefix}${name}.png`);
     await page.mouse.move(5, 5);
     await page.screenshot({ path: target, clip, animations: "disabled" });
     const bytes = await readFile(target);
@@ -136,6 +162,15 @@ try {
     if (!wanted(name)) continue;
     await goto(route);
     await capture(name, null, name === "analytics" ? "Model diagnostics. SQL chat is outside this synthetic permission scope." : "");
+  }
+  if (wanted("time-range")) {
+    await goto("/");
+    await page.getByRole("button", { name: t("기간 직접 선택") }).click();
+    await page.getByRole("button", { name: t("날짜·시간"), exact: true }).click();
+    await page.getByRole("button", { name: message("m230bfa94fe54", locale, [t("시작 시각")]) }).click();
+    await page.getByRole("button", { name: message("meeabcb446f68", locale, [t("시작 시각")]) }).waitFor();
+    await capture("time-range", page.getByRole("group", { name: t("기간 직접 선택"), exact: true }),
+      "Localized React calendar, per-field completion and second-precision inputs; synthetic date range.");
   }
   if (wanted("overview-trend")) {
     await goto("/");
@@ -156,35 +191,37 @@ try {
     await scrollTo(card("사용자별 사용량"));
     await capture("users", card("사용자별 사용량"), "Select the masked Alice example.test identity to open detail.");
     await page.getByRole("button", { name: "al******@example.test", exact: true }).click();
-    await page.getByText("작업 목록 · 상위 20개", { exact: true }).waitFor();
+    await page.getByText(t("작업 목록 · 상위 20개"), { exact: true }).waitFor();
     await settled();
-    const detailSection = page.getByRole("region", { name: "사용자 상세", exact: true });
+    const detailSection = page.getByRole("region", { name: t("사용자 상세"), exact: true });
     await captureRange("user-detail", detailSection.locator("h2"), card("사용량·비용 추이"), "All endpoints filter to Alice.");
     await capture("task-list", card("작업 목록 · 상위 20개"), "Partially observed task subset; costs and calls reconcile.");
     if (["task-trace", "task-call", "task-call-reported", "task-context"].some(wanted)) {
       await card("작업 목록 · 상위 20개").getByText(task.models.join(", "), { exact: true }).first().click();
-      await page.getByRole("region", { name: "세션 환경" }).waitFor();
-      const dialog = page.getByRole("dialog", { name: "작업 상세" });
-      assert.equal(await dialog.getByRole("group", { name: "Explore #1 레인", exact: true }).count(), 1);
-      assert.equal(await dialog.getByRole("group", { name: "Explore #2 레인", exact: true }).count(), 1);
+      await page.getByRole("region", { name: t("세션 환경") }).waitFor();
+      const dialog = page.getByRole("dialog", { name: t("작업 상세") });
+      const lane = (name) => dialog.getByRole("group", { name: message("m6cc3cfaaaeb1", locale, [name]), exact: true });
+      assert.equal(await lane("Explore #1").count(), 1);
+      assert.equal(await lane("Explore #2").count(), 1);
       await capture("task-trace", null, "Interaction KPIs, separately numbered Explore lanes and context.");
-      await page.getByRole("button", { name: /Explore #1.*LLM|LLM.*Explore #1/ }).first().click();
-      const panel = page.getByRole("region", { name: "선택한 span 상세" });
-      assert.equal(await panel.getByText("시도", { exact: true }).evaluate((node) => node.nextElementSibling.textContent), "미수집");
-      await panel.getByText("계산 추정", { exact: true }).waitFor();
-      await capture("task-call", page.getByRole("region", { name: "선택한 span 상세" }),
+      await dialog.getByRole("button", { name: /Explore #1.*LLM|LLM.*Explore #1/ }).first().click();
+      const panel = page.getByRole("region", { name: t("선택한 span 상세") });
+      assert.equal(await panel.getByText(t("시도"), { exact: true }).evaluate((node) => node.nextElementSibling.textContent), t("미수집"));
+      await panel.getByText(t("계산 추정"), { exact: true }).waitFor();
+      await capture("task-call", panel,
         "Computed cost uses the fictional fixture prices. Attempt and TTFT remain uncollected.");
       if (wanted("task-context")) {
-        await captureRange("task-context", page.getByRole("region", { name: "왜 많이 썼나", exact: true }),
-          page.getByRole("region", { name: "모델별 호출", exact: true }),
+        await captureRange("task-context", page.getByRole("region", { name: t("왜 많이 썼나"), exact: true }),
+          page.getByRole("region", { name: t("모델별 호출"), exact: true }),
           "Real context chart and model explanation within the trace dialog.");
       }
       if (wanted("task-call-reported")) {
-        await page.getByRole("button", { name: /메인 세션.*LLM|LLM.*메인 세션/ }).first().click();
-        await panel.getByText("클라이언트 보고", { exact: true }).waitFor();
+        const mainName = t("메인 세션").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        await dialog.getByRole("button", { name: new RegExp(`${mainName}.*LLM|LLM.*${mainName}`) }).first().click();
+        await panel.getByText(t("클라이언트 보고"), { exact: true }).waitFor();
         await capture("task-call-reported", panel, "Reported-cost main call, with measured attempt 1 and TTFT.");
       }
-      await dialog.getByRole("button", { name: "닫기", exact: true }).click();
+      await dialog.getByRole("button", { name: t("닫기"), exact: true }).click();
     }
   }
   if (wanted("cost") || wanted("cost-summary")) {
@@ -194,7 +231,7 @@ try {
   }
   if (wanted("economics") || wanted("unit-cost")) {
     await goto("/productivity");
-    await page.getByRole("group", { name: "Claude Code 비용 방정식" }).waitFor();
+    await page.getByRole("group", { name: message("ma72d84381b1a", locale, ["Claude Code"]) }).waitFor();
     await captureRange("economics", card("비용 방정식"), card("Claude Code 드라이버 분해"),
       "Exact current/previous equations and LMDI contributions; all 48 synthetic sessions matched.");
     await capture("unit-cost", card("Claude Code · 단위 비용 추이"));
@@ -213,7 +250,7 @@ try {
   }
   if (wanted("collector") || wanted("collector-devices")) {
     await goto("/collector");
-    await page.getByRole("button", { name: "macOS 선택" }).click();
+    await page.getByRole("button", { name: message("m6aca100eeed4", locale, ["macOS"]) }).click();
     await capture("collector", card("터미널에서 설치"), "Reserved example.test installer URL. No token issued or command executed.");
     await capture("collector-devices", card("내 기기"));
   }
@@ -224,7 +261,7 @@ try {
   assert.deepEqual(errors, [], "Browser or fixture errors");
   assert.deepEqual(consoleErrors, [], "Browser console errors");
   assert.deepEqual(unexpectedRequests, [], "Unexpected network requests");
-  if (only) assert.deepEqual([...only].sort(), screenshots.map((s) => s.name.replace(/^guide-/, "").replace(/\.png$/, "")).sort(), "Unknown --only capture name");
+  if (only) assert.deepEqual([...only].sort(), screenshots.map((s) => s.name.slice(prefix.length).replace(/\.png$/, "")).sort(), "Unknown --only capture name");
   const imageChecks = JSON.parse(execFileSync("python3", ["-c", `
 import json, sys
 from PIL import Image, ImageStat
@@ -256,10 +293,10 @@ print(json.dumps(checks))
   await writeFile(evidencePath, JSON.stringify({
     captured_at_fixed: fixedTime, source_revision: sourceRevision, source_tree_sha256: sourceHash,
     capture_script_sha256: sha(await readFile(fileURLToPath(import.meta.url))), fixture_sha256: fixtureHash,
-    base_url: base, viewport, device_scale_factor: scale, timezone: "UTC", locale: "ko-KR",
+    base_url: base, viewport, device_scale_factor: scale, timezone: "UTC", locale: localeTag,
     range: { from, to }, browser_version: browser.version(), browser_executable_name: path.basename(executablePath),
     data_provenance: "Entirely synthetic fixed responses. Reserved example.test identities. Fictional prices; no vendor-price or invoice claim.",
-    rendering: "Unmodified React DOM, Korean UI and English technical menus; application font rendering; no downloaded assets.",
+    rendering: `Unmodified React DOM and ${locale} UI; application font rendering; no downloaded assets.`,
     browser_errors: errors, console_errors: consoleErrors, unexpected_requests: unexpectedRequests,
     consistency_checks: consistency,
     api_requests: { scope: "This capture execution; each screenshot retains its page URL.", count: requests.length, paths: [...new Set(requests.map((r) => new URL(r.url).pathname))].sort() },

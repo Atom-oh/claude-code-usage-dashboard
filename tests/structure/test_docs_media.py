@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 import subprocess
 import unittest
+from html.parser import HTMLParser
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("media", ROOT / "scripts/fetch-docs-media.py")
@@ -143,6 +144,48 @@ class MediaTests(unittest.TestCase):
         for item in manifest["files"]:
             self.assertEqual(item["bytes"], records[item["path"]]["bytes"])
             self.assertEqual(item["sha256"], records[item["path"]]["sha256"])
+
+    def test_guide_screenshots_match_the_selected_language(self):
+        class Screens(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.images = []
+                self.lightbox = None
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == "a" and "data-lightbox" in attrs:
+                    self.lightbox = attrs.get("href")
+                if tag == "img":
+                    self.images.append((attrs, self.lightbox))
+
+            def handle_endtag(self, tag):
+                if tag == "a":
+                    self.lightbox = None
+
+        metadata = json.loads((ROOT / "site/assets/media.json").read_text())
+        records = {item["name"]: item for item in metadata["images"]}
+        for locale, directory in (("en", ""), ("ko", "ko")):
+            for page in ("index", "user-guide"):
+                parser = Screens()
+                parser.feed((ROOT / "site" / directory / f"{page}.html").read_text())
+                seen = set()
+                for image, lightbox in parser.images:
+                    name = Path(image.get("src", "")).name
+                    if not name.startswith("guide-"):
+                        continue
+                    self.assertTrue(name.startswith(f"guide-{locale}-"), (locale, page, name))
+                    record = records[name]
+                    self.assertEqual(record["locale"], locale)
+                    self.assertEqual(int(image["width"]), record["width"])
+                    self.assertEqual(int(image["height"]), record["height"])
+                    self.assertTrue(image.get("alt"))
+                    if lightbox is not None:
+                        self.assertEqual(Path(lightbox).name, name)
+                    seen.add(name)
+                if page == "user-guide":
+                    self.assertEqual(seen, {f"guide-{locale}-{view}.png"
+                                            for view in MEDIA.LOCALIZED_GUIDE_VIEWS})
 
     def test_delivery_cache_is_ignored_and_absent_from_tracked_tree(self):
         tracked = set(subprocess.check_output(
