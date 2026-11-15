@@ -17,10 +17,20 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Migration 012 adds a Codex turn rollup (`codex_turns_v1`, with bounded backfill and
+  verify files). With `CODEX_TURNS_READ_FROM` (Terraform `codex_turns_read_from`; verified,
+  hour-aligned UTC) set and the 7-day context inside it, the Codex task list and details
+  read the rollup instead of raw spans so long sessions stay inside the query budget;
+  unset keeps raw reads. Activation order: [Codex turns](docs/runbooks/schema-migrations.md#codex-turns-migration-012).
 - The task list shows a Codex "subagent calls" value (spawn and follow-up calls, not
-  subagents): a count for Codex 0.166+ turns, not collected before. With
-  `CODEX_TURNS_READ_FROM` set and the 7-day context inside it, the Codex list reads the
-  turn rollup instead of raw spans; unset keeps raw reads.
+  subagents): a count for Codex 0.166+ turns, not collected before, and only while the
+  rollup read is active (not on raw reads). A detail with positive evidence of no calls
+  shows a known zero instead of not collected.
+- Codex task details show retries (`try_run_sampling_request` spans beyond
+  `run_sampling_request`) in the why rules and count `codex.compaction` spans as context
+  compactions, with a partial flag when the bounded span list holds fewer.
+- Codex task details link subagent turns from `codex.agent_communication` logs
+  (Codex 0.167.1-0.168.0) when the traces give no lineage, marked as log-linked.
 - The shared Usage page lists skill usage per client (Claude `skill_activated`, Codex
   `codex.skill_invocation`): calls split into explicit, automatic and nested (Claude only)
   invocations, with users and sessions, under the shared user, model, backend and team
