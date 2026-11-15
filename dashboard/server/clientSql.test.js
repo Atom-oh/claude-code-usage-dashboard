@@ -1430,3 +1430,50 @@ test("real ClickHouse session turns deduplicate log deliveries and keep unavaila
     await db.close();
   }
 });
+
+test("real ClickHouse resumed Bedrock session keeps its login rows on the Anthropic backend", {
+  skip: !process.env.CLIENT_SQL_TEST_URL,
+}, async () => {
+  process.env.CH_URL = process.env.CLIENT_SQL_TEST_URL;
+  process.env.CH_USER = "default";
+  process.env.CH_PASSWORD = "";
+  const { createClient } = await import("@clickhouse/client");
+  const db = createClient({ url: process.env.CH_URL, database: "claude_code" });
+  const { clientOverview } = await import("./clientMetrics.js");
+  const { effortMix } = await import("./queries.js");
+  // Twelve days back keeps these series outside other tests' windows and lookbacks.
+  const day = new Date(Date.now() - 12 * 86400000).toISOString().slice(0, 10);
+  const from = new Date(`${day}T10:00:00Z`), to = new Date(`${day}T11:00:00Z`);
+  const user = "resumed-login@example.invalid";
+  // One session: Bedrock (region-prefixed id, no organization.id), then a Claude login
+  // after resume (bare id with organization.id). The channel stays bedrock.
+  const counter = (org, model, MetricName, type, clock, Value) => ({
+    ResourceAttributes: { "user.email": user },
+    Attributes: { "session.id": "resumed-login", ...(org ? { "organization.id": "fixture" } : {}), model, type },
+    MetricName, StartTimeUnix: `${day} 09:00:00`, TimeUnix: `${day} ${clock}`,
+    Value, AggregationTemporality: 2, IsMonotonic: true,
+  });
+  const usage = (org, model, cost) => [["09:59:00", 0], ["10:30:00", 1]].flatMap(([clock, scale]) => [
+    counter(org, model, "claude_code.cost.usage", "", clock, cost * scale),
+    counter(org, model, "claude_code.token.usage", "input", clock, 100 * scale),
+  ]);
+  try {
+    await db.insert({ table: "otel_metrics_sum", format: "JSONEachRow", values: [
+      ...usage(false, "global.anthropic.claude-opus-5-5", 1), ...usage(true, "claude-opus-5-5", 2)] });
+    // Raw (one hour) and hourly-rollup (two days) reads resolve the same rows.
+    for (const end of [to, new Date(from.getTime() + 2 * 86400000)]) {
+      const o = await clientOverview(from, end, { view: "cost", user }, ["claude"]);
+      assert.deepEqual(o.by_model.map((r) => [r.model, r.backend, r.cost_usd]).sort(), [
+        ["claude-opus-5-5", "anthropic", 2], ["claude-opus-5-5", "bedrock-runtime", 1]], end.toISOString());
+      const anthropic = await clientOverview(from, end, { view: "cost", user, backend: "anthropic" }, ["claude"]);
+      assert.equal(anthropic.totals.cost_usd, 2);
+      const unknown = await clientOverview(from, end, { view: "cost", user, backend: "unknown" }, ["claude"]);
+      assert.deepEqual(unknown.by_model, []);
+    }
+    const effort = await effortMix(from, to, { user, excludeUnknown: false }, { byModel: true });
+    assert.deepEqual(effort.map((r) => [r.group, r.backend, Number(r.reported_cost)]).sort(), [
+      ["bedrock", "anthropic", 2], ["bedrock", "bedrock-runtime", 1]]);
+  } finally {
+    await db.close();
+  }
+});

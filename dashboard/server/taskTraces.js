@@ -9,8 +9,8 @@ import { query as defaultQuery, toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
 import { selectClients } from "./clients.js";
 import { validateClientFilters } from "./clientMetrics.js";
-import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
-import { backendSql, resolveBackend } from "./backend.js";
+import { GROUP_CTE, GROUP_EXPR, claudeBackendSql } from "./grouping.js";
+import { resolveClaudeBackend } from "./backend.js";
 import { computeCost, normalizeModelId } from "./pricing.js";
 import { isNonAnthropicModel, requestListEstimate } from "./nonAnthropicCost.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
@@ -96,9 +96,6 @@ export function taskCacheKey(query, enabledClients) {
 }
 
 export const tokenAttr = (key) => `toUInt64OrNull(SpanAttributes['${key}'])`;
-// Claude per-call backend, as clientMetrics.js resolves it for Claude rows.
-const claudeBackendSql = (modelExpr) =>
-  `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic', ${backendSql(modelExpr, "''")})`;
 
 export function claudeTaskListSql(from, to, q) {
   const params = { from: toChDateTime(from), to: toChDateTime(to),
@@ -117,9 +114,10 @@ export function claudeTaskListSql(from, to, q) {
     params.workflowName = q.workflowName;
   }
   if (q.backend) {
-    // Backend evidence comes from the task's call models; a task without models is unknown.
+    // Backend evidence comes from the task's calls ([model, org flag]); a task without
+    // models is unknown.
     conds.push(`if(empty(s.raw_models), 'unknown' = {backend:String},
-      arrayExists(m -> ${claudeBackendSql("m")} = {backend:String}, s.raw_models))`);
+      arrayExists(m -> ${claudeBackendSql("m[1]", "''", "m[2] = '1'", { provider: false })} = {backend:String}, s.raw_models))`);
     params.backend = q.backend;
   }
   const order = q.sort === "duration" ? "t.duration_ms DESC, s.sort_tokens DESC, t.TraceId"
@@ -141,16 +139,17 @@ export function claudeTaskListSql(from, to, q) {
         uniqExactIf(AgentId, AgentId != '') AS subagents,
         sumIf(ifNull(input_tokens + cache_read_tokens + cache_creation_tokens + output_tokens, 0),
           SpanType = 'llm_request') AS sort_tokens,
-        groupUniqArrayIf(Model, SpanType = 'llm_request' AND Model != '') AS raw_models,
+        groupUniqArrayIf([Model, org], SpanType = 'llm_request' AND Model != '') AS raw_models,
         groupUniqArrayIf([workflow_run_id, workflow_name], ${WORKFLOW_RUN_ID_SQL("workflow_run_id")}) AS workflows,
         groupArrayIf([request_id, Model, ifNull(toString(input_tokens), ''),
           ifNull(toString(cache_read_tokens), ''), ifNull(toString(cache_creation_tokens), ''),
-          ifNull(toString(output_tokens), '')], SpanType = 'llm_request') AS calls
+          ifNull(toString(output_tokens), ''), org], SpanType = 'llm_request') AS calls
     FROM (
         SELECT TraceId, SpanType, AgentId, Model,
             SpanAttributes['request_id'] AS request_id,
             SpanAttributes['workflow.run_id'] AS workflow_run_id,
             SpanAttributes['workflow.name'] AS workflow_name,
+            ${CALL_ORG_SQL} AS org,
             ${tokenAttr("input_tokens")} AS input_tokens,
             ${tokenAttr("cache_read_tokens")} AS cache_read_tokens,
             ${tokenAttr("cache_creation_tokens")} AS cache_creation_tokens,
@@ -251,12 +250,19 @@ export function claudeCallCost({ model, backend, tokens, reported }) {
   return { cost_usd: Number.isFinite(cost) ? cost : null, basis: "computed" };
 }
 
-// One Claude llm_request call: [request_id, model, input, cache_read, cache_write, output]
-// values as the SQL returns them, priced by claudeCallCost with the session's backend.
+// '1' when the call's span carried organization.id (a Claude login); the id itself never
+// leaves SQL.
+export const CALL_ORG_SQL = "if(SpanAttributes['organization.id'] != '', '1', '')";
+
+// One Claude llm_request call: [request_id, model, input, cache_read, cache_write, output,
+// org] values as the SQL returns them, priced by claudeCallCost with the call's backend.
+// Spans keep organization.id only when the collector does not scrub it (device collectors
+// drop it), so the provider rule is not applied to calls.
 export function priceClaudeCall(raw, sessionGroup, costs) {
   const [requestId, model = "", ...values] = raw;
   const tokens = Object.fromEntries(TOKEN_FIELDS.map((k, i) => [k, count(values[i])]));
-  const backend = sessionGroup === "enterprise" ? "anthropic" : resolveBackend(model, "");
+  const hasOrg = values[TOKEN_FIELDS.length] === "1";
+  const backend = resolveClaudeBackend(model, sessionGroup, false, hasOrg);
   const { cost_usd, basis } = claudeCallCost({ model, backend, tokens,
     reported: requestId && costs.has(requestId) ? costs.get(requestId) : null });
   return { model, tokens, cost_usd, basis };

@@ -12,7 +12,7 @@ const from = new Date("2026-11-05T00:00:00Z");
 const to = new Date("2026-11-06T00:00:00Z");
 const both = ["claude", "codex"];
 
-// One llm_request call: [request_id, model, input, cache_read, cache_creation, output].
+// One llm_request call: [request_id, model, input, cache_read, cache_creation, output, org?].
 const call = (id, model = "claude-opus-5", input = "10", read = "0", write = "0", output = "5") =>
   [id, model, input, read, write, output];
 const task = (overrides = {}) => ({
@@ -268,6 +268,34 @@ test("task cost_basis is mixed when calls differ", () => {
   const reportedOnly = foldClaudeTasks(rows, [{ request_id: "r1", cost_usd: 0.5 }, { request_id: "r2", cost_usd: "0.25" }]);
   assert.equal(reportedOnly[0].cost_basis, "client_reported");
   assert.equal(reportedOnly[0].cost_usd, 0.75);
+});
+
+test("a login call in a Bedrock-channel session is priced as Anthropic", () => {
+  // Resumed session: Bedrock call first, then a bare-id call whose span carried organization.id.
+  const rows = [task({ session_grp: "bedrock", llm_calls: "2", calls: [
+    call("r1", "global.anthropic.claude-opus-5"), [...call("r2"), "1"]] })];
+  const [t] = foldClaudeTasks(rows, []);
+  const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 };
+  const expected = computeCost("claude-opus-5", "bedrock-runtime", usage) + computeCost("claude-opus-5", "anthropic", usage);
+  assert.ok(Math.abs(t.cost_usd - expected) < 1e-12);
+  assert.equal(t.cost_partial, false);
+});
+
+test("claudeTaskListSql keeps the call org flag out of returned columns", () => {
+  const { sql } = claudeTaskListSql(from, to, validateTaskQuery({ userExact: "a", backend: "anthropic" }, both));
+  assert.match(sql, /groupUniqArrayIf\(\[Model, org\]/);
+  assert.match(sql, /startsWith\(m\[1\], 'claude-'\)/);
+  assert.match(sql, /if\(SpanAttributes\['organization\.id'\] != '', '1', ''\) AS org/);
+  assert.doesNotMatch(sql, /SpanAttributes\['organization\.id'\] AS/);
+  // The trace backend filter never applies the session provider rule.
+  assert.doesNotMatch(sql, /ug\.provider_bedrock = 1/);
+});
+
+test("a scrubbed login call in a provider-reported Bedrock session is not priced as Bedrock runtime", () => {
+  const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 };
+  const [t] = foldClaudeTasks([task({ session_grp: "bedrock", session_provider_bedrock: "1", calls: [call("r1")] })], []);
+  assert.equal(t.cost_usd, computeCost("claude-opus-5", "unknown", usage));
+  assert.equal(t.cost_partial, false);
 });
 
 test("all-unknown tokens stay null", () => {

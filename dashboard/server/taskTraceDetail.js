@@ -8,7 +8,7 @@ import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
-  CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
+  CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
   foldCodexTask, claudeCostRows, codexTurnSql, codexCompletionSql, linkCompletions } from "./taskTraces.js";
 
 export const SPAN_ATTRIBUTE_ALLOWLIST = Object.freeze({
@@ -121,7 +121,7 @@ LEFT JOIN session_group ug ON t.SessionId = ug.SessionId`,
         ...(q.userExact === null ? {} : { userExact: q.userExact }) },
     },
     spans: {
-      sql: `SELECT span_id, parent_id, span_type, span_name, start_ms, duration_ms, agent_id, request_id,
+      sql: `SELECT span_id, parent_id, span_type, span_name, start_ms, duration_ms, agent_id, request_id, org,
     ${CLAUDE_ATTRS.map(column).join(", ")},
     count() OVER () AS total_spans
 FROM (
@@ -131,6 +131,7 @@ FROM (
         toString(intDiv(Duration, 1000000)) AS duration_ms,
         AgentId AS agent_id,
         SpanAttributes['request_id'] AS request_id,
+        ${CALL_ORG_SQL} AS org,
         ${attrs.join(",\n        ")}
     FROM claude_code.otel_traces
     WHERE Timestamp >= {from:DateTime} AND Timestamp < {spanTo:DateTime}
@@ -437,7 +438,7 @@ function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
       span.execution_ms = count(exec.duration_ms);
     }
     if (kind === "llm") {
-      const raw = [r.request_id ?? "", r[column("model")] ?? "", ...CLAUDE_TOKEN_ATTRS.map(k => r[column(k)])];
+      const raw = [r.request_id ?? "", r[column("model")] ?? "", ...CLAUDE_TOKEN_ATTRS.map(k => r[column(k)]), r.org ?? ""];
       const priced = priceClaudeCall(raw, head.session_grp, costs);
       Object.assign(span, { tokens: priced.tokens, cost_usd: priced.cost_usd, cost_basis: priced.basis });
       rawCalls.push(raw);
