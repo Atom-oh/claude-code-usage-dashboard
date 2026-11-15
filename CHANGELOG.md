@@ -15,6 +15,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- The task list showed Codex "subagents" as not collected on every row. It now shows the
+  count the task detail reports for the 20 tasks shown (the same trace walk, without the
+  subagents' calls and cost): a count, `0` only with complete evidence on Codex 0.166+, and
+  not collected when the traces cannot say or a long trace passes the list's read bound.
+
 ## [1.13.0] - 2026-11-15
 
 ### Added

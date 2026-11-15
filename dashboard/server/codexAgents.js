@@ -50,7 +50,7 @@ export const LINEAGE_LEAD_MS = 10 * 60 * 1000;
 export const SPAWN_SPANS = ["collaborationspawn_agent", "collaborationfollowup_task", "multi_agent_v1spawn_agent"];
 // Tool spans that may start a subagent turn. send_input starts one only when the agent is idle,
 // so it links when traced but is not a spawn call.
-const LINK_TOOLS = [...SPAWN_SPANS, "multi_agent_v1send_input"];
+export const LINK_TOOLS = [...SPAWN_SPANS, "multi_agent_v1send_input"];
 const TOOL_PREFIXES = ["collaboration", "multi_agent_v1"];
 const isTool = (name) => TOOL_PREFIXES.some((p) => (name ?? "").startsWith(p));
 // A legacy call's log time may differ from its turn's span window by clock rounding.
@@ -77,9 +77,9 @@ const lineageWindow = (startMs, endMs) => ({ spanFrom: toChDateTime(new Date(sta
   spanTo: toChDateTime(new Date(endMs + SPAN_SLACK_MS)) });
 
 // The lineage spans of the task's traces, from just before its turn to a day after it ends
-// (subagents can outlive the turn that started them). Only names, ids and the two identity
-// attributes leave the database.
-export function codexLineageSql(owner, traceIds, startMs, endMs) {
+// (subagents can outlive the turn that started them), at most `limit` (+1 to detect more; the read
+// stops there). Only names, ids and the two identity attributes leave the database.
+export function codexLineageSql(owner, traceIds, startMs, endMs, limit = LINEAGE_SPAN_LIMIT) {
   return {
     sql: `SELECT TraceId AS trace_id, SpanId AS span_id, ParentSpanId AS parent_id, SpanName AS name,
     SpanAttributes['conversation.id'] AS conversation,
@@ -93,7 +93,7 @@ WHERE ResourceAttributes['client'] = 'codex'
   AND TraceId IN {traceIds:Array(String)}
   AND (SpanName IN (${CHAIN.map((n) => `'${n}'`).join(", ")}) OR ${TOOL_PREFIXES.map((p) => `startsWith(SpanName, '${p}')`).join(" OR ")})
 LIMIT 1 BY TraceId, SpanId
-LIMIT ${LINEAGE_SPAN_LIMIT + 1}`,
+LIMIT ${limit + 1}`,
     params: { ...lineageWindow(startMs, endMs), userExact: owner, traceIds },
   };
 }

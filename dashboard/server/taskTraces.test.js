@@ -1485,7 +1485,8 @@ test("the Codex list reads the rollup behind the gate and keeps raw otherwise", 
     llm_calls: "2", models: ["openai.gpt-6-astra"], spawn_calls: "3", names_turn: 1 }];
   const out = await userTasks(page, pageTo, opt, both, run(rows, seen), undefined, boundary);
   assert.ok(seen.some(s => s.sql.includes("codex_turns_v1")));
-  assert.ok(seen.every(s => !s.sql.includes("otel_traces")), "rollup list never reads spans");
+  // Turns come from the rollup; spans are read only to count the page's subagents.
+  assert.ok(seen.filter(s => s.sql.includes("otel_traces")).every(s => "r0From" in s.params), "rollup list reads only link tool spans");
   const rollupSql = seen.find(s => s.sql.includes("codex_turns_v1"));
   assert.ok(rollupSql.sql.includes("min_start < {spanTo:DateTime}"));
   assert.ok(rollupSql.sql.includes("end_ms + 5000 >= toUnixTimestamp({from:DateTime}) * 1000"));

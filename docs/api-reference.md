@@ -689,8 +689,10 @@ Both email drilldowns are excluded from cache warming.
 exact user: required `userExact` (email, else `enduser.id`, equality match), optional
 `client`, `backend`, `group` (Claude tasks only; 400 unless Claude is selected),
 `workflowRunId`, `workflowName` and `sort=tokens|cost|subagents|duration` (default `tokens`): most observed tokens, highest
-known cost, most subagents, slowest. Unknown values (null cost, Codex `subagents`) sort
-after every known value; ties fall back to observed tokens, then the task id. Response
+known cost, most subagents, slowest. Unknown values (null cost or `subagents`) sort
+after every known value; ties fall back to observed tokens, then the task id. Codex
+`subagents` is read only for the 20 tasks shown, so `sort=subagents` first ranks a Codex
+turn by its `subagent_calls` (when positive), then orders the shown tasks by `subagents`. Response
 `{tasks, unattached_codex, coverage, partial: true}`; `coverage.<client>` is `observed`,
 `empty` or `not_requested` (Codex also `limited` when a row guard is hit). Only
 trace-enabled users emit spans, so `partial` is always true. Claude and Codex tasks are
@@ -732,7 +734,13 @@ listed nor unattached here.
 `duration_ms` is the observed span window (min start .. max end, `duration_basis:
 "observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
 from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
-null (no attribute links a subagent conversation; the detail's `agents` follows the trace).
+the count the task detail reports (`task.subagents`), from the same trace walk: the shown
+turns' agent tool spans (spawn, follow-up, `send_input`) inside their own windows, then each
+turn's traces over its window. A positive count is the distinct subagent conversations found;
+`0` needs a complete scan, no agent tool span of the turn, no rollup spawn call, and Codex
+0.166+ (which names its turn on tool spans); anything else is null. Before 0.166 a call is
+resolved through its call log, as in the detail. A turn whose lineage read passes 5,000 spans,
+or that is still unread after 3 s of these reads, stays null.
 `subagent_calls` counts the turn's spawn and follow-up calls (`spawn_agent`, `followup_task`,
 `multi_agent_v1` `spawn_agent`), not subagent conversations; it is null unless the rollup read
 is active (`CODEX_TURNS_READ_FROM` set and the list's start minus 7 days not before it) and the

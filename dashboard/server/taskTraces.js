@@ -17,6 +17,7 @@ import { createObservedTokens, addObservedTokens, finishObservedTokens } from ".
 import { COMPLETION_TOKEN_KEYS, priceCodexCompletion } from "./codexInsightsLogs.js";
 import { codexPrices } from "./priceCatalog.js";
 import { codexTurnsReadFrom, rollupTurnSql, turnsSourceForList } from "./codexTurnsSource.js";
+import { codexListSubagents } from "./codexListAgents.js";
 
 export const TASK_LIMIT = 20;
 // Subagent spans of a long task can start after the selected bucket ends (spec: ~12% of
@@ -321,10 +322,15 @@ const byDuration = (a, b) => descKnown(a.duration_ms, b.duration_ms)
   || descKnown(tokensOf(a), tokensOf(b)) || a.id.localeCompare(b.id);
 const byCost = (a, b) => descKnown(a.cost_usd, b.cost_usd)
   || descKnown(tokensOf(a), tokensOf(b)) || a.id.localeCompare(b.id);
-// Codex subagents are null (no parent link): those tasks follow every known count.
+// Unknown subagent counts (null) follow every known count.
 const bySubagents = (a, b) => descKnown(a.subagents, b.subagents)
   || descKnown(tokensOf(a), tokensOf(b)) || a.id.localeCompare(b.id);
-const ORDERS = { tokens: byTokens, cost: byCost, subagents: bySubagents, duration: byDuration };
+// Before the page's Codex counts are read (codexListSubagents), a Codex turn with spawn/follow-up
+// calls ranks by those calls; one without stays unknown.
+const subagentRank = (t) => t.subagents ?? (t.client === "codex" && t.subagent_calls > 0 ? t.subagent_calls : null);
+const bySubagentRank = (a, b) => descKnown(subagentRank(a), subagentRank(b))
+  || descKnown(tokensOf(a), tokensOf(b)) || a.id.localeCompare(b.id);
+const ORDERS = { tokens: byTokens, cost: byCost, subagents: bySubagentRank, duration: byDuration };
 
 export const sortTasks = (tasks, sort = "tokens") =>
   [...tasks].sort(ORDERS[sort] ?? byTokens).slice(0, TASK_LIMIT);
@@ -514,8 +520,8 @@ export function foldCodexTask(turn, linked) {
     duration_ms: start !== null && end !== null && end >= start ? end - start : null,
     duration_basis: "observed_span_window",
     models: [...models].sort(), llm_calls: count(turn.llm_calls) ?? 0,
-    // No Codex attribute links a child thread to its parent turn; the task detail follows the
-    // trace's parent-span chain instead (codexAgents.js). The list: unknown, not zero.
+    // No Codex attribute links a child thread to its parent turn: the trace's parent-span chain
+    // does (codexAgents.js). Unknown here; the list fills its shown page (codexListSubagents).
     subagents: null,
     // Spawn/follow-up calls the turn names (Codex 0.166+); null when the source cannot say
     // (raw reads, older versions): not collected is not zero.
@@ -623,9 +629,24 @@ async function codexTasks(from, to, q, run, prices, turnsBoundary) {
   const [turns, completions] = await Promise.all([run(turnQuery.sql, turnQuery.params),
     run(completionQuery.sql, completionQuery.params)]);
   const limited = turns.length > CODEX_TURN_LIMIT || completions.length > CODEX_COMPLETION_LIMIT;
-  const out = attachCompletions(turns.slice(0, CODEX_TURN_LIMIT), completions.slice(0, CODEX_COMPLETION_LIMIT),
+  const kept = turns.slice(0, CODEX_TURN_LIMIT);
+  const out = attachCompletions(kept, completions.slice(0, CODEX_COMPLETION_LIMIT),
     { prices, from, to, backend: q.backend });
-  return { ...out, limited };
+  return { ...out, limited, turns: kept };
+}
+
+// The page's Codex tasks with the subagent count their detail reports (codexListSubagents);
+// sorted by subagents, the page is ordered again by those counts.
+async function withCodexSubagents(page, q, turns, run) {
+  const byId = new Map(turns.map((t) => [`codex:${t.conversation_id}:${t.turn_id}`, t]));
+  const pageTurns = page.filter((t) => t.client === "codex" && byId.has(t.id)).map((t) => byId.get(t.id));
+  if (!pageTurns.length) return page;
+  const counts = await codexListSubagents(q.userExact, pageTurns, turns, { run });
+  const filled = page.map((t) => {
+    const row = t.client === "codex" ? byId.get(t.id) : null;
+    return row ? { ...t, subagents: counts.get(row.turn_id) ?? null } : t;
+  });
+  return q.sort === "subagents" ? [...filled].sort(bySubagents) : filled;
 }
 
 export async function userTasks(from, to, raw, enabledClients, run = defaultQuery, prices = codexPrices(),
@@ -645,7 +666,7 @@ export async function userTasks(from, to, raw, enabledClients, run = defaultQuer
       limited: claude.considered >= COST_CANDIDATES };
   }
   if (codex) {
-    tasks = sortTasks([...tasks, ...codex.tasks], q.sort);
+    tasks = await withCodexSubagents(sortTasks([...tasks, ...codex.tasks], q.sort), q, codex.turns, run);
     coverage.codex = codex.limited ? "limited" : codex.tasks.length ? "observed" : "empty";
     unattached = { ...codex.unattached, cost_partial: codex.unattached.cost_partial || codex.limited,
       turns_without_conversation: codex.skipped_turns, turns_without_unique_id: codex.non_unique_turns };
