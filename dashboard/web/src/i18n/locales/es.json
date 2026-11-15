@@ -2061,5 +2061,16 @@
   "m1aea22dc55a1": "Detalles de Claude → Periodo de consulta",
   "m325d2fac09e3": "Información de inicio de sesión y conexión de Collector",
   "m693db7bcc313": "Conecta el uso de Claude Code y Codex con el correo electrónico de inicio de sesión aprobado en el navegador. Codex utiliza una conexión OTLP/gRPC local, y la información del usuario y la configuración de actualización se conservan al reinstalar.",
-  "m9de4819a2bd2": "Conexión de Collector → Instalación/reinstalación"
+  "m9de4819a2bd2": "Conexión de Collector → Instalación/reinstalación",
+  "m91351df15b05": "Vincula más subagentes en los detalles de tareas de Codex y muestra el número de reintentos y compactaciones. Los detalles de las sesiones largas de Codex también se abren sin agotar el tiempo de espera.",
+  "m479a6b0e04c4": "Ampliación de los vínculos con subagentes de Codex",
+  "m60965a9e0851": "Vincula spawn_agent y send_input de Codex CLI, así como las tareas secundarias de versiones de Codex anteriores a 0.166, como subagentes en los detalles de tareas, y muestra las llamadas LLM y el coste estimado de cada turno.",
+  "m3c1ef40a0535": "Reintentos y compactaciones de Codex",
+  "m82d3aab11799": "Puedes consultar el número de reintentos de solicitudes al modelo y de compactaciones en los detalles de tareas de Codex. Los datos de compactación se recopilan a partir de Codex 0.161; se indicará cuando solo se muestre una parte de los datos.",
+  "me25bf7deda89": "Distinguir entre 0 subagentes y no recopilado",
+  "m8c057e1173a7": "Si hay pruebas suficientes de que no se realizaron llamadas a subagentes, se muestra 0; si no se puede confirmar, se muestra no recopilado.",
+  "ma09d3e1a8c17": "Users → Detalles de la tarea → Subagentes",
+  "me97f3606af3c": "Detalles de sesiones largas de Codex",
+  "m7f52daa6a268": "La vista de detalles de las sesiones muy largas de Codex se abre sin agotar el tiempo de espera. En estos casos, los costes de los subagentes pueden mostrarse como datos confirmados solo parcialmente.",
+  "m7b1b4c8fd309": "Users → Detalles de la tarea"
 }

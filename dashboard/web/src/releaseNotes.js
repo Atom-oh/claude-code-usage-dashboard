@@ -10,6 +10,53 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.13.0",
+    "date": "2026-11-15",
+    "summary": "Codex 작업 상세에서 서브에이전트를 더 많이 연결하고, 재시도·컴팩션 횟수를 보여 줍니다. 긴 Codex 세션의 상세 화면도 시간 안에 열립니다.",
+    "items": [
+      {
+        "kind": "improved",
+        "title": "Codex 서브에이전트 연결 확대",
+        "body": "Codex CLI의 spawn_agent·send_input과 0.166 이전 Codex의 하위 작업도 작업 상세의 서브에이전트로 연결하고, 각 턴의 LLM 호출과 비용 추정을 함께 보여 줍니다.",
+        "to": "/users",
+        "where": "Users → 작업 목록 → 작업 상세",
+        "refs": [
+          314
+        ]
+      },
+      {
+        "kind": "new",
+        "title": "Codex 재시도와 컴팩션",
+        "body": "Codex 작업 상세에서 모델 요청 재시도 횟수와 컴팩션 횟수를 확인할 수 있습니다. 컴팩션은 Codex 0.161 이상에서 수집되며, 일부만 표시될 때는 그렇게 안내합니다.",
+        "to": "/users",
+        "where": "Users → 작업 목록 → 작업 상세",
+        "refs": [
+          314
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "서브에이전트 0과 미수집 구분",
+        "body": "서브에이전트 호출이 없었다는 근거가 충분하면 0으로, 확인할 수 없으면 미수집으로 표시합니다.",
+        "to": "/users",
+        "where": "Users → 작업 상세 → 서브에이전트",
+        "refs": [
+          314
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "긴 Codex 세션의 상세 화면",
+        "body": "매우 긴 Codex 세션의 상세 화면이 시간 초과 없이 열립니다. 이때 서브에이전트 비용은 일부만 확인된 값으로 표시될 수 있습니다.",
+        "to": "/users",
+        "where": "Users → 작업 상세",
+        "refs": [
+          314
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.12.0",
     "date": "2026-11-15",
     "summary": "Usage에서 Codex 토큰 구성의 확인된 부분합을 볼 수 있습니다. 날짜·시간 선택, 다국어 가이드, 작업 상세와 Collector 연결도 개선했습니다.",

@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-15
+
 ### Added
 
 - Migration 012 adds a Codex turn rollup (`codex_turns_v1`, with bounded backfill and
