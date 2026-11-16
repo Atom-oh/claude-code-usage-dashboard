@@ -736,3 +736,18 @@ test("the model-call table covers the Codex task's own turn, not its subagent la
   expect(table.textContent).toContain("gpt-6.1");
   expect(table.textContent).not.toContain("subagent-model-x");
 });
+
+test("no cost band when the task's own cost is unknown, even with a complete subagent lane", async () => {
+  const d = activityDetail(null);
+  const { cost_usd: _c, tokens: _t, completion: _p, ...mainSpan } = d.spans[0];
+  body = { ...d,
+    task: { ...d.task, cost_usd: null, cost_partial: true },
+    spans: [mainSpan,
+      { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 10, duration_ms: 5, attrs: {}, cost_usd: 0.4 }],
+    lanes: [{ ...d.lanes[0], cost_usd: null, cost_partial: true },
+      { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.4,
+        cost_partial: false, spans_partial: false, completions_without_span: 0 }] };
+  mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  expect(screen.queryByText(/누적 비용/)).toBeNull();
+});

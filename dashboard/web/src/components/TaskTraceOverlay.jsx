@@ -21,7 +21,7 @@ import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { clientName, formatClientTimestamp, observedNumber } from "../clientPresentation.js";
-import { compactCount, laneCostUnplaced, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, timelineEnd, withLaneIdentity } from "../taskTrace.js";
+import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, timelineEnd, withLaneIdentity } from "../taskTrace.js";
 import { taskSharePath } from "../clientNavigation.js";
 
 // Copies the task's share link (/tasks/<id>/<from>/<to>; no user in the URL). Without
@@ -210,17 +210,17 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
   }, [spans, _locale]);
   const end = useMemo(() => timelineEnd(spans, task.duration_ms), [spans, task.duration_ms, _locale]);
   const selected = spans.find((s) => s.id === selectedId) || null;
-  // The band needs a priced call in a lane it draws; excluded subagent lanes do not count.
-  const unplacedLanes = useMemo(() => new Set(lanes.filter(laneCostUnplaced).map((l) => l.id)), [lanes]);
-  const priced = spans.some((s) => s.kind === "llm" && Object.prototype.hasOwnProperty.call(s, "cost_usd") && !unplacedLanes.has(s.lane));
-  const unplaced = spans.filter((s) => observedNumber(s.start_ms) === null).length;
-  const unlinked = observedNumber(task.completions_without_span) ?? 0;
   // The task's own spans: Codex subagent lanes (spans_partial set) are read apart, and span_total,
   // the model-call table, the Why panel's model share and the model highlight cover only these.
   const ownSpanList = useMemo(() => {
     const apart = new Set((data.lanes || []).filter((l) => "spans_partial" in l).map((l) => l.id));
     return spans.filter((s) => !apart.has(s.lane));
   }, [data.lanes, spans, _locale]);
+  // The band needs a priced call of the task's own turn (as before subagent lanes): subagent
+  // lanes only stack on it, so an unknown own cost never draws as a measured zero.
+  const priced = ownSpanList.some((s) => s.kind === "llm" && Object.prototype.hasOwnProperty.call(s, "cost_usd"));
+  const unplaced = spans.filter((s) => observedNumber(s.start_ms) === null).length;
+  const unlinked = observedNumber(task.completions_without_span) ?? 0;
   const models = useMemo(() => modelBreakdown(ownSpanList), [ownSpanList, _locale]);
   const usage = useMemo(() => modelUsage(ownSpanList), [ownSpanList, _locale]);
   // Call source per span id: the context chart joins only a lane's main source.
