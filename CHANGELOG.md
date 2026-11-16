@@ -22,6 +22,17 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   subagents' calls and cost): a count, `0` only with the detail's evidence on Codex 0.166+,
   and not collected when the traces cannot say, the turn ends at the read bound, or a long
   trace passes the list's read limits.
+- Claude request logs always name the bare model (`claude-opus-5-5`), so Bedrock request logs
+  showed backend `unknown`. A bare `claude-*` row now takes the backend of the session's
+  routed Anthropic ids when they agree (`global.anthropic.*` → `bedrock-runtime`,
+  `anthropic.*` → `bedrock-mantle`), in both grouping modes. This also resolves counters of
+  sessions that pinned a bare model under `ANTHROPIC_BEDROCK_REGION_PREFIX` while another
+  tier kept its prefix. With `CLAUDE_PROVIDER_GROUPS=true`, a reported `mantle` provider
+  selects the Bedrock channel and resolves remaining bare ids to `bedrock-mantle`, and logs
+  of a Bedrock+Mantle session (which reports `bedrock`) no longer show `bedrock-runtime`.
+  Production, 7 days to 2026-11-16: 2,289 request logs moved to `bedrock-runtime` and 10
+  to `bedrock-mantle`; limits in the
+  [ADR-017 amendment](docs/decisions/ADR-017-backend-cost-fallback.md#amendment-2026-11-16-bare-claude-ids-inherit-session-route-evidence).
 ### Changed
 
 - ClickHouse system logs that the operator left without retention now expire:
