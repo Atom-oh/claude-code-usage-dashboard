@@ -245,6 +245,7 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
           <button type="button" aria-pressed={showInternal} onClick={() => setShowInternal((v) => !v)}
             className="rounded border border-ink-200 px-2 py-0.5 text-ink-700 hover:bg-ink-50">
             {translate(showInternal ? "m88fe8ae661ed" : "m0cf412ff8552")}</button></p>}
+        {lanes.some((l) => l.spans_partial) && <p className="mt-1 text-[12px] text-ink-500">{translate("mc2b1b9568ccd")}</p>}
         {!truncated && (priced ? <div className="mt-4">
           <TaskCostBand lanes={lanes} spans={spans} end={end} durationMs={task.duration_ms} />
           <p className="mt-1 text-[12px] text-ink-500">{richMessage("m8994eb3d9eef", [unlinked > 0 && translate("me28cab7df2c6", [formatObserved(unlinked)])])}</p>

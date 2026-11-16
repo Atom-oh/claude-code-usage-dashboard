@@ -666,3 +666,25 @@ test("a Claude task shows no Codex subagent section", async () => {
   await screen.findByRole("region", { name: "세션 환경" });
   expect(screen.queryByRole("region", { name: "서브에이전트 호출" })).toBeNull();
 });
+
+test("Codex subagent conversations get their own lanes, and partial lanes say so", async () => {
+  const d = activityDetail(null, [toolSpan("g1", "collaborationspawn_agent"),
+    { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 2000, duration_ms: 1000, attrs: {} }]);
+  const sub = (id, spawned_by, spans_partial) => ({ id, label: null, kind: "custom", spawned_by, llm_calls: 1, cost_usd: 0.1,
+    cost_partial: false, spans_partial });
+  body = { ...d, lanes: [...d.lanes, sub("conv-a", "g1", false), sub("conv-b", "g1", true)] };
+  const { container } = mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 #1 레인" });
+  expect(screen.getByRole("group", { name: "서브에이전트 #2 레인" })).toBeTruthy();
+  expect(container.querySelectorAll("[data-spawn]").length).toBe(2);
+  expect(screen.getByText("일부 서브에이전트 레인은 span을 모두 읽지 못해 일부만 표시합니다.")).toBeTruthy();
+});
+
+test("Codex subagent lanes with all their spans show no partial note", async () => {
+  const d = activityDetail(null);
+  body = { ...d, lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.1,
+    cost_partial: false, spans_partial: false }] };
+  mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  expect(screen.queryByText("일부 서브에이전트 레인은 span을 모두 읽지 못해 일부만 표시합니다.")).toBeNull();
+});

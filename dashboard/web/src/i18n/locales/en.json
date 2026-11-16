@@ -2072,5 +2072,6 @@
   "ma09d3e1a8c17": "Users → Task details → Subagents",
   "me97f3606af3c": "Details for long Codex sessions",
   "m7f52daa6a268": "The details view for very long Codex sessions opens without timing out. In these cases, subagent costs may be shown as only partially confirmed.",
-  "m7b1b4c8fd309": "Users → Task details"
+  "m7b1b4c8fd309": "Users → Task details",
+  "mc2b1b9568ccd": "Some subagent lanes show only part of their spans because not all of them could be read."
 }

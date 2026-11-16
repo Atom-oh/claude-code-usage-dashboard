@@ -189,7 +189,7 @@ export function resolveLegacy(rows, callLogs, turnConversations, turns) {
 }
 
 const toolName = (span) => TOOL.exec(span ?? "")?.[1] ?? null;
-const taskId = (conversation, turn) => IDENT.test(conversation ?? "") && TURN_ID.test(turn ?? "")
+export const taskId = (conversation, turn) => IDENT.test(conversation ?? "") && TURN_ID.test(turn ?? "")
   ? `codex:${conversation}:${turn}` : null;
 
 // Pure walk over lineage rows: the task turn's parent link, and its subagent turns breadth
@@ -334,7 +334,13 @@ export function foldAgents({ task, parent = null, links = [], entries = [], limi
 // rollup and the raw turn read alike). `detailStart` (ms of `now()`, default: this call) starts the
 // AGENT_EXTRA_BUDGET_MS clock; a read skipped once it is spent leaves the result limited (no
 // known zero, partial cost) with the links the walk already found.
-export async function codexAgents(owner, turn, task, spawnSpanIds,
+export async function codexAgents(owner, turn, task, spawnSpanIds, opts) {
+  return (await codexAgentRead(owner, turn, task, spawnSpanIds, opts)).agents;
+}
+
+// codexAgents with the reads behind it, for the detail's subagent lanes: `links` (walkLineage),
+// `turnRows` (every subagent turn row read) and `entries` (their linked completions).
+export async function codexAgentRead(owner, turn, task, spawnSpanIds,
   { run, prices, turnsBoundary = codexTurnsReadFrom, detailStart = null, now = Date.now }) {
   const started = detailStart ?? now();
   let spent = false;
@@ -347,7 +353,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds,
   const traceIds = turn.traceIds.slice(0, LINEAGE_TRACE_LIMIT);
   let limited = Boolean(turn.tracesPartial) || Boolean(turn.spawnsWithheld) || turn.traceIds.length > traceIds.length;
   if (!traceIds.length || turn.startMs === null || turn.endMs === null)
-    return foldAgents({ task, limited, spawnSpanIds });
+    return { agents: foldAgents({ task, limited, spawnSpanIds }), links: [], turnRows: [], entries: [] };
   const lineage = codexLineageSql(owner, traceIds, turn.startMs, turn.endMs);
   const lineageRows = await run(lineage.sql, lineage.params);
   if (lineageRows.length > LINEAGE_SPAN_LIMIT) limited = true;
@@ -418,7 +424,7 @@ export async function codexAgents(owner, turn, task, spawnSpanIds,
     ? walked.parent.parent_conversation : null;
   const turnIds = [...new Set([...conversationIds, ...(parentConversation ? [parentConversation] : [])])];
   const missing = turnIds.filter((c) => !read.has(c));
-  let entries = [];
+  let entries = [], subagentTurns = [];
   if (turnIds.length && extra()) {
     // At most AGENT_LIMIT + 1 conversations: one chunk each in practice.
     const [turns, completions] = await Promise.all([
@@ -428,14 +434,16 @@ export async function codexAgents(owner, turn, task, spawnSpanIds,
     ]);
     const wanted = new Set(turnIds);
     const allTurns = [...turnRows.filter((t) => wanted.has(t.conversation_id)), ...turns.rows];
+    subagentTurns = allTurns;
     // A turn whose completions were not read stays unpriced (cost unknown), never a zero cost.
     const priced = new Set(completions.covered);
     const unpriced = new Set(conversationIds.filter((c) => !priced.has(c)));
     entries = linkCompletions(allTurns, completions.rows, { prices }).entries.filter((e) => !unpriced.has(e.turn.conversation_id));
   }
   const toolSpanIds = rows.filter((r) => LINK_TOOLS.includes(r.name) && r.turn === turn.turnId).map((r) => r.span_id);
-  return foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds, namesTurn: turn.namesTurn,
+  const agents = foldAgents({ task, parent: walked.parent, links: walked.links, entries, limited, spawnSpanIds, namesTurn: turn.namesTurn,
     toolSpanIds, readToMs: lineageTo.getTime() + SPAN_SLACK_MS });
+  return { agents, links: walked.links, turnRows: subagentTurns, entries };
 }
 
 // A linked count, or a zero only with positive evidence (`known_zero`); otherwise unknown (no

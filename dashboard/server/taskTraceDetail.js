@@ -7,7 +7,7 @@ import { query as defaultQuery, toChDateTime } from "./clickhouse.js";
 import { ValidationError, NotFoundError } from "./http.js";
 import { GROUP_CTE, GROUP_EXPR } from "./grouping.js";
 import { codexPrices } from "./priceCatalog.js";
-import { SPAWN_SPANS, agentCount, codexAgents } from "./codexAgents.js";
+import { AGENT_EXTRA_BUDGET_MS, SPAWN_SPANS, agentCount, codexAgentRead, taskId } from "./codexAgents.js";
 import { codexSkillsSql, foldCodexSkills, foldCodexTools } from "./codexActivity.js";
 import { EXACT_USER, TURN_ID, SPAN_SLACK_MS, COMPLETION_SLACK_MS, TOKEN_FIELDS, CODEX_TURN_LIMIT,
   CODEX_COMPLETION_LIMIT, WORKFLOW_RUN_ID_SQL, CALL_ORG_SQL, count, modelLabel, tokenAttr, priceClaudeCall, claudeCostMap, foldTask,
@@ -187,6 +187,40 @@ LIMIT ${SPAN_BOUND}`,
       params: { spanFrom: toChDateTime(spanFrom ?? new Date(from.getTime() - SPAN_SLACK_MS)),
         spanTo: toChDateTime(spanTo ?? new Date(to.getTime() + SPAN_SLACK_MS)), userExact: q.userExact, turnId, conversationId },
     },
+  };
+}
+
+// Codex subagent lanes: the spans of the detail's subagent turns (`turns`: { turn_id,
+// conversation_id } of codexAgentRead's turn rows) in [spanFrom, spanTo), newest SPAN_BOUND in
+// all, each with its turn's span total so a lane cut by the bound shows as partial. Spans naming
+// another conversation are excluded, as in the detail's own span read.
+export function codexAgentSpanSql(q, turns, { spanFrom, spanTo }) {
+  return {
+    sql: `SELECT span_id, parent_id, span_name, start_ms, duration_ms, turn,
+    ${SPAN_ATTRIBUTE_ALLOWLIST.codex.map(column).join(", ")},
+    count() OVER (PARTITION BY turn) AS turn_spans
+FROM (
+    SELECT TraceId, SpanId, SpanId AS span_id, ParentSpanId AS parent_id, SpanName AS span_name,
+        Timestamp AS ts,
+        coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) AS turn,
+        toString(toUnixTimestamp64Milli(Timestamp)) AS start_ms,
+        toString(intDiv(Duration, 1000000)) AS duration_ms,
+        coalesce(nullIf(SpanAttributes['model'], ''), SpanAttributes['gen_ai.request.model']) AS ${column("model")},
+        SpanAttributes['tool_name'] AS ${column("tool_name")},
+        SpanAttributes['aborted'] AS ${column("aborted")}
+    FROM claude_code.otel_traces
+    PREWHERE Timestamp >= {spanFrom:DateTime} AND Timestamp < {spanTo:DateTime}
+      AND ${EXACT_USER}
+    WHERE ResourceAttributes['client'] = 'codex'
+      AND coalesce(nullIf(SpanAttributes['turn_id'], ''), SpanAttributes['turn.id']) IN {turnIds:Array(String)}
+      AND (SpanAttributes['conversation.id'] = '' OR SpanAttributes['conversation.id'] IN {conversationIds:Array(String)})
+    LIMIT 1 BY TraceId, SpanId
+)
+ORDER BY ts DESC, span_id
+LIMIT ${SPAN_BOUND}`,
+    params: { userExact: q.userExact, turnIds: [...new Set(turns.map(t => t.turn_id))],
+      conversationIds: [...new Set(turns.map(t => t.conversation_id))],
+      spanFrom: toChDateTime(spanFrom), spanTo: toChDateTime(spanTo) },
   };
 }
 
@@ -565,11 +599,10 @@ function foldClaudeDetail(head, rows, costRows, compactionRows = []) {
 
 const sumField = (values) => values.every(v => v !== null && v !== undefined) ? sumKnown(values) : null;
 
-function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []) {
-  let task = foldCodexTask(turn, linked);
-  if (limited) task = { ...task, cost_partial: true };
-  const t0 = count(turn.start_ms);
-  const total = spanTotal(rows);
+// One Codex turn's spans on `lane`, start relative to `t0` (ms), with its linked completions on
+// its model-call spans: { spans, calls (context/cost series points), withSpan (completions linked
+// to a span) }.
+function codexLaneSpans(rows, turn, linked, lane, t0) {
   const ordered = rows.map(r => ({ r, start: count(r.start_ms), id: r.span_id })).sort(byStart);
   const ids = new Set(rows.map(r => r.span_id));
   // The turn row names its model-call span kind (codexTurnSql): codex.sampling, or
@@ -581,7 +614,7 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
     const attrs = pickAttrs(r, SPAN_ATTRIBUTE_ALLOWLIST.codex);
     const kind = r.span_name === callSpan ? "llm" : "tool";
     return { id: r.span_id, parent: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null,
-      lane: "main", kind, name: label(r.span_name) ?? "unknown",
+      lane, kind, name: label(r.span_name) ?? "unknown",
       start_ms: start !== null && t0 !== null ? start - t0 : null, duration_ms: count(r.duration_ms),
       attrs, ...(kind === "tool" && !attrs.tool_name ? { internal: true } : {}), _start: start };
   });
@@ -598,7 +631,7 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
     }
     if (best) assigned.set(best.id, [...(assigned.get(best.id) ?? []), entry]);
     const u = entry.usage;
-    calls.push({ id: best?.id ?? null, lane: "main", start: entry.time,
+    calls.push({ id: best?.id ?? null, lane, start: entry.time,
       context: u.invalid ? null : count(u.input_tokens_total), cost: u.cost_usd ?? null });
   }
   let withSpan = 0;
@@ -617,6 +650,53 @@ function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []
     span.completion = { model: modelLabel(first.model), effort: label(first.effort), ttft_ms: count(first.ttft_ms),
       duration_ms: count(first.duration_ms), count: entries.length };
   }
+  return { spans, calls, withSpan };
+}
+
+// Codex subagent lanes (design: one lane per subagent conversation, like a Claude subagent): from
+// codexAgentRead's `links` (tree walk order), `turnRows`, `entries` and the agents' `children`
+// (calls and cost per subagent turn). `rows`: the subagent span read (codexAgentSpanSql), or null
+// when it was not read. A lane is spawned by the tool span of its first link; its spans are its
+// turns' spans on the task's clock (`t0`). `spans_partial`: some of its turns' spans are missing
+// (not read, no turn row, or cut by the read's bound), so the lane shows fewer than ran.
+export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, t0 }) {
+  const byTurn = new Map();
+  for (const r of rows ?? []) byTurn.set(r.turn, [...(byTurn.get(r.turn) ?? []), r]);
+  const childById = new Map(children.filter(c => c.id).map(c => [c.id, c]));
+  const lanes = new Map(), spans = [];
+  for (const l of links) {
+    const conv = l.child_conversation;
+    if (!conv || conv === "main") continue;
+    let lane = lanes.get(conv);
+    if (!lane) {
+      lane = { id: conv, label: null, kind: "custom", spawned_by: l.tool_span_id ?? null, turns: [], spans_partial: false };
+      lanes.set(conv, lane);
+    }
+    lane.turns.push(childById.get(taskId(conv, l.child_turn)) ?? null);
+    const turn = turnRows.find(t => t.turn_id === l.child_turn && t.conversation_id === conv);
+    const own = byTurn.get(l.child_turn) ?? [];
+    if (rows === null || !turn || !own.length || own.length < (count(own[0].turn_spans) ?? own.length)) lane.spans_partial = true;
+    if (!turn || !own.length) continue;
+    const linked = entries.find(e => e.turn.turn_id === l.child_turn && e.turn.conversation_id === conv)?.linked ?? [];
+    spans.push(...codexLaneSpans(own, turn, linked, conv, t0).spans);
+  }
+  const known = (values) => values.filter(v => v !== null && v !== undefined && Number.isFinite(v));
+  const out = [...lanes.values()].map(({ turns, ...lane }) => {
+    const calls = known(turns.map(c => c?.llm_calls)), costs = known(turns.map(c => c?.cost_usd));
+    return { ...lane, llm_calls: calls.length ? sumKnown(calls) : null,
+      cost_usd: costs.length ? sumKnown(costs) : null,
+      cost_partial: costs.length < turns.length || turns.some(c => !c || c.cost_partial) };
+  });
+  return { lanes: out, spans };
+}
+
+function foldCodexDetail({ turn, linked, limited = false }, rows, limitRows = []) {
+  let task = foldCodexTask(turn, linked);
+  if (limited) task = { ...task, cost_partial: true };
+  const t0 = count(turn.start_ms);
+  const total = spanTotal(rows);
+  const ordered = rows.map(r => ({ r, start: count(r.start_ms), id: r.span_id })).sort(byStart);
+  const { spans, calls, withSpan } = codexLaneSpans(rows, turn, linked, "main", t0);
   task = { ...task, completions_without_span: linked.length - withSpan };
   const lanes = [{ id: "main", label: "main", kind: "main", spawned_by: null, llm_calls: task.llm_calls,
     cost_usd: task.cost_usd, cost_partial: task.cost_partial }];
@@ -657,6 +737,26 @@ export function codexSpawnEvidence(rows, { truncated, endMs, toMs, rowCalls = nu
   const ids = rows.filter(r => SPAWN_SPANS.includes(r.span_name)).map(r => r.span_id);
   if (rowCalls !== null && rowCalls > ids.length) return { ids: null, withheld: "rollup_spawn_calls" };
   return { ids, withheld: null };
+}
+
+// The subagent lanes of a Codex detail: one span read over the subagent turns with a turn row, in
+// [first start - 1 min, min(last end + 1 min, to + 24h)) like the detail's own window, while the
+// subagent read budget (AGENT_EXTRA_BUDGET_MS from the detail's start) lasts; once it is spent the
+// lanes keep their calls and cost without spans (partial).
+async function codexAgentLanes(q, { links, turnRows, entries }, agents, { t0, to, run, startedAt, clock }) {
+  if (!links.length) return { lanes: [], spans: [] };
+  const linked = new Set(links.map(l => `${l.child_conversation}/${l.child_turn}`));
+  const turns = turnRows.filter(t => linked.has(`${t.conversation_id}/${t.turn_id}`)
+    && count(t.start_ms) !== null && count(t.end_ms) !== null);
+  let rows = null;
+  if (turns.length && clock() - startedAt < AGENT_EXTRA_BUDGET_MS) {
+    const spanFrom = new Date(Math.floor((Math.min(...turns.map(t => count(t.start_ms))) - MINUTE_MS) / 1000) * 1000);
+    const spanTo = new Date(Math.min(ceilSecond(Math.max(...turns.map(t => count(t.end_ms))) + MINUTE_MS),
+      to.getTime() + SPAN_SLACK_MS));
+    const sql = codexAgentSpanSql(q, turns, { spanFrom, spanTo });
+    rows = await run(sql.sql, sql.params);
+  }
+  return foldCodexAgentLanes({ links, turnRows, entries, children: agents.children, rows, t0 });
 }
 
 // `turnsBoundary` gates the Codex turn rollup read (codexTurnsSource.js); `clock` (ms) times the
@@ -726,10 +826,13 @@ export async function userTaskDetail(from, to, raw, enabledClients, run = defaul
   const namesTurn = entry.turn.names_turn !== undefined && entry.turn.names_turn !== null
     ? Number(entry.turn.names_turn) > 0 : namesTurnOnTools(entry.turn.app_version);
   const traceIds = [...new Set(rows.map(r => r.trace_id).filter(Boolean))];
-  const agents = await codexAgents(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
+  const read = await codexAgentRead(owner, { turnId: task.turnId, conversationId: task.conversationId, startMs: turnStart, endMs: count(entry.turn.end_ms),
     traceIds, tracesPartial: detail.truncated, spawnsWithheld, namesTurn }, detail.task, spawnSpanIds, { from, to, run, prices,
     turnsBoundary, detailStart, now: clock });
+  const { agents } = read;
   // Codex emits no MCP or plugin session events: its environment is not collected.
   const activity = { ...foldCodexSkills(skillRows), ...foldCodexTools(detail.spans, detail.truncated) };
-  return { ...detail, task: { ...detail.task, subagents: agentCount(agents) }, agents, activity, environment: null, owner };
+  const lanes = await codexAgentLanes(q, read, agents, { t0: turnStart, to, run, startedAt: detailStart, clock });
+  return { ...detail, lanes: [...detail.lanes, ...lanes.lanes], spans: [...detail.spans, ...lanes.spans],
+    task: { ...detail.task, subagents: agentCount(agents) }, agents, activity, environment: null, owner };
 }

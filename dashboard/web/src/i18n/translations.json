@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T14:44:01.923158+00:00",
-  "source_messages": 2074,
+  "updated_at": "2026-11-16T04:55:12.860583+00:00",
+  "source_messages": 2075,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2074,
-      "bytes": 160612,
-      "sha256": "7a0dd2f41c3451b34de033fb3ab295095af1dda10132714ad6c0684a1f114995"
+      "messages": 2075,
+      "bytes": 160723,
+      "sha256": "9b97a4de7de828eecac79e78a4c486ae0273085dbec1524936789c4dac9e2d5f"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2074,
-      "bytes": 189991,
-      "sha256": "d4d57338cf7fcf4b8e58773554bfab530f3cdb1b43d43600e6dcb2731c3b9bee"
+      "messages": 2075,
+      "bytes": 190110,
+      "sha256": "c03afafdb2c2c9726b35befff5fa9d4a0d796f2c4c199d7b62d8d3b6d43bfd4b"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2074,
-      "bytes": 199039,
-      "sha256": "cef17fe424fcbd43363c05c31277dca8903cf80107b9a6b7ba898088b4bb3d4a"
+      "messages": 2075,
+      "bytes": 199195,
+      "sha256": "18519ade1a5588872a83f20fdbbc9e03845e142eaafc69aa8033a7af7a3cc768"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2074,
-      "bytes": 170755,
-      "sha256": "dd38c203d8e37399b50dede1ad84c6dd2d789da71be1543b40a92c6898d1477f"
+      "messages": 2075,
+      "bytes": 170869,
+      "sha256": "cf77e22e090175bc70a164a89ebe9f2faf7d27872fbc7ee3854002f1ae4d75cc"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2074,
-      "bytes": 151922,
-      "sha256": "6a5536e4b6acb5bf4f40f66e360f61c4e1e88296aaebea7a7d52be17539a959d"
+      "messages": 2075,
+      "bytes": 152022,
+      "sha256": "38fe6146fbde2cf6f42de5fead787f027fa3e148cd8df418580b306fafca5ed1"
     }
   ],
   "catalog_calls": [
@@ -1486,5 +1486,52 @@
     "reused_keys": [
       "mcf6cdd20424a"
     ]
+  },
+  "codex_subagent_lane_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-16T04:54:58.411232+00:00",
+    "source_sha256": "32c46c430c83bb48c729a7ab5b3cbe18abe4dfab825749fac12d381747c926f1",
+    "output_sha256": "900318d33dcf92a8ef19af92aa86ff9df2480a35653bee51c9cb765c3e772d33",
+    "added_message_count": 1,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "usage": {
+      "inputTokens": 163,
+      "outputTokens": 392,
+      "totalTokens": 555,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "added_keys": [
+      "mc2b1b9568ccd"
+    ],
+    "reused_keys": [],
+    "host_corrections": {
+      "by": "claude-opus-5-5 (feature host)",
+      "reason": "The lane shows partial spans; the lane itself reads nothing (en, es), and the existing catalogs write subagent in lower case mid-sentence.",
+      "changes": [
+        {
+          "locale": "en",
+          "key": "mc2b1b9568ccd",
+          "from": "Some Subagent lanes couldn't read all spans, so only some are displayed.",
+          "to": "Some subagent lanes show only part of their spans because not all of them could be read."
+        },
+        {
+          "locale": "es",
+          "key": "mc2b1b9568ccd",
+          "from": "Algunos carriles de Subagente no pudieron leer todos los spans, por lo que solo se muestran algunos.",
+          "to": "Algunos carriles de subagente muestran solo parte de sus spans porque no se pudieron leer todos."
+        }
+      ]
+    }
   }
 }

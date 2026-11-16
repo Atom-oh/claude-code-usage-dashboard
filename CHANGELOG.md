@@ -15,6 +15,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- The Codex task detail timeline draws each subagent conversation as its own lane, with a
+  dashed line from the spawn or follow-up call that started it, like Claude subagents. Its
+  spans come from one more read within the subagent read budget, priced from the subagent's
+  own completions; a lane whose spans could not all be read says so. The model-call table
+  and cost band then include the subagents' calls, while the task's totals, `why` and tool
+  activity stay its own turn's.
+
 ### Fixed
 
 - The task list showed Codex "subagents" as not collected on every row. It now shows the

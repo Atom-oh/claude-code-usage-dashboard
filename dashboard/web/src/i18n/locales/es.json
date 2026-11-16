@@ -2072,5 +2072,6 @@
   "ma09d3e1a8c17": "Users → Detalles de la tarea → Subagentes",
   "me97f3606af3c": "Detalles de sesiones largas de Codex",
   "m7f52daa6a268": "La vista de detalles de las sesiones muy largas de Codex se abre sin agotar el tiempo de espera. En estos casos, los costes de los subagentes pueden mostrarse como datos confirmados solo parcialmente.",
-  "m7b1b4c8fd309": "Users → Detalles de la tarea"
+  "m7b1b4c8fd309": "Users → Detalles de la tarea",
+  "mc2b1b9568ccd": "Algunos carriles de subagente muestran solo parte de sus spans porque no se pudieron leer todos."
 }
