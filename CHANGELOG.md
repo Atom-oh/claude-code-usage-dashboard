@@ -19,7 +19,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 - Each published `vX.Y.Z` GitHub release gets the linux/arm64 dashboard image as an asset
   (`ccdash-dashboard-vX.Y.Z-linux-arm64.tar.gz`, for `docker load`), with a manifest of
-  its revision and image ID, `SHA256SUMS` and build provenance attestations. The image is
+  its revision and image ID, `SHA256SUMS` and, for runs started from the tag, build
+  provenance attestations. The image is
   built from the tag with the release helper's inspections on a GitHub-hosted ARM runner;
   existing assets are never replaced. The receiver image is not included:
   [release image asset](docs/reference/runtime-distribution.md#release-image-asset).

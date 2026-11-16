@@ -113,6 +113,12 @@ checks out the tag, requires an annotated tag on `main`, and builds with
 - `SHA256SUMS` for both files, and a GitHub build provenance attestation for each
   (`gh attestation verify <file> --repo Atom-oh/claude-code-usage-dashboard`).
 
+Provenance names the workflow run's ref and commit, not what the job checked out. A run
+therefore attests only when its ref is the tag: the release event, or a manual run with
+`--ref vX.Y.Z`, which requires the tag to contain this workflow. A manual run from `main`
+for an older tag, or an `upload=false` dry run, publishes no attestation and records a
+notice in the run summary, so releases tagged before this workflow carry no attestation.
+
 Existing assets are never replaced; correct a bad asset with a new patch release. The
 receiver is not included: it remains the upstream Collector image. The asset does not change
 production deployment, which still builds and publishes through the

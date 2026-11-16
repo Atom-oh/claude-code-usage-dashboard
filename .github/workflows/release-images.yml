@@ -16,7 +16,7 @@ on:
         description: Existing vX.Y.Z release tag
         required: true
       upload:
-        description: Attach to the release (off keeps a workflow artifact only)
+        description: Attach to the release (off keeps a workflow artifact only, without attestation)
         type: boolean
         default: true
 
@@ -44,6 +44,9 @@ jobs:
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
       UPLOAD: ${{ github.event_name == 'release' || inputs.upload }}
+      # Provenance names the run's ref and commit, so attest only when the run starts from
+      # the tag itself (the release event, or a dispatch with --ref vX.Y.Z) and uploads.
+      ATTEST: ${{ (github.event_name == 'release' || inputs.upload) && github.ref == format('refs/tags/{0}', github.event.release.tag_name || inputs.tag) }}
     steps:
       - name: Validate the release tag
         run: |
@@ -87,7 +90,17 @@ jobs:
               out.write("\n")
           PY
           (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
-      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+      - name: Decide on provenance
+        run: |
+          if [ "$ATTEST" = true ]; then
+            [ "$GITHUB_SHA" = "$(git rev-parse "$TAG^{commit}")" ] \
+              || { echo "::error::run commit $GITHUB_SHA is not $TAG"; exit 1; }
+          else
+            msg="No provenance attestation: this run's ref ($GITHUB_REF) is not refs/tags/$TAG, or upload is off."
+            echo "::notice::$msg"; echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: env.ATTEST == 'true'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             dist/ccdash-dashboard-*-linux-arm64.tar.gz
