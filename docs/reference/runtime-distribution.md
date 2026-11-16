@@ -105,8 +105,11 @@ checks out the tag, requires an annotated tag on `main`, and builds with
 - `ccdash-dashboard-vX.Y.Z-linux-arm64.tar.gz`: `docker save` of `ccdash-dashboard:vX.Y.Z`;
   `docker load` restores it.
 - `ccdash-dashboard-vX.Y.Z-linux-arm64.json`: revision, image name, platform, the verified
-  config ID (`imageId`, which `docker image inspect` reports after loading) and the build
-  digest. The full private record is not published.
+  image config digest (`imageId`) and the build digest. The archive's `manifest.json`
+  (`tar -xzOf <archive> manifest.json`) names the same config blob on any daemon. After
+  `docker load`, `docker image inspect` reports it as `Id` only on the classic image store;
+  a containerd image store reports the manifest digest there instead. The full private
+  record is not published.
 - `SHA256SUMS` for both files, and a GitHub build provenance attestation for each
   (`gh attestation verify <file> --repo Atom-oh/claude-code-usage-dashboard`).
 

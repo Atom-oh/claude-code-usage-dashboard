@@ -61,8 +61,11 @@ out. Follow the [deployment runbook](deploy-production.md) to ship a tagged revi
    which attaches the ARM64 dashboard image archive, its manifest and `SHA256SUMS`
    ([release image asset](../reference/runtime-distribution.md#release-image-asset)). Confirm
    the run succeeded and the three assets are listed (`gh release view vX.Y.Z`). For a tag
-   whose tree predates the workflow, or a failed run, start it by hand:
-   `gh workflow run release-images.yml -f tag=vX.Y.Z`.
+   whose tree predates the workflow, or a run that failed before uploading, start it by
+   hand: `gh workflow run release-images.yml -f tag=vX.Y.Z`. A rerun never replaces an
+   existing asset, so after a partial upload it fails at the upload step. Delete only the
+   assets that incomplete run uploaded (`gh release delete-asset vX.Y.Z <name>`), then
+   rerun; never delete assets of a complete set.
 
 ## Deploying a release
 

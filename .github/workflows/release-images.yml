@@ -23,6 +23,12 @@ on:
 permissions:
   contents: read
 
+# `shell: bash` runs every step with -eo pipefail, so a failed command inside a pipeline
+# (docker save | gzip) fails the step instead of publishing a truncated archive.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: release-images-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
@@ -63,9 +69,12 @@ jobs:
             --record "$RUNNER_TEMP/ccdash-release.json"
       - name: Package the image archive, manifest and checksums
         run: |
+          set -o pipefail
           mkdir dist
           archive="ccdash-dashboard-$TAG-linux-arm64.tar.gz"
           docker save "ccdash-dashboard:$TAG" | gzip -n -9 > "dist/$archive"
+          gzip -t "dist/$archive"
+          tar -xzOf "dist/$archive" manifest.json > /dev/null
           # Public identity only; the full build record stays private (runtime-distribution.md).
           python3 - "$RUNNER_TEMP/ccdash-release.json" "dist/ccdash-dashboard-$TAG-linux-arm64.json" <<'PY'
           import json, sys
