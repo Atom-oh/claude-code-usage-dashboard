@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T14:44:01.923158+00:00",
-  "source_messages": 2074,
+  "updated_at": "2026-11-16T01:39:53.737611+00:00",
+  "source_messages": 2078,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2074,
-      "bytes": 160612,
-      "sha256": "7a0dd2f41c3451b34de033fb3ab295095af1dda10132714ad6c0684a1f114995"
+      "messages": 2078,
+      "bytes": 161084,
+      "sha256": "e4bbf372f3a44dd55fb80ec85c152388810f6b0aa92ed95186788db78055888c"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2074,
-      "bytes": 189991,
-      "sha256": "d4d57338cf7fcf4b8e58773554bfab530f3cdb1b43d43600e6dcb2731c3b9bee"
+      "messages": 2078,
+      "bytes": 190514,
+      "sha256": "0c38906e1b2e120829876aeb98432945547424bedf8e91bdb72a3cb3ee452425"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2074,
-      "bytes": 199039,
-      "sha256": "cef17fe424fcbd43363c05c31277dca8903cf80107b9a6b7ba898088b4bb3d4a"
+      "messages": 2078,
+      "bytes": 199635,
+      "sha256": "d54f4af8aad1f712014da89f797d380f1cbd4f3efb73b940b5a0bd2a4bdcffb7"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2074,
-      "bytes": 170755,
-      "sha256": "dd38c203d8e37399b50dede1ad84c6dd2d789da71be1543b40a92c6898d1477f"
+      "messages": 2078,
+      "bytes": 171269,
+      "sha256": "1d9f9a01ed1f12c2b58e1e047b2f7ecb0e70bd1c7e743f0c506d3eba7a105b46"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2074,
-      "bytes": 151922,
-      "sha256": "6a5536e4b6acb5bf4f40f66e360f61c4e1e88296aaebea7a7d52be17539a959d"
+      "messages": 2078,
+      "bytes": 152367,
+      "sha256": "d18558f817d72d5688ff8ee0e98ef2e263ee86b032051e717d81686436284f61"
     }
   ],
   "catalog_calls": [
@@ -1486,5 +1486,78 @@
     "reused_keys": [
       "mcf6cdd20424a"
     ]
+  },
+  "release_1131_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-16T01:38:21.208870+00:00",
+    "source_sha256": "ffb55b967840075a1a65ecc4c0899e6071653c00ae87c66f87145f095c52f190",
+    "output_sha256": "c1fa985b2c427b38d845a498ec89eb963e72fdd12daf7fc2b5225b440172cd61",
+    "added_message_count": 4,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "usage": {
+      "inputTokens": 421,
+      "outputTokens": 1021,
+      "totalTokens": 1442,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "added_keys": [
+      "m817c04e26375",
+      "m4bb2f3ee123c",
+      "m8e788d65e36c",
+      "m104cfd8b57bf"
+    ],
+    "host_corrections": {
+      "by": "claude-opus-5-5 (release host)",
+      "reason": "Align with existing catalog terminology (ja 作業一覧 for Task list) and sentence-case titles (en, es); output_sha256 is Luna's raw output before these corrections.",
+      "changes": [
+        {
+          "locale": "en",
+          "key": "m4bb2f3ee123c",
+          "from": "Number of Codex Subagents in Task list",
+          "to": "Codex subagent count in Task list"
+        },
+        {
+          "locale": "es",
+          "key": "m4bb2f3ee123c",
+          "from": "Número de Subagentes de Codex en Lista de tareas",
+          "to": "Número de subagentes de Codex en Lista de tareas"
+        },
+        {
+          "locale": "ja",
+          "key": "m104cfd8b57bf",
+          "from": "Users → タスクリスト → サブエージェント",
+          "to": "Users → 作業一覧 → サブエージェント"
+        },
+        {
+          "locale": "ja",
+          "key": "m4bb2f3ee123c",
+          "from": "タスクリスト内の Codex サブエージェント数",
+          "to": "作業一覧の Codex サブエージェント数"
+        },
+        {
+          "locale": "ja",
+          "key": "m817c04e26375",
+          "from": "タスクリスト内の Codex タスクのサブエージェント数を表示します。",
+          "to": "作業一覧に Codex タスクのサブエージェント数を表示します。"
+        },
+        {
+          "locale": "ja",
+          "key": "m8e788d65e36c",
+          "from": "タスク詳細と同じ方法で、タスクリストに表示される Codex タスクのサブエージェント数を数えます。呼び出しがなかったことを示す十分な根拠がある場合は 0 と表示し、確認できない場合やセッションが非常に長い場合は未収集と表示します。",
+          "to": "タスク詳細と同じ方法で、作業一覧に表示される Codex タスクのサブエージェント数を数えます。呼び出しがなかったことを示す十分な根拠がある場合は 0 と表示し、確認できない場合やセッションが非常に長い場合は未収集と表示します。"
+        }
+      ]
+    }
   }
 }

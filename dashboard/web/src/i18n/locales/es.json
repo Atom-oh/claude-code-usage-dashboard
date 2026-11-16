@@ -2072,5 +2072,9 @@
   "ma09d3e1a8c17": "Users → Detalles de la tarea → Subagentes",
   "me97f3606af3c": "Detalles de sesiones largas de Codex",
   "m7f52daa6a268": "La vista de detalles de las sesiones muy largas de Codex se abre sin agotar el tiempo de espera. En estos casos, los costes de los subagentes pueden mostrarse como datos confirmados solo parcialmente.",
-  "m7b1b4c8fd309": "Users → Detalles de la tarea"
+  "m7b1b4c8fd309": "Users → Detalles de la tarea",
+  "m104cfd8b57bf": "Users → Lista de tareas → Subagentes",
+  "m4bb2f3ee123c": "Número de subagentes de Codex en Lista de tareas",
+  "m817c04e26375": "Muestra el número de subagentes de las tareas de Codex en Lista de tareas.",
+  "m8e788d65e36c": "Cuenta los subagentes de las tareas de Codex que aparecen en Lista de tareas del mismo modo que en Detalles de la tarea. Si hay pruebas suficientes de que no se realizaron llamadas, muestra 0; si no se puede verificar o la sesión es muy larga, muestra no recopilado."
 }

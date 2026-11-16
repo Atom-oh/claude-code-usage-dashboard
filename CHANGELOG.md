@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-11-16
+
 ### Fixed
 
 - The task list showed Codex "subagents" as not collected on every row. It now shows the
@@ -22,6 +24,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   subagents' calls and cost): a count, `0` only with the detail's evidence on Codex 0.166+,
   and not collected when the traces cannot say, the turn ends at the read bound, or a long
   trace passes the list's read limits.
+
 ### Changed
 
 - ClickHouse system logs that the operator left without retention now expire:
