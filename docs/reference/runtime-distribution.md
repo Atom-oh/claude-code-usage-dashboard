@@ -93,3 +93,24 @@ rows. [Enhanced ECR scanning](https://docs.aws.amazon.com/AmazonECR/latest/userg
 reports OS and language-package findings; query the exact published ARM64 manifest,
 preserve its active findings and verify scan status before production rollout.
 The [deployment runbook](../runbooks/deploy-production.md) owns publication/rollout.
+
+## Release image asset
+
+[release-images.yml](../../.github/workflows/release-images.yml) attaches the dashboard image
+to each published `vX.Y.Z` GitHub release. It runs on the GitHub-hosted `ubuntu-24.04-arm`
+runner, never the self-hosted runners, because the job holds a release-write token. It
+checks out the tag, requires an annotated tag on `main`, and builds with
+`build-release.py` without a layer cache, so every inspection above applies. It uploads:
+
+- `ccdash-dashboard-vX.Y.Z-linux-arm64.tar.gz`: `docker save` of `ccdash-dashboard:vX.Y.Z`;
+  `docker load` restores it.
+- `ccdash-dashboard-vX.Y.Z-linux-arm64.json`: revision, image name, platform, the verified
+  config ID (`imageId`, which `docker image inspect` reports after loading) and the build
+  digest. The full private record is not published.
+- `SHA256SUMS` for both files, and a GitHub build provenance attestation for each
+  (`gh attestation verify <file> --repo Atom-oh/claude-code-usage-dashboard`).
+
+Existing assets are never replaced; correct a bad asset with a new patch release. The
+receiver is not included: it remains the upstream Collector image. The asset does not change
+production deployment, which still builds and publishes through the
+[deployment runbook](../runbooks/deploy-production.md), and it is not an ECR scan result.

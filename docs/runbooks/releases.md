@@ -57,6 +57,12 @@ out. Follow the [deployment runbook](deploy-production.md) to ship a tagged revi
 
    Confirm `origin/main` is still the release merge commit before tagging; otherwise tag
    that commit explicitly.
+6. Publishing the release starts [release-images.yml](../../.github/workflows/release-images.yml),
+   which attaches the ARM64 dashboard image archive, its manifest and `SHA256SUMS`
+   ([release image asset](../reference/runtime-distribution.md#release-image-asset)). Confirm
+   the run succeeded and the three assets are listed (`gh release view vX.Y.Z`). For a tag
+   whose tree predates the workflow, or a failed run, start it by hand:
+   `gh workflow run release-images.yml -f tag=vX.Y.Z`.
 
 ## Deploying a release
 
