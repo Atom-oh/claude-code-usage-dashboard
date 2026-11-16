@@ -208,6 +208,38 @@ readiness or availability regression, through reviewed prior configuration; repe
 replica checks. Image rollback does not restore profiles. Disabling cancellation can leave
 abandoned server work; retain readonly and resource ceilings.
 
+## System log retention
+
+[clickhouse.tf](../../infra/clickhouse.tf) `config.d/system_logs.xml` adds TTLs to the
+system logs that the operator's generated files leave unbounded, and stores `text_log` at
+Information and above. The server reads system log definitions at startup. When a
+definition differs from the existing table, it renames that table to `<name>_N` and creates
+a new one, so applying the file frees no space by itself. System logs are local to each
+replica, unreplicated and outside the `BACKUP DATABASE claude_code` scope.
+
+1. Per replica, record pod UIDs, free space on the `default` disk and the size of each
+   `system` table (`system.parts`, active parts). Confirm the replica is healthy before
+   any restart.
+2. Apply only a reviewed plan whose sole change is the CHI `files` entry. Watch operator
+   events. If the operator does not restart replicas, restart them one at a time, waiting
+   for readiness and an empty replication queue (`system.replication_queue`) before the
+   next.
+3. On each replica, run `SYSTEM FLUSH LOGS`, then confirm that `engine_full` of each
+   configured table contains its TTL, and list the renamed tables:
+
+   ```sql
+   SELECT name, formatReadableSize(total_bytes) FROM system.tables
+   WHERE database = 'system' AND match(name, '^(text_log|processors_profile_log|metric_log|asynchronous_metric_log|query_views_log|error_log|backup_log)_[0-9]+$')
+   ```
+
+4. Drop only the listed tables on that replica (`DROP TABLE system.<name>_N SYNC`) and
+   recheck free space. A later restart with an unchanged file creates no new `_N` table;
+   one that does means the definition changed again.
+
+Rehearsed 2026-11-15 on `clickhouse/clickhouse-server:24.8` (24.8.14.39, the production
+version): the first restart renamed all seven tables to `_0`; a second restart renamed
+none. Rehearsal does not prove the operator's reconcile behavior.
+
 ## Procedure
 
 Build a release tag ([releases and tags](releases.md)) and record it with the revision.
