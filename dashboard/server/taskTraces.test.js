@@ -1911,3 +1911,131 @@ test("a rollup detail gates compactions on the row's version", async () => {
   const known = await detailFor({ compactions: "3", app_version: "0.161.0" });
   assert.deepEqual([known.context.compactions.length, known.context.compactions_total, known.context.compactions_partial], [0, 3, true]);
 });
+
+// ── Codex subagent lanes (taskTraceDetail.js codexAgentSpanSql / foldCodexAgentLanes) ──
+const laneChild = uuid(7), laneGrand = uuid(8);
+const laneLineage = () => {
+  const s = (span_id, parent_id, name, extra = {}) => ({ trace_id: "tr1", span_id, parent_id, name, conversation: "", turn: "", start_ms: "0", ...extra });
+  return [
+    s("g", "x", "collaborationspawn_agent", { conversation: "c1", turn: U1 }),
+    s("d", "g", "dispatch_tool_call_with_state"), s("i", "d", "op.dispatch.inter_agent_communication"),
+    s("c", "i", "session_task.turn", { turn: laneChild }), s("r", "c", "run_turn", { conversation: "sub", turn: laneChild }),
+    // The subagent's own spawn call (span g2 of its turn) starts a second-level subagent turn.
+    s("g2", "x2", "collaborationspawn_agent", { conversation: "sub", turn: laneChild }),
+    s("d2", "g2", "dispatch_tool_call_with_state"), s("i2", "d2", "op.dispatch.inter_agent_communication"),
+    s("c2", "i2", "session_task.turn", { turn: laneGrand }), s("r2", "c2", "run_turn", { conversation: "sub2", turn: laneGrand }),
+  ];
+};
+const laneSpan = (span_id, span_name, at, dur, extra = {}) => ({ span_id, parent_id: "", span_name,
+  start_ms: String(ms(at)), duration_ms: String(dur), a_tool_name: "", ...extra });
+// `agentSpans(params)`: rows of the subagent span read; `clock`: the detail's clock.
+const laneRun = (seen, { agentSpans = () => [] } = {}) => async (sql, params) => {
+  seen.push({ sql, params });
+  if (sql.includes("op.dispatch")) return laneLineage();
+  if (sql.includes("PARTITION BY turn")) return agentSpans(params);
+  if (sql.includes("count() OVER ()"))
+    return [{ ...laneSpan("g", "collaborationspawn_agent", "2026-11-05T01:00:01Z", 5, { a_tool_name: "collaborationspawn_agent" }),
+      trace_id: "tr1", total_spans: "1" }];
+  if (sql.includes("GROUP BY turn_id"))
+    return params.conversationIds
+      ? [turn({ conversation_id: "sub", turn_id: laneChild, start_ms: String(ms("2026-11-05T01:00:02Z")), end_ms: String(ms("2026-11-05T01:00:08Z")) }),
+        turn({ conversation_id: "sub2", turn_id: laneGrand, start_ms: String(ms("2026-11-05T01:00:04Z")), end_ms: String(ms("2026-11-05T01:00:06Z")) })]
+      : [turn({ in_bucket: 1 })];
+  if (sql.includes("otel_logs") && params.conversationIds) return [completion("2026-11-05T01:00:03Z", { conversation_id: "sub" })];
+  return [];
+};
+const childRows = () => [
+  laneSpan("s1", "codex.sampling", "2026-11-05T01:00:02.500Z", 1000, { turn: laneChild, turn_spans: "3" }),
+  laneSpan("g2", "collaborationspawn_agent", "2026-11-05T01:00:03.800Z", 5, { turn: laneChild, turn_spans: "3", a_tool_name: "collaborationspawn_agent" }),
+  laneSpan("o1", "mcp.runtime.resolve_for_step", "2026-11-05T01:00:02.400Z", 0, { turn: laneChild, turn_spans: "3" }),
+  laneSpan("s2", "codex.sampling", "2026-11-05T01:00:04.500Z", 500, { turn: laneGrand, turn_spans: "1" }),
+];
+
+test("Codex subagent span SQL binds the owner, the subagent turns and their window", () => {
+  const sql = detail.codexAgentSpanSql({ userExact: "kim@x.com" }, [{ turn_id: laneChild, conversation_id: "sub" }],
+    { spanFrom: new Date("2026-11-05T01:00:01Z"), spanTo: new Date("2026-11-05T01:00:09Z") });
+  assert.deepEqual(sql.params, { userExact: "kim@x.com", turnIds: [laneChild], conversationIds: ["sub"],
+    spanFrom: "2026-11-05 01:00:01", spanTo: "2026-11-05 01:00:09" });
+  assert.match(sql.sql, /IN \{turnIds:Array\(String\)\}/);
+  assert.match(sql.sql, /count\(\) OVER \(PARTITION BY turn\) AS turn_spans/);
+  assert.match(sql.sql, new RegExp(`LIMIT ${SPAN_BOUND}$`));
+  assert.ok(!/\bkim@x\.com\b/.test(sql.sql));
+});
+
+test("the Codex detail draws each subagent conversation as a lane spawned from its tool span", async () => {
+  const seen = [];
+  const run = laneRun(seen, { agentSpans: childRows });
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
+  assert.deepEqual(out.lanes.map(l => [l.id, l.kind, l.label, l.spawned_by, l.spans_partial ?? null]),
+    [["main", "main", "main", null, null], ["sub", "custom", null, "g", false], ["sub2", "custom", null, "g2", false]]);
+  const sub = out.lanes[1];
+  assert.equal(sub.llm_calls, 2);
+  assert.deepEqual(out.lanes.slice(1).map(l => l.completions_without_span), [0, 0]);
+  assert.ok(Math.abs(sub.cost_usd - unitCost) < 1e-12);
+  // Subagent spans sit on their lane, relative to the task's start, priced from their own completions.
+  const s1 = out.spans.find(s => s.id === "s1");
+  assert.deepEqual([s1.lane, s1.kind, s1.start_ms], ["sub", "llm", 2500]);
+  assert.ok(Math.abs(s1.cost_usd - unitCost) < 1e-12);
+  assert.equal(out.spans.find(s => s.id === "o1").internal, true);
+  assert.equal(out.spans.find(s => s.id === "s2").lane, "sub2");
+  // The task's own figures and activity stay its own turn's.
+  assert.deepEqual(out.activity.tools.map(t => [t.name, t.calls]), [["collaborationspawn_agent", 1]]);
+  assert.equal(out.span_total, 1);
+  const read = seen.find(s => s.sql.includes("PARTITION BY turn"));
+  assert.deepEqual(read.params.turnIds, [laneChild, laneGrand]);
+  assert.deepEqual([read.params.spanFrom, read.params.spanTo], ["2026-11-05 00:59:02", "2026-11-05 01:01:08"]);
+  assert.ok(!JSON.stringify(out).includes("tr1"));
+});
+
+test("a subagent lane whose spans were cut by the bound shows them as partial", async () => {
+  const rows = () => childRows().map(r => (r.turn === laneChild ? { ...r, turn_spans: "9" } : r));
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both,
+    laneRun([], { agentSpans: rows }), DEFAULT_CODEX_PRICING);
+  assert.deepEqual(out.lanes.map(l => [l.id, l.spans_partial ?? null]), [["main", null], ["sub", true], ["sub2", false]]);
+});
+
+test("a spent subagent budget keeps the lanes without spans, partial", async () => {
+  const { AGENT_EXTRA_BUDGET_MS } = await import("./codexAgents.js");
+  const seen = [];
+  let t = 0;
+  // The budget is spent after the agent reads, before the subagent span read.
+  const base = laneRun(seen, { agentSpans: childRows });
+  const run = async (sql, params) => { const r = await base(sql, params); if (sql.includes("otel_logs") && params.conversationIds) t = AGENT_EXTRA_BUDGET_MS; return r; };
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING,
+    undefined, () => t);
+  assert.deepEqual(out.lanes.map(l => [l.id, l.spans_partial ?? null]), [["main", null], ["sub", true], ["sub2", true]]);
+  assert.equal(out.lanes.find(l => l.id === "sub").completions_without_span, 1);
+  assert.ok(out.spans.every(s => s.lane === "main"));
+  assert.ok(!seen.some(s => s.sql.includes("PARTITION BY turn")));
+});
+
+test("a Codex detail without subagents reads no subagent spans and keeps one lane", async () => {
+  const seen = [];
+  const run = fakeRun({ owner: "kim@x.com" });
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both,
+    async (sql, params) => { seen.push(sql); return run(sql, params); }, DEFAULT_CODEX_PRICING);
+  assert.deepEqual(out.lanes.map(l => l.id), ["main"]);
+  assert.ok(!seen.some(s => s.includes("PARTITION BY turn")));
+});
+
+test("a subagent turn running past the span read bound leaves its lane partial", () => {
+  const links = [{ child_conversation: "sub", child_turn: laneChild, tool_span_id: "g", depth: 1 }];
+  const turnRows = [turn({ conversation_id: "sub", turn_id: laneChild, start_ms: String(ms("2026-11-05T01:00:02Z")),
+    end_ms: String(ms("2026-11-05T01:00:08Z")) })];
+  const rows = childRows().filter(r => r.turn === laneChild);
+  const fold = (readToMs) => detail.foldCodexAgentLanes({ links, turnRows, entries: [], children: [], rows,
+    t0: ms("2026-11-05T01:00:00Z"), readToMs }).lanes[0].spans_partial;
+  assert.equal(fold(ms("2026-11-05T01:10:00Z")), false);
+  // Ending within a minute of the bound, the turn's later spans are past the read.
+  assert.equal(fold(ms("2026-11-05T01:00:30Z")), true);
+});
+
+test("a subagent lane counts its completions that match none of its spans", async () => {
+  // The subagent's completion at 01:00:09 falls after s1's end (01:00:03.5) plus the 5 s slack, so it matches no span.
+  const base = laneRun([], { agentSpans: childRows });
+  const run = async (sql, params) => (sql.includes("otel_logs") && params.conversationIds
+    ? [completion("2026-11-05T01:00:09Z", { conversation_id: "sub" })] : base(sql, params));
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
+  assert.equal(out.lanes.find(l => l.id === "sub").completions_without_span, 1);
+  assert.ok(out.spans.filter(s => s.lane === "sub").every(s => s.cost_usd === undefined || s.cost_usd === null));
+});

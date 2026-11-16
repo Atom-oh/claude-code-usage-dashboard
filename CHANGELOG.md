@@ -24,6 +24,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   built from the tag with the release helper's inspections on a GitHub-hosted ARM runner;
   existing assets are never replaced. The receiver image is not included:
   [release image asset](docs/reference/runtime-distribution.md#release-image-asset).
+- The Codex task detail timeline draws each subagent conversation as its own lane, with a
+  dashed line from the spawn or follow-up call that started it, like Claude subagents. Its
+  spans come from one more read within the subagent read budget, priced from the subagent's
+  own completions; a lane whose spans could not all be read says so, and the cost band
+  shows a lane it cannot place (spans or cost partial, or completions matching no span) as not
+  collected and its total as a partial subtotal. The model-call table, the Why panel and the
+  task's totals, `why` and tool activity stay its own turn's.
 
 ## [1.13.1] - 2026-11-16
 

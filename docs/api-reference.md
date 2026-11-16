@@ -796,7 +796,21 @@ skills a minute either side, each capped at the list's reads) and equals its lis
   `main` plus one lane per `agent_id`; `kind` is `general-purpose`, `Explore`, `fork` or
   `custom`, `label` is the spawning span's `subagent_type` (null when not found) and
   `spawned_by` is the drawn tool span that spawned the lane's first `llm_request` (the
-  `tool` span when the `tool.execution` parent is folded into it). Codex has only `main`.
+  `tool` span when the `tool.execution` parent is folded into it). Codex has `main` plus one
+  lane per subagent conversation in `agents.children` (`id` the conversation id, `kind`
+  `custom`, `label` null): `spawned_by` is the tool span of its first link (a `main` span, or a
+  subagent lane's span for a deeper level), and `llm_calls`/`cost_usd` sum its turns' `children`
+  values (`cost_partial` when any is unknown or partial). A turn without its turn row adds
+  neither, so `llm_calls` is then a subtotal as well (flagged only through `cost_partial`).
+  Codex subagent lanes add `spans_partial`: true when some of their turns' spans are missing
+  from the payload (no turn row, the read skipped because the subagent read budget was spent,
+  cut by its row bound, or a turn ending within a minute of `to` + 24h). They also add
+  `completions_without_span` (their read turns' linked completions matching none of their
+  model-call spans). The UI's cost band shows a subagent lane as not collected, and its total
+  as a partial subtotal of the other lanes, when its spans are partial, its cost is unknown or
+  partial, or it has such completions; without a priced call of the task's own turn, the band
+  is not shown (subagent lanes only stack on it). The UI's model-call table, the Why panel's
+  model share and the model highlight cover only the task's own turn.
 - `spans`: `{id, parent, lane, kind: llm|tool|wait, name, start_ms, duration_ms, attrs}`;
   `start_ms` is the offset from the task start and `parent` is null when the parent is not
   in the payload. Claude emits one tool span per tool call: a `tool.execution` span whose
@@ -806,7 +820,12 @@ skills a minute either side, each capped at the list's reads) and equals its lis
   span. An execution span without its `tool` span is returned as the tool span. Codex
   spans are the turn's spans that carry the task's conversation id or none. LLM spans add `tokens`, `cost_usd`, `cost_basis`; Codex model-call
   spans (`codex.sampling`, or `run_sampling_request` for legacy turns) carry the linked completion's values and `completion: {model, effort, ttft_ms,
-  duration_ms, count}`. `attrs` holds only allowlisted keys: LLM `model`, token counts,
+  duration_ms, count}`. A Codex subagent lane's spans come from one more read after the
+  `agents` reads, while their budget lasts: the spans of the subagent turns with a turn row
+  (each carrying its conversation id or none) between a minute before the first starts and a
+  minute after the last ends (at most `to` + 24h), the newest 5000 in all, on the task's clock
+  and priced from each turn's own linked completions. They do not count in `span_total`,
+  `truncated`, `activity` or `why`, which stay the task's own turn. `attrs` holds only allowlisted keys: LLM `model`, token counts,
   `ttft_ms`, `attempt`, `error_class`, `status_code`, `stop_reason`, `query_source_safe`,
   `effort`, `speed`; tool `tool_name`, `subagent_type`, `skill_name`,
   `anthropic.mcp.server.name`, `bash_command_class`, `success`, `error_class`; wait

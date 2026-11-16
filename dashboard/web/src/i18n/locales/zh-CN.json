@@ -2079,5 +2079,6 @@
   "m0be4f4a7ac94": "将 Bedrock 请求和用量的后端区分为 Runtime 和 Mantle，并在任务列表中显示 Codex 任务的子代理数量。",
   "m6872149e7709": "Bedrock 后端区分",
   "mdb13c775c92d": "对于 Bedrock 会话中的请求记录，以及使用无前缀模型 ID（例如 claude-fable-5-1）记录的用量，根据同一会话中的模型 ID，将其显示为 Bedrock Runtime 或 Bedrock Mantle，而不是“未知”。",
-  "m51269348382e": "顶部筛选 → 后端"
+  "m51269348382e": "顶部筛选 → 后端",
+  "mc2b1b9568ccd": "部分子代理泳道未能读取所有 span，因此仅显示部分内容。"
 }

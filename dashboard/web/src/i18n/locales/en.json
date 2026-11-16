@@ -2079,5 +2079,6 @@
   "m0be4f4a7ac94": "Distinguishes the backend of Bedrock requests and usage as Runtime or Mantle, and shows the number of subagents for Codex tasks in the Task list.",
   "m6872149e7709": "Bedrock backend distinction",
   "mdb13c775c92d": "For request records in Bedrock sessions and usage recorded with unprefixed model IDs (e.g., claude-fable-5-1), show Bedrock Runtime or Bedrock Mantle based on the model ID in the same session instead of “unknown”.",
-  "m51269348382e": "Top filter → Backend"
+  "m51269348382e": "Top filter → Backend",
+  "mc2b1b9568ccd": "Some subagent lanes show only part of their spans because not all of them could be read."
 }

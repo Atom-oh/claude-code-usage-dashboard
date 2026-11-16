@@ -666,3 +666,88 @@ test("a Claude task shows no Codex subagent section", async () => {
   await screen.findByRole("region", { name: "세션 환경" });
   expect(screen.queryByRole("region", { name: "서브에이전트 호출" })).toBeNull();
 });
+
+test("Codex subagent conversations get their own lanes, and partial lanes say so", async () => {
+  const d = activityDetail(null, [toolSpan("g1", "collaborationspawn_agent"),
+    { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 2000, duration_ms: 1000, attrs: {} }]);
+  const sub = (id, spawned_by, spans_partial) => ({ id, label: null, kind: "custom", spawned_by, llm_calls: 1, cost_usd: 0.1,
+    cost_partial: false, spans_partial });
+  body = { ...d, lanes: [...d.lanes, sub("conv-a", "g1", false), sub("conv-b", "g1", true)] };
+  const { container } = mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 #1 레인" });
+  expect(screen.getByRole("group", { name: "서브에이전트 #2 레인" })).toBeTruthy();
+  expect(container.querySelectorAll("[data-spawn]").length).toBe(2);
+  expect(screen.getByText("일부 서브에이전트 레인은 span을 모두 읽지 못해 일부만 표시합니다.")).toBeTruthy();
+});
+
+test("Codex subagent lanes with all their spans show no partial note", async () => {
+  const d = activityDetail(null);
+  body = { ...d, lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.1,
+    cost_partial: false, spans_partial: false }] };
+  mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  expect(screen.queryByText("일부 서브에이전트 레인은 span을 모두 읽지 못해 일부만 표시합니다.")).toBeNull();
+});
+
+test("a Codex subagent lane without its spans makes the cost band a partial subtotal", async () => {
+  const d = activityDetail(null);
+  body = { ...d, lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 3, cost_usd: 1.5,
+    cost_partial: false, spans_partial: true }] };
+  const { container } = mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  const band = container.querySelector('svg[role="img"]');
+  expect(band.textContent).toContain("누적 비용 $0.25 (부분합)");
+  expect(within(band).getAllByText("미수집").length).toBeGreaterThan(0);
+});
+
+test("a truncated Codex detail counts only its own spans against the span total", async () => {
+  const d = activityDetail(null);
+  body = { ...d, truncated: true, span_total: 1,
+    lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.1, cost_partial: false, spans_partial: false }],
+    spans: [...d.spans, { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 10, duration_ms: 5, attrs: {} }] };
+  mount({ taskId: CODEX_ID });
+  const status = await screen.findByRole("status");
+  expect(status.textContent).toContain("(span 1 / 1)");
+});
+
+test("no cost band when the only priced calls are in a subagent lane it cannot place", async () => {
+  const d = activityDetail(null);
+  // The main span must have no cost key at all.
+  const { cost_usd: _c, tokens: _t, completion: _p, ...mainSpan } = d.spans[0];
+  body = { ...d,
+    spans: [mainSpan,
+      { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 10, duration_ms: 5, attrs: {}, cost_usd: 0.4 }],
+    lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.4,
+      cost_partial: false, spans_partial: true, completions_without_span: 0 }] };
+  mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  expect(screen.queryByText(/누적 비용/)).toBeNull();
+});
+
+test("the model-call table covers the Codex task's own turn, not its subagent lanes", async () => {
+  const d = activityDetail(null);
+  body = { ...d,
+    spans: [...d.spans, { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 10, duration_ms: 5,
+      attrs: { model: "subagent-model-x" }, cost_usd: 0.4 }],
+    lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.4,
+      cost_partial: false, spans_partial: false, completions_without_span: 0 }] };
+  mount({ taskId: CODEX_ID });
+  const table = await screen.findByRole("region", { name: "모델별 호출" });
+  expect(table.textContent).toContain("gpt-6.1");
+  expect(table.textContent).not.toContain("subagent-model-x");
+});
+
+test("no cost band when the task's own cost is unknown, even with a complete subagent lane", async () => {
+  const d = activityDetail(null);
+  const { cost_usd: _c, tokens: _t, completion: _p, ...mainSpan } = d.spans[0];
+  body = { ...d,
+    task: { ...d.task, cost_usd: null, cost_partial: true },
+    spans: [mainSpan,
+      { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 10, duration_ms: 5, attrs: {}, cost_usd: 0.4 }],
+    lanes: [{ ...d.lanes[0], cost_usd: null, cost_partial: true },
+      { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.4,
+        cost_partial: false, spans_partial: false, completions_without_span: 0 }] };
+  mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  expect(screen.queryByText(/누적 비용/)).toBeNull();
+});
