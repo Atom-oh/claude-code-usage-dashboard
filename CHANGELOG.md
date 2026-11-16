@@ -22,6 +22,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   subagents' calls and cost): a count, `0` only with the detail's evidence on Codex 0.166+,
   and not collected when the traces cannot say, the turn ends at the read bound, or a long
   trace passes the list's read limits.
+### Changed
+
+- ClickHouse system logs that the operator left without retention now expire:
+  `text_log` after 7 days (Information and above only), `processors_profile_log` after
+  3, `metric_log`/`asynchronous_metric_log` after 14, and `query_views_log`/`error_log`/
+  `backup_log` after 30. They held ~43GiB per replica on 2026-11-15. Applying the setting
+  renames the old tables; free the space with the
+  [system log retention](docs/runbooks/deploy-production.md#system-log-retention) steps.
 
 ## [1.13.0] - 2026-11-15
 
