@@ -2080,5 +2080,8 @@
   "m6872149e7709": "Bedrock backend distinction",
   "mdb13c775c92d": "For request records in Bedrock sessions and usage recorded with unprefixed model IDs (e.g., claude-fable-5-1), show Bedrock Runtime or Bedrock Mantle based on the model ID in the same session instead of “unknown”.",
   "m51269348382e": "Top filter → Backend",
-  "mc2b1b9568ccd": "Some subagent lanes show only part of their spans because not all of them could be read."
+  "mc2b1b9568ccd": "Some subagent lanes show only part of their spans because not all of them could be read.",
+  "m4b5e2e77b3ad": "Codex subagent timeline lane",
+  "mc77f1693f3f2": "The timeline in Codex Task details draws one lane for each subagent conversation and connects it with a dotted line to the call that started that subagent. LLM calls in a lane are shown as the subagent’s own cost, and a lane whose spans could not all be read is marked as only partially shown.",
+  "m780ec32c774e": "Shows subagents as lanes in the timeline in Codex Task details."
 }

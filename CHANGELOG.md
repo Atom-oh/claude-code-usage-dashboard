@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-16
+
 ### Added
 
 - Each published `vX.Y.Z` GitHub release gets the linux/arm64 dashboard image as an asset

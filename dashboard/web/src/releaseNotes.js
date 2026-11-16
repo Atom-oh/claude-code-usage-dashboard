@@ -10,6 +10,23 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.14.0",
+    "date": "2026-11-16",
+    "summary": "Codex 작업 상세의 타임라인에 서브에이전트를 레인으로 보여 줍니다.",
+    "items": [
+      {
+        "kind": "new",
+        "title": "Codex 서브에이전트 타임라인 레인",
+        "body": "Codex 작업 상세의 타임라인에서 서브에이전트 대화마다 레인을 하나씩 그리고, 그 서브에이전트를 시작한 호출에서 점선으로 연결합니다. 레인의 LLM 호출은 서브에이전트 자신의 비용으로 표시하고, span을 다 읽지 못한 레인은 일부만 표시한다고 안내합니다.",
+        "to": "/users",
+        "where": "Users → 작업 목록 → 작업 상세",
+        "refs": [
+          324
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.13.1",
     "date": "2026-11-16",
     "summary": "Bedrock 요청과 사용량의 백엔드를 Runtime과 Mantle로 구분하고, 작업 목록에서 Codex 작업의 서브에이전트 수를 보여 줍니다.",
