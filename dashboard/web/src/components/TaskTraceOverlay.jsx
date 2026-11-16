@@ -225,11 +225,16 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
   // Codex's own operation spans (no tool_name) crowd the timeline; they are hidden until asked.
   const [showInternal, setShowInternal] = useState(false);
   const internal = spans.filter((s) => s.internal).length;
+  // span_total counts the task's own spans; Codex subagent lanes (spans_partial set) are read apart.
+  const ownSpans = useMemo(() => {
+    const apart = new Set((data.lanes || []).filter((l) => "spans_partial" in l).map((l) => l.id));
+    return spans.filter((s) => !apart.has(s.lane)).length;
+  }, [data.lanes, spans, _locale]);
   const shown = useMemo(() => (showInternal || !internal ? spans : spans.filter((s) => !s.internal)),
     [spans, showInternal, internal, _locale]);
   return <>
     {truncated ? <p role="status" className="rounded-md bg-warning-surface px-3 py-2 text-sm text-warning-text">
-      <span>{translateSource(TRUNCATED)}</span>{` (span ${formatObserved(spans.length)} / ${formatObserved(data.span_total)})`}</p>
+      <span>{translateSource(TRUNCATED)}</span>{` (span ${formatObserved(ownSpans)} / ${formatObserved(data.span_total)})`}</p>
       : <Kpis task={task} />}
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
       <div className="min-w-0 rounded-lg border border-ink-100 p-4">

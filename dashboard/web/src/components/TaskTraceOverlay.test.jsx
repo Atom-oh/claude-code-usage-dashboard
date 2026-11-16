@@ -688,3 +688,24 @@ test("Codex subagent lanes with all their spans show no partial note", async () 
   await screen.findByRole("group", { name: "서브에이전트 레인" });
   expect(screen.queryByText("일부 서브에이전트 레인은 span을 모두 읽지 못해 일부만 표시합니다.")).toBeNull();
 });
+
+test("a Codex subagent lane without its spans makes the cost band a partial subtotal", async () => {
+  const d = activityDetail(null);
+  body = { ...d, lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 3, cost_usd: 1.5,
+    cost_partial: false, spans_partial: true }] };
+  const { container } = mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  const band = container.querySelector('svg[role="img"]');
+  expect(band.textContent).toContain("누적 비용 $0.25 (부분합)");
+  expect(within(band).getAllByText("미수집").length).toBeGreaterThan(0);
+});
+
+test("a truncated Codex detail counts only its own spans against the span total", async () => {
+  const d = activityDetail(null);
+  body = { ...d, truncated: true, span_total: 1,
+    lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.1, cost_partial: false, spans_partial: false }],
+    spans: [...d.spans, { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 10, duration_ms: 5, attrs: {} }] };
+  mount({ taskId: CODEX_ID });
+  const status = await screen.findByRole("status");
+  expect(status.textContent).toContain("(span 1 / 1)");
+});

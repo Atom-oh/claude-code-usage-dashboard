@@ -658,8 +658,9 @@ function codexLaneSpans(rows, turn, linked, lane, t0) {
 // (calls and cost per subagent turn). `rows`: the subagent span read (codexAgentSpanSql), or null
 // when it was not read. A lane is spawned by the tool span of its first link; its spans are its
 // turns' spans on the task's clock (`t0`). `spans_partial`: some of its turns' spans are missing
-// (not read, no turn row, or cut by the read's bound), so the lane shows fewer than ran.
-export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, t0 }) {
+// (not read, no turn row, cut by the read's row bound, or the turn ending within a minute of the
+// read's time bound `readToMs`), so the lane shows fewer than ran.
+export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, t0, readToMs = null }) {
   const byTurn = new Map();
   for (const r of rows ?? []) byTurn.set(r.turn, [...(byTurn.get(r.turn) ?? []), r]);
   const childById = new Map(children.filter(c => c.id).map(c => [c.id, c]));
@@ -675,7 +676,8 @@ export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, 
     lane.turns.push(childById.get(taskId(conv, l.child_turn)) ?? null);
     const turn = turnRows.find(t => t.turn_id === l.child_turn && t.conversation_id === conv);
     const own = byTurn.get(l.child_turn) ?? [];
-    if (rows === null || !turn || !own.length || own.length < (count(own[0].turn_spans) ?? own.length)) lane.spans_partial = true;
+    const clipped = turn && readToMs !== null && (count(turn.end_ms) ?? Infinity) + MINUTE_MS > readToMs;
+    if (rows === null || !turn || clipped || !own.length || own.length < (count(own[0].turn_spans) ?? own.length)) lane.spans_partial = true;
     if (!turn || !own.length) continue;
     const linked = entries.find(e => e.turn.turn_id === l.child_turn && e.turn.conversation_id === conv)?.linked ?? [];
     spans.push(...codexLaneSpans(own, turn, linked, conv, t0).spans);
@@ -749,14 +751,15 @@ async function codexAgentLanes(q, { links, turnRows, entries }, agents, { t0, to
   const turns = turnRows.filter(t => linked.has(`${t.conversation_id}/${t.turn_id}`)
     && count(t.start_ms) !== null && count(t.end_ms) !== null);
   let rows = null;
+  const readToMs = to.getTime() + SPAN_SLACK_MS;
   if (turns.length && clock() - startedAt < AGENT_EXTRA_BUDGET_MS) {
     const spanFrom = new Date(Math.floor((Math.min(...turns.map(t => count(t.start_ms))) - MINUTE_MS) / 1000) * 1000);
     const spanTo = new Date(Math.min(ceilSecond(Math.max(...turns.map(t => count(t.end_ms))) + MINUTE_MS),
-      to.getTime() + SPAN_SLACK_MS));
+      readToMs));
     const sql = codexAgentSpanSql(q, turns, { spanFrom, spanTo });
     rows = await run(sql.sql, sql.params);
   }
-  return foldCodexAgentLanes({ links, turnRows, entries, children: agents.children, rows, t0 });
+  return foldCodexAgentLanes({ links, turnRows, entries, children: agents.children, rows, t0, readToMs });
 }
 
 // `turnsBoundary` gates the Codex turn rollup read (codexTurnsSource.js); `clock` (ms) times the

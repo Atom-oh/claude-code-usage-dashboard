@@ -2015,3 +2015,15 @@ test("a Codex detail without subagents reads no subagent spans and keeps one lan
   assert.deepEqual(out.lanes.map(l => l.id), ["main"]);
   assert.ok(!seen.some(s => s.includes("PARTITION BY turn")));
 });
+
+test("a subagent turn running past the span read bound leaves its lane partial", () => {
+  const links = [{ child_conversation: "sub", child_turn: laneChild, tool_span_id: "g", depth: 1 }];
+  const turnRows = [turn({ conversation_id: "sub", turn_id: laneChild, start_ms: String(ms("2026-11-05T01:00:02Z")),
+    end_ms: String(ms("2026-11-05T01:00:08Z")) })];
+  const rows = childRows().filter(r => r.turn === laneChild);
+  const fold = (readToMs) => detail.foldCodexAgentLanes({ links, turnRows, entries: [], children: [], rows,
+    t0: ms("2026-11-05T01:00:00Z"), readToMs }).lanes[0].spans_partial;
+  assert.equal(fold(ms("2026-11-05T01:10:00Z")), false);
+  // Ending within a minute of the bound, the turn's later spans are past the read.
+  assert.equal(fold(ms("2026-11-05T01:00:30Z")), true);
+});

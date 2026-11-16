@@ -14,6 +14,8 @@ const BUCKETS = 120, LEGEND_TOP = 28, LEGEND_ROW = 18, AXIS_GAP = 20;
 // the viewBox; the plot fills the height above the time axis.
 export const bandHeight = (laneCount) => Math.max(150, LEGEND_TOP + laneCount * LEGEND_ROW + AXIS_GAP);
 const money = (v) => (v === null ? translate("m08a739493081") : formatClientCost(v));
+// A known subtotal (some lane left out, cumulativeByLane `partial`) says so.
+const subtotal = (p) => (p.total !== null && p.partial ? `${money(p.total)}${translate("m830e860c2bd2")}` : money(p.total));
 
 export function TaskCostBand({ lanes, spans, end, durationMs }) {
   const _locale = useLocale();
@@ -50,7 +52,7 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
     setHover(Math.round(p * BUCKETS));
   };
   const point = hover === null ? null : points[hover];
-  const title = translate("mbc45ffdb9473", [money(final.total)]);
+  const title = translate("mbc45ffdb9473", [subtotal(final)]);
 
   return <div className="relative">
     <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" className="block" role="img" aria-label={translate("mbefbeafc7140", [title])}>
@@ -76,7 +78,7 @@ export function TaskCostBand({ lanes, spans, end, durationMs }) {
     {point && <div role="tooltip" className="pointer-events-none absolute top-6"
       style={{ ...tooltipStyles(c).contentStyle, color: c.tooltipFg, fontSize: 12,
         left: `${Math.min(70, (xAt(hover) / VIEW_W) * 100)}%` }}>
-      <div style={{ fontSize: 11, marginBottom: 2 }}>{translate("mbbdbe3c0ef13", [formatTaskDuration(point.t_ms), money(point.total)])}</div>
+      <div style={{ fontSize: 11, marginBottom: 2 }}>{translate("mbbdbe3c0ef13", [formatTaskDuration(point.t_ms), subtotal(point)])}</div>
       {lanes.map((l) => <div key={l.id}>{`${laneName(l)} ${money(point.by_lane[l.id] ?? null)}`}</div>)}
     </div>}
   </div>;

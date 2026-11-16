@@ -218,3 +218,14 @@ test("a lane's context line joins only its main call source; side calls stay unc
   // Without sources (Codex) every point of a lane is on its line.
   expect(contextLines(points, () => null).get("gp").line).toHaveLength(4);
 });
+
+test("cumulativeByLane leaves a lane with missing spans unknown and out of a partial total", () => {
+  const lanes = [lane("main", "main"), lane("conv-a", "custom", { cost_usd: 5, spans_partial: true })];
+  const points = cumulativeByLane([llm("m", "main", 0, 2), llm("c", "conv-a", 0, 3)], lanes, 4);
+  const last = points.at(-1);
+  expect(last.by_lane["conv-a"]).toBeNull();
+  expect(last.total).toBe(2);
+  expect(points.every((p) => p.partial)).toBe(true);
+  // Without such a lane the total is whole.
+  expect(cumulativeByLane([llm("m", "main", 0, 2)], [lane("main", "main")], 4).at(-1).partial).toBe(false);
+});
