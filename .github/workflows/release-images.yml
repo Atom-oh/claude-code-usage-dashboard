@@ -5,7 +5,8 @@ name: Release images
 # built from the tag by scripts/build-release.py with every inspection the deployment
 # runbook relies on. The receiver stays the upstream Collector image until the packaged
 # install's own build replaces it. Runs on a GitHub-hosted ARM runner: the job holds a
-# release-write token, so it never shares the self-hosted runners.
+# release-write token, so it never shares the self-hosted runners. Actions are pinned to
+# commit SHAs for the same reason.
 on:
   release:
     types: [published]
@@ -43,7 +44,7 @@ jobs:
           if ! printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
             echo "::error::not a vX.Y.Z release tag: $TAG"; exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
@@ -55,7 +56,7 @@ jobs:
           git merge-base --is-ancestor "$(git rev-parse "$TAG^{commit}")" FETCH_HEAD \
             || { echo "::error::$TAG is not on main"; exit 1; }
           [ "$(git rev-parse HEAD)" = "$(git rev-parse "$TAG^{commit}")" ]
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build and inspect the ARM64 image from the tag
         run: |
           python3 scripts/build-release.py --image "ccdash-dashboard:$TAG" \
@@ -77,7 +78,7 @@ jobs:
               out.write("\n")
           PY
           (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             dist/ccdash-dashboard-*-linux-arm64.tar.gz
@@ -89,7 +90,7 @@ jobs:
         run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
       - name: Keep a workflow artifact instead
         if: env.UPLOAD != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ccdash-dashboard-${{ env.TAG }}-linux-arm64
           path: dist/
