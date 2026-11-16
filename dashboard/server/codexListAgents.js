@@ -24,6 +24,8 @@ export const LIST_LINEAGE_SPAN_LIMIT = 5000;
 export const LIST_AGENT_CONCURRENCY = 4;
 
 const SECOND_MS = 1000;
+// Spans naming their turn on Codex 0.166+ (one of each per turn).
+const TURN_ROOTS = ["run_turn", "session_task.turn"];
 // The detail's margin before the span read bound (taskTraceDetail.js codexSpawnEvidence).
 const SPAWN_BOUND_MS = 60000;
 
@@ -39,9 +41,10 @@ function mergeRanges(ranges) {
 }
 
 // Agent tool spans (collaboration<tool>, multi_agent_v1<tool>) of the owner inside the given windows
-// (whole seconds, end inclusive): every span the detail's walk can start a chain from.
-export function codexLinkToolSql(owner, ranges) {
-  const params = { userExact: owner };
+// (whole seconds, end inclusive): every span the detail's walk can start a chain from; plus the
+// turn spans of `turnIds`, the evidence that a turn's own spans were collected at all.
+export function codexLinkToolSql(owner, turnIds, ranges) {
+  const params = { userExact: owner, turnIds };
   const windows = ranges.map((r, i) => {
     params[`r${i}From`] = toChDateTime(new Date(Math.floor(r.fromMs / SECOND_MS) * SECOND_MS));
     params[`r${i}To`] = toChDateTime(new Date(Math.floor(r.toMs / SECOND_MS) * SECOND_MS + SECOND_MS));
@@ -55,7 +58,8 @@ FROM claude_code.otel_traces
 PREWHERE (${windows.join(" OR ")})
   AND ${EXACT_USER}
 WHERE ResourceAttributes['client'] = 'codex'
-  AND (${TOOL_PREFIXES.map((p) => `startsWith(SpanName, '${p}')`).join(" OR ")})
+  AND (${TOOL_PREFIXES.map((p) => `startsWith(SpanName, '${p}')`).join(" OR ")}
+    OR (SpanName IN (${TURN_ROOTS.map((n) => `'${n}'`).join(", ")}) AND turn IN {turnIds:Array(String)}))
 LIMIT 1 BY TraceId, SpanId
 LIMIT ${LIST_TOOL_SPAN_LIMIT + 1}`,
     params,
@@ -74,18 +78,21 @@ export async function codexListSubagents(owner, pageTurns, turnRows, { run, toMs
   const turns = pageTurns.filter((t) => TURN_ID.test(t.turn_id ?? "") && count(t.start_ms) !== null && count(t.end_ms) !== null
     && !clipped(t));
   if (!turns.length) return out;
-  const scan = codexLinkToolSql(owner, mergeRanges(turns.map((t) => ({
+  const scan = codexLinkToolSql(owner, turns.map((t) => t.turn_id), mergeRanges(turns.map((t) => ({
     fromMs: count(t.start_ms) - LEGACY_CALL_SLACK_MS, toMs: count(t.end_ms) + LEGACY_CALL_SLACK_MS }))));
   const scanned = await run(scan.sql, scan.params);
   const complete = scanned.length <= LIST_TOOL_SPAN_LIMIT;
   const tools = scanned.slice(0, LIST_TOOL_SPAN_LIMIT).filter((r) => TOOL_PREFIXES.some((p) => (r.name ?? "").startsWith(p)));
+  const present = new Set(scanned.filter((r) => TURN_ROOTS.includes(r.name)).map((r) => r.turn));
   const namesTurn = (t) => Number(t.names_turn) > 0 || namesTurnOnTools(t.app_version);
   const withTool = new Set(tools.map((r) => r.turn).filter(Boolean));
   const withLink = new Set(tools.filter((r) => LINK_TOOLS.includes(r.name)).map((r) => r.turn).filter(Boolean));
   // A zero (the detail's known_zero): a version naming its turn on tool spans (so no legacy, unnamed
   // span is its own), a complete scan, no spawn/follow-up/send_input span, no spawn call counted for
-  // the turn elsewhere (its rollup row) and no walked link. Without any agent tool span no walk is needed.
-  const mayBeZero = (t) => complete && namesTurn(t) && !withLink.has(t.turn_id) && !(count(t.spawn_calls) > 0);
+  // the turn elsewhere (its rollup row), a span of the turn itself in the scan (no spans is unknown, as
+  // in the detail) and no walked link. Without any agent tool span no walk is needed.
+  const mayBeZero = (t) => complete && present.has(t.turn_id) && namesTurn(t) && !withLink.has(t.turn_id)
+    && !(count(t.spawn_calls) > 0);
   for (const t of turns) if (mayBeZero(t) && !withTool.has(t.turn_id)) out.set(t.turn_id, 0);
   const legacy = tools.filter((r) => !r.turn);
   // A turn's lineage traces: its own tool spans', and those of unnamed (legacy) calls in its window.
@@ -126,6 +133,9 @@ export async function codexListSubagents(owner, pageTurns, turnRows, { run, toMs
       if (logs === null || named === null) return null;
       ({ rows, conversations } = resolveLegacy(rows, logs, named, turnRows));
     }
+    // A call still without a turn may be this turn's (a caller outside the list's turns): unknown,
+    // as the detail marks it limited.
+    if (rows.some((r) => LINK_TOOLS.includes(r.name) && !r.turn)) return null;
     return walkLineage(rows, t.turn_id, conversations).links;
   };
   const queue = [...walk];

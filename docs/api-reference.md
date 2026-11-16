@@ -737,10 +737,11 @@ from older Codex such as 0.159.3, counts `run_sampling_request` instead, never b
 the count the task detail reports (`task.subagents`), from the same trace walk: the shown
 turns' agent tool spans (`collaboration<tool>`, `multi_agent_v1<tool>`) inside their own
 windows, then each turn's traces over its window. A positive count is the distinct subagent
-conversations found; `0` needs a complete scan, no spawn, follow-up or `send_input` span and no
-walked link of the turn, no rollup spawn call, and Codex 0.166+ (which names its turn on tool
-spans); anything else is null. Before 0.166 a call is resolved through its call log, as in the
-detail. Null also covers a turn ending within a minute of the span read bound (`to` + 24h, as
+conversations found; `0` needs a complete scan, a `run_turn` or `session_task.turn` span of the
+turn (its spans were collected), no spawn, follow-up or `send_input` span and no walked link of
+the turn, no rollup spawn call, and Codex 0.166+ (which names its turn on tool spans); anything
+else is null. Before 0.166 a call is resolved through its call log, as in the detail; a walked
+call left without a turn makes the count null rather than short. Null also covers a turn ending within a minute of the span read bound (`to` + 24h, as
 the detail withholds its spawn evidence), a scan past 5,000 agent tool spans (no zero for the
 page), a lineage read past 5,000 spans, and a turn still unread after 3 s of these reads.
 `subagent_calls` counts the turn's spawn and follow-up calls (`spawn_agent`, `followup_task`,

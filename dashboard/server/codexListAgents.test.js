@@ -31,18 +31,20 @@ const legacyChain = (trace, tag, child, at = "2026-11-05T01:00:01Z") => [
   span(trace, `c${tag}`, `t${tag}`, "session_task.turn", { turn: child }),
 ];
 const tools = (rows) => rows.filter((r) => /^(collaboration|multi_agent_v1)/.test(r.name));
+// Turn spans proving each turn's own spans were collected (run_turn names its turn from 0.166).
+const roots = (...turnIds) => turnIds.map((t, i) => span(`r${i}`, `root${i}`, "", "run_turn", { turn: t }));
 // A run() serving the tool-span scan, the lineage read and the legacy lookups, recording every read.
-const fakeRun = (seen, { lineage = [], toolRows = tools(lineage), logs = [], conversations = [] } = {}) => async (sql, params) => {
+const fakeRun = (seen, { lineage = [], present = [], toolRows = [...tools(lineage), ...roots(...present)], logs = [], conversations = [] } = {}) => async (sql, params) => {
   seen.push({ sql, params });
+  if (params && "r0From" in params) return toolRows;
   if (sql.includes("op.dispatch")) return lineage.filter((r) => params.traceIds.includes(r.trace_id));
   if (sql.includes("codex.tool_result")) return logs;
   if (sql.includes("{turnIds:Array(String)}")) return conversations;
-  if (params && "r0From" in params) return toolRows;
   throw new Error(`unexpected SQL ${sql.slice(0, 60)}`);
 };
 
 test("the tool-span scan binds the owner and each turn window, and reads only agent tool spans", () => {
-  const { sql, params } = codexLinkToolSql("kim@x.com", [{ fromMs: ms("2026-11-05T01:00:00Z"), toMs: ms("2026-11-05T01:10:00Z") },
+  const { sql, params } = codexLinkToolSql("kim@x.com", [P], [{ fromMs: ms("2026-11-05T01:00:00Z"), toMs: ms("2026-11-05T01:10:00Z") },
     { fromMs: ms("2026-11-05T03:00:00Z"), toMs: ms("2026-11-05T03:05:00Z") }]);
   assert.match(sql, /\{userExact:String\}/);
   assert.match(sql, /Timestamp >= \{r0From:DateTime\} AND Timestamp < \{r0To:DateTime\}/);
@@ -50,8 +52,10 @@ test("the tool-span scan binds the owner and each turn window, and reads only ag
   for (const prefix of ["collaboration", "multi_agent_v1"]) assert.ok(sql.includes(`startsWith(SpanName, '${prefix}')`), prefix);
   assert.ok(sql.includes(`LIMIT ${LIST_TOOL_SPAN_LIMIT + 1}`));
   assert.equal(params.userExact, "kim@x.com");
+  assert.match(sql, /SpanName IN \('run_turn', 'session_task.turn'\) AND turn IN \{turnIds:Array\(String\)\}/);
   assert.equal(params.r0From, "2026-11-05 01:00:00");
   assert.equal(params.r1To, "2026-11-05 03:05:01");
+  assert.deepEqual(params.turnIds, [P]);
 });
 
 test("a list turn counts the distinct subagent conversations its tool calls started", async () => {
@@ -71,7 +75,7 @@ test("a list turn counts the distinct subagent conversations its tool calls star
 test("no link tool span is a zero only for a version that names its turn on tool spans", async () => {
   const seen = [];
   const out = await codexListSubagents("kim@x.com", [turn("root", P, "2026-11-05T01:00:00Z"),
-    turn("old", Q, "2026-11-05T02:00:00Z", { app_version: "0.163.0" })], [], { run: fakeRun(seen) });
+    turn("old", Q, "2026-11-05T02:00:00Z", { app_version: "0.163.0" })], [], { run: fakeRun(seen, { present: [P, Q] }) });
   assert.equal(out.get(P), 0);
   assert.equal(out.get(Q), null);
   // Nothing to walk: only the scan ran.
@@ -81,6 +85,22 @@ test("no link tool span is a zero only for a version that names its turn on tool
 test("a turn whose rollup row counts spawn calls is never a zero, even when the scan finds none", async () => {
   const out = await codexListSubagents("kim@x.com", [turn("root", P, "2026-11-05T01:00:00Z", { spawn_calls: "3", names_turn: 1 })], [],
     { run: fakeRun([]) });
+  assert.equal(out.get(P), null);
+});
+
+test("an empty scan is no zero without a span of the turn itself", async () => {
+  const out = await codexListSubagents("kim@x.com", [turn("root", P, "2026-11-05T01:00:00Z")], [], { run: fakeRun([]) });
+  assert.equal(out.get(P), null);
+});
+
+test("a legacy call of a walked trace left without a turn makes the count unknown, not short", async () => {
+  const at = "2026-11-05T01:00:00Z";
+  const old = turn("root", P, at, { app_version: "0.163.0" });
+  // call_1 resolves to P; call_2 (a nested caller outside the list's turns) resolves to none.
+  const lineage = [...legacyChain("t1", 1, C1), ...legacyChain("t1", 2, C2)];
+  const out = await codexListSubagents("kim@x.com", [old], [old], { run: fakeRun([], { lineage,
+    logs: [{ call_id: "call_1", conversation: "root", at_ms: String(ms(at) + 1000) }],
+    conversations: [{ turn_id: C1, conversation: "sub1" }, { turn_id: C2, conversation: "sub2" }] }) });
   assert.equal(out.get(P), null);
 });
 
@@ -136,7 +156,7 @@ test("a turn ending near the read bound is unknown, as its detail withholds its 
   // The list reads spans up to toMs + 24h; this turn ends 30 s before that bound.
   const clipped = turn("root", P, "2026-11-06T01:00:00Z", { end_ms: String(toMs + SPAN_SLACK_MS - 30000) });
   const fine = turn("root", Q, "2026-11-05T01:00:00Z");
-  const out = await codexListSubagents("kim@x.com", [clipped, fine], [], { run: fakeRun([], { lineage: chain("t1", 1, P, C1, "sub1") }), toMs });
+  const out = await codexListSubagents("kim@x.com", [clipped, fine], [], { run: fakeRun([], { lineage: chain("t1", 1, P, C1, "sub1"), present: [P, Q] }), toMs });
   assert.equal(out.get(P), null);
   assert.equal(out.get(Q), 0);
 });
@@ -147,7 +167,7 @@ test("a chain under any agent tool counts, and an agent tool that started none i
     span("t2", "w1", "x", "multi_agent_v1wait_agent", { turn: Q, conversation: "root" })];
   const seen = [];
   const out = await codexListSubagents("kim@x.com", [turn("root", P, "2026-11-05T01:00:00Z"), turn("root", Q, "2026-11-05T02:00:00Z")], [],
-    { run: fakeRun(seen, { lineage }) });
+    { run: fakeRun(seen, { lineage, present: [P, Q] }) });
   assert.equal(out.get(P), 1);
   assert.equal(out.get(Q), 0);
   assert.match(seen[0].sql, /startsWith\(SpanName, 'multi_agent_v1'\)/);
@@ -163,7 +183,7 @@ test("a capped tool-span scan leaves every list turn without a found subagent un
 
 test("once the list budget is spent, turns that need a lineage read stay unknown", async () => {
   let clock = 0;
-  const run = async (sql, params) => { clock += LIST_AGENT_BUDGET_MS; return fakeRun([], { lineage: chain("t1", 1, P, C1, "sub1") })(sql, params); };
+  const run = async (sql, params) => { clock += LIST_AGENT_BUDGET_MS; return fakeRun([], { lineage: chain("t1", 1, P, C1, "sub1"), present: [P, Q] })(sql, params); };
   const out = await codexListSubagents("kim@x.com", [turn("root", P, "2026-11-05T01:00:00Z"), turn("root", Q, "2026-11-05T02:00:00Z")], [],
     { run, now: () => clock });
   assert.equal(out.get(P), null);
@@ -178,7 +198,7 @@ test("the task list fills Codex subagents and ranks them by that count", async (
     turn("other", Q, "2026-11-05T02:00:00Z", { llm_calls: "9", spawn_calls: "0", names_turn: 1 })];
   const lineage = chain("t1", 1, P, C1, "sub1");
   const run = async (sql, params) => {
-    if ("r0From" in params || sql.includes("op.dispatch")) return fakeRun([], { lineage })(sql, params);
+    if ("r0From" in params || sql.includes("op.dispatch")) return fakeRun([], { lineage, present: [P, Q] })(sql, params);
     if (sql.includes("GROUP BY turn_id")) return turns;
     return [];
   };
