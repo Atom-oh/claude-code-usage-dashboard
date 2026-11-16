@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-15T14:44:01.923158+00:00",
-  "source_messages": 2074,
+  "updated_at": "2026-11-16T04:41:11.979614+00:00",
+  "source_messages": 2081,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2074,
-      "bytes": 160612,
-      "sha256": "7a0dd2f41c3451b34de033fb3ab295095af1dda10132714ad6c0684a1f114995"
+      "messages": 2081,
+      "bytes": 161501,
+      "sha256": "872d4956cd01f61a19d7663d122c8aa9b86e4a0cb4ca00406783b2e9c58fdc05"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2074,
-      "bytes": 189991,
-      "sha256": "d4d57338cf7fcf4b8e58773554bfab530f3cdb1b43d43600e6dcb2731c3b9bee"
+      "messages": 2081,
+      "bytes": 190981,
+      "sha256": "57a0b85747b8d721db338acfe73cb4427428fe0f57eaf4ca0c14fc032d3afeeb"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2074,
-      "bytes": 199039,
-      "sha256": "cef17fe424fcbd43363c05c31277dca8903cf80107b9a6b7ba898088b4bb3d4a"
+      "messages": 2081,
+      "bytes": 200174,
+      "sha256": "458bf92a14551ed52ef18325a4a304fe174e16accc707714b5b09c85b8421961"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2074,
-      "bytes": 170755,
-      "sha256": "dd38c203d8e37399b50dede1ad84c6dd2d789da71be1543b40a92c6898d1477f"
+      "messages": 2081,
+      "bytes": 171698,
+      "sha256": "c9b975a149e4f365fbf1e6c9735518a8db145e7096d86f92bca663856ff3fbf2"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2074,
-      "bytes": 151922,
-      "sha256": "6a5536e4b6acb5bf4f40f66e360f61c4e1e88296aaebea7a7d52be17539a959d"
+      "messages": 2081,
+      "bytes": 152784,
+      "sha256": "0a954c1fa5150d825d996dd8d6d24fe99b14a05f50803d5d6a9f1b715913a12f"
     }
   ],
   "catalog_calls": [
@@ -1486,5 +1486,138 @@
     "reused_keys": [
       "mcf6cdd20424a"
     ]
+  },
+  "release_1131_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-16T01:38:21.208870+00:00",
+    "source_sha256": "ffb55b967840075a1a65ecc4c0899e6071653c00ae87c66f87145f095c52f190",
+    "output_sha256": "c1fa985b2c427b38d845a498ec89eb963e72fdd12daf7fc2b5225b440172cd61",
+    "added_message_count": 4,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "usage": {
+      "inputTokens": 421,
+      "outputTokens": 1021,
+      "totalTokens": 1442,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "added_keys": [
+      "m817c04e26375",
+      "m4bb2f3ee123c",
+      "m8e788d65e36c",
+      "m104cfd8b57bf"
+    ],
+    "host_corrections": {
+      "by": "claude-opus-5-5 (release host)",
+      "reason": "Align with existing catalog terminology (ja 作業一覧 for Task list) and sentence-case titles (en, es); output_sha256 is Luna's raw output before these corrections.",
+      "changes": [
+        {
+          "locale": "en",
+          "key": "m4bb2f3ee123c",
+          "from": "Number of Codex Subagents in Task list",
+          "to": "Codex subagent count in Task list"
+        },
+        {
+          "locale": "es",
+          "key": "m4bb2f3ee123c",
+          "from": "Número de Subagentes de Codex en Lista de tareas",
+          "to": "Número de subagentes de Codex en Lista de tareas"
+        },
+        {
+          "locale": "ja",
+          "key": "m104cfd8b57bf",
+          "from": "Users → タスクリスト → サブエージェント",
+          "to": "Users → 作業一覧 → サブエージェント"
+        },
+        {
+          "locale": "ja",
+          "key": "m4bb2f3ee123c",
+          "from": "タスクリスト内の Codex サブエージェント数",
+          "to": "作業一覧の Codex サブエージェント数"
+        },
+        {
+          "locale": "ja",
+          "key": "m817c04e26375",
+          "from": "タスクリスト内の Codex タスクのサブエージェント数を表示します。",
+          "to": "作業一覧に Codex タスクのサブエージェント数を表示します。"
+        },
+        {
+          "locale": "ja",
+          "key": "m8e788d65e36c",
+          "from": "タスク詳細と同じ方法で、タスクリストに表示される Codex タスクのサブエージェント数を数えます。呼び出しがなかったことを示す十分な根拠がある場合は 0 と表示し、確認できない場合やセッションが非常に長い場合は未収集と表示します。",
+          "to": "タスク詳細と同じ方法で、作業一覧に表示される Codex タスクのサブエージェント数を数えます。呼び出しがなかったことを示す十分な根拠がある場合は 0 と表示し、確認できない場合やセッションが非常に長い場合は未収集と表示します。"
+        }
+      ]
+    },
+    "backend_note_2026_11_16": {
+      "requested_model": "openai.gpt-6-luna",
+      "inference_profile": "us.openai.gpt-6-luna",
+      "provider": "amazon-bedrock",
+      "region": "us-east-1",
+      "timestamp_utc": "2026-11-16T04:40:47.706122+00:00",
+      "source_sha256": "c412045d56d21f97e4301429cbb1277c6ede32b0f845b9f3b820d24c3e2b7822",
+      "request_sha256": "a6c7153c0fbcdb2562ee257bc093a1195a8f76f513ad2019e6d3c9ac0c4f50d8",
+      "output_sha256": "43764081a7ea8d62cd5a58a1fa87083f063e52bfb18b04c9c8df04799e9aabb9",
+      "usage": {
+        "inputTokens": 359,
+        "outputTokens": 777,
+        "totalTokens": 1136,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "stop_reason": "end_turn",
+      "added_keys": [
+        "m0be4f4a7ac94",
+        "m6872149e7709",
+        "mdb13c775c92d",
+        "m51269348382e"
+      ],
+      "removed_keys": [
+        "m817c04e26375"
+      ],
+      "reason": "PR #323 joined release 1.13.1: one note added and the release summary rewritten; the superseded summary message was removed from every catalog.",
+      "serialization": "source: the Korean messages as a JSON object (ensure_ascii false); request: the Converse request, sorted keys; output: the last text block returned",
+      "host_corrections": {
+        "by": "claude-opus-5-5 (release host)",
+        "reason": "Sentence case and the existing summary voice (en, es); output_sha256 is Luna's raw output before these corrections.",
+        "changes": [
+          {
+            "locale": "en",
+            "key": "m0be4f4a7ac94",
+            "from": "Distinguish the Backend for Bedrock requests and usage as Runtime or Mantle, and show the number of subagents for Codex tasks in the Task list.",
+            "to": "Distinguishes the backend of Bedrock requests and usage as Runtime or Mantle, and shows the number of subagents for Codex tasks in the Task list."
+          },
+          {
+            "locale": "en",
+            "key": "m6872149e7709",
+            "from": "Bedrock Backend distinction",
+            "to": "Bedrock backend distinction"
+          },
+          {
+            "locale": "es",
+            "key": "m0be4f4a7ac94",
+            "from": "Distingue el Backend de las solicitudes y el uso de Bedrock como Runtime o Mantle, y muestra el número de subagentes de las tareas de Codex en la Lista de tareas.",
+            "to": "Distingue el backend de las solicitudes y el uso de Bedrock como Runtime o Mantle, y muestra el número de subagentes de las tareas de Codex en Lista de tareas."
+          },
+          {
+            "locale": "es",
+            "key": "m6872149e7709",
+            "from": "Distinción del Backend de Bedrock",
+            "to": "Distinción del backend de Bedrock"
+          }
+        ]
+      },
+      "verification": "All five catalogs retain nonempty messages and matching positional placeholders."
+    }
   }
 }

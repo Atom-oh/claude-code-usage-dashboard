@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-11-16
+
 ### Fixed
 
 - The task list showed Codex "subagents" as not collected on every row. It now shows the
@@ -33,6 +35,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Production, 7 days to 2026-11-16: 2,289 request logs moved to `bedrock-runtime` and 10
   to `bedrock-mantle`; limits in the
   [ADR-017 amendment](docs/decisions/ADR-017-backend-cost-fallback.md#amendment-2026-11-16-bare-claude-ids-inherit-session-route-evidence).
+
 ### Changed
 
 - ClickHouse system logs that the operator left without retention now expire:

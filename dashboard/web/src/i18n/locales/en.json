@@ -2072,5 +2072,12 @@
   "ma09d3e1a8c17": "Users → Task details → Subagents",
   "me97f3606af3c": "Details for long Codex sessions",
   "m7f52daa6a268": "The details view for very long Codex sessions opens without timing out. In these cases, subagent costs may be shown as only partially confirmed.",
-  "m7b1b4c8fd309": "Users → Task details"
+  "m7b1b4c8fd309": "Users → Task details",
+  "m104cfd8b57bf": "Users → Task list → Subagents",
+  "m4bb2f3ee123c": "Codex subagent count in Task list",
+  "m8e788d65e36c": "Counts the number of subagents for Codex tasks shown in the Task list in the same way as Task details. If there is sufficient evidence that no calls were made, it shows 0; if this cannot be verified or the session is very long, it shows not collected.",
+  "m0be4f4a7ac94": "Distinguishes the backend of Bedrock requests and usage as Runtime or Mantle, and shows the number of subagents for Codex tasks in the Task list.",
+  "m6872149e7709": "Bedrock backend distinction",
+  "mdb13c775c92d": "For request records in Bedrock sessions and usage recorded with unprefixed model IDs (e.g., claude-fable-5-1), show Bedrock Runtime or Bedrock Mantle based on the model ID in the same session instead of “unknown”.",
+  "m51269348382e": "Top filter → Backend"
 }
