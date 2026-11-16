@@ -217,6 +217,40 @@ resource "kubectl_manifest" "chi" {
               </backups>
             </clickhouse>
           XML
+          # System log retention. The operator's generated files set 30-day TTLs only on
+          # query_log, part_log and trace_log; the image defaults keep the others forever,
+          # which reached ~43GiB per replica on 2026-11-15 (text_log ~22GiB at the operator's
+          # debug logger level, against ~21GiB of telemetry). <ttl> merges into the image's
+          # defaults (same partitioning/ordering); text_log stores Information and above, while
+          # the server log file keeps the operator's level. Changing a system log definition
+          # makes the server rename the old table to <name>_N at startup and create a new one,
+          # so freeing space needs the per-replica drop in the deployment runbook.
+          "config.d/system_logs.xml" = <<-XML
+            <clickhouse>
+              <text_log>
+                <level>information</level>
+                <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+              </text_log>
+              <processors_profile_log>
+                <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+              </processors_profile_log>
+              <metric_log>
+                <ttl>event_date + INTERVAL 14 DAY DELETE</ttl>
+              </metric_log>
+              <asynchronous_metric_log>
+                <ttl>event_date + INTERVAL 14 DAY DELETE</ttl>
+              </asynchronous_metric_log>
+              <query_views_log>
+                <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+              </query_views_log>
+              <error_log>
+                <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+              </error_log>
+              <backup_log>
+                <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+              </backup_log>
+            </clickhouse>
+          XML
         }
       }
       templates = {

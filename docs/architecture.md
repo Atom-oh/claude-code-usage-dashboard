@@ -250,6 +250,9 @@ Health and alerts have distinct responsibilities:
 - Native database backups target the S3 `backup/` prefix, whose lifecycle expires objects
   after 30 days. Cold data uses table TTL. Configuration and replication do not prove a
   usable backup, measured recovery time or completed restore.
+- System logs are local to each replica and outside backups. The operator sets 30-day TTLs on
+  `query_log`/`part_log`/`trace_log`; [clickhouse.tf](../infra/clickhouse.tf) bounds the
+  rest ([retention](runbooks/deploy-production.md#system-log-retention)).
 
 Use the [deployment](runbooks/deploy-production.md), [schema migration](runbooks/schema-migrations.md),
 [rollup rebuild](runbooks/rollup-rebuild-segment-key.md), [incident](runbooks/incident-response.md),
