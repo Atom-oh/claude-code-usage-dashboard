@@ -735,12 +735,14 @@ listed nor unattached here.
 "observed_span_window"`), `llm_calls` counts the turn's model-call spans (`codex.sampling`; a turn without one,
 from older Codex such as 0.159.3, counts `run_sampling_request` instead, never both), and `subagents` is
 the count the task detail reports (`task.subagents`), from the same trace walk: the shown
-turns' agent tool spans (spawn, follow-up, `send_input`) inside their own windows, then each
-turn's traces over its window. A positive count is the distinct subagent conversations found;
-`0` needs a complete scan, no agent tool span of the turn, no rollup spawn call, and Codex
-0.166+ (which names its turn on tool spans); anything else is null. Before 0.166 a call is
-resolved through its call log, as in the detail. A turn whose lineage read passes 5,000 spans,
-or that is still unread after 3 s of these reads, stays null.
+turns' agent tool spans (`collaboration<tool>`, `multi_agent_v1<tool>`) inside their own
+windows, then each turn's traces over its window. A positive count is the distinct subagent
+conversations found; `0` needs a complete scan, no spawn, follow-up or `send_input` span and no
+walked link of the turn, no rollup spawn call, and Codex 0.166+ (which names its turn on tool
+spans); anything else is null. Before 0.166 a call is resolved through its call log, as in the
+detail. Null also covers a turn ending within a minute of the span read bound (`to` + 24h, as
+the detail withholds its spawn evidence), a scan past 5,000 agent tool spans (no zero for the
+page), a lineage read past 5,000 spans, and a turn still unread after 3 s of these reads.
 `subagent_calls` counts the turn's spawn and follow-up calls (`spawn_agent`, `followup_task`,
 `multi_agent_v1` `spawn_agent`), not subagent conversations; it is null unless the rollup read
 is active (`CODEX_TURNS_READ_FROM` set and the list's start minus 7 days not before it) and the

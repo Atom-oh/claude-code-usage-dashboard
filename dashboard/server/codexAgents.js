@@ -51,7 +51,7 @@ export const SPAWN_SPANS = ["collaborationspawn_agent", "collaborationfollowup_t
 // Tool spans that may start a subagent turn. send_input starts one only when the agent is idle,
 // so it links when traced but is not a spawn call.
 export const LINK_TOOLS = [...SPAWN_SPANS, "multi_agent_v1send_input"];
-const TOOL_PREFIXES = ["collaboration", "multi_agent_v1"];
+export const TOOL_PREFIXES = ["collaboration", "multi_agent_v1"];
 const isTool = (name) => TOOL_PREFIXES.some((p) => (name ?? "").startsWith(p));
 // A legacy call's log time may differ from its turn's span window by clock rounding.
 export const LEGACY_CALL_SLACK_MS = 1000;

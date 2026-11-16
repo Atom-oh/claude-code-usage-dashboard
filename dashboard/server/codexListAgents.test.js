@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { LIST_AGENT_BUDGET_MS, LIST_LINEAGE_SPAN_LIMIT, LIST_TOOL_SPAN_LIMIT, codexLinkToolSql, codexListSubagents } from "./codexListAgents.js";
-import { userTasks } from "./taskTraces.js";
+import { SPAN_SLACK_MS, userTasks } from "./taskTraces.js";
 import { DEFAULT_CODEX_PRICING } from "./codexPricing.js";
 
 const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -41,14 +41,13 @@ const fakeRun = (seen, { lineage = [], toolRows = tools(lineage), logs = [], con
   throw new Error(`unexpected SQL ${sql.slice(0, 60)}`);
 };
 
-test("the tool-span scan binds the owner and each turn window, and names only link tools", () => {
+test("the tool-span scan binds the owner and each turn window, and reads only agent tool spans", () => {
   const { sql, params } = codexLinkToolSql("kim@x.com", [{ fromMs: ms("2026-11-05T01:00:00Z"), toMs: ms("2026-11-05T01:10:00Z") },
     { fromMs: ms("2026-11-05T03:00:00Z"), toMs: ms("2026-11-05T03:05:00Z") }]);
   assert.match(sql, /\{userExact:String\}/);
   assert.match(sql, /Timestamp >= \{r0From:DateTime\} AND Timestamp < \{r0To:DateTime\}/);
   assert.match(sql, /Timestamp >= \{r1From:DateTime\} AND Timestamp < \{r1To:DateTime\}/);
-  for (const name of ["collaborationspawn_agent", "collaborationfollowup_task", "multi_agent_v1spawn_agent", "multi_agent_v1send_input"])
-    assert.ok(sql.includes(`'${name}'`), name);
+  for (const prefix of ["collaboration", "multi_agent_v1"]) assert.ok(sql.includes(`startsWith(SpanName, '${prefix}')`), prefix);
   assert.ok(sql.includes(`LIMIT ${LIST_TOOL_SPAN_LIMIT + 1}`));
   assert.equal(params.userExact, "kim@x.com");
   assert.equal(params.r0From, "2026-11-05 01:00:00");
@@ -130,6 +129,28 @@ test("a lineage read past its cap leaves the turn unknown, not a short count", a
   const out = await codexListSubagents("kim@x.com", [turn("root", P, "2026-11-05T01:00:00Z")], [],
     { run: fakeRun([], { lineage: big, toolRows: tools(lineage) }) });
   assert.equal(out.get(P), null);
+});
+
+test("a turn ending near the read bound is unknown, as its detail withholds its spawn evidence", async () => {
+  const toMs = ms("2026-11-05T02:00:00Z");
+  // The list reads spans up to toMs + 24h; this turn ends 30 s before that bound.
+  const clipped = turn("root", P, "2026-11-06T01:00:00Z", { end_ms: String(toMs + SPAN_SLACK_MS - 30000) });
+  const fine = turn("root", Q, "2026-11-05T01:00:00Z");
+  const out = await codexListSubagents("kim@x.com", [clipped, fine], [], { run: fakeRun([], { lineage: chain("t1", 1, P, C1, "sub1") }), toMs });
+  assert.equal(out.get(P), null);
+  assert.equal(out.get(Q), 0);
+});
+
+test("a chain under any agent tool counts, and an agent tool that started none is a zero", async () => {
+  // resume_agent starts a turn of an existing agent; wait_agent starts none.
+  const lineage = [...chain("t1", 1, P, C1, "sub1", { tool: "multi_agent_v1resume_agent" }),
+    span("t2", "w1", "x", "multi_agent_v1wait_agent", { turn: Q, conversation: "root" })];
+  const seen = [];
+  const out = await codexListSubagents("kim@x.com", [turn("root", P, "2026-11-05T01:00:00Z"), turn("root", Q, "2026-11-05T02:00:00Z")], [],
+    { run: fakeRun(seen, { lineage }) });
+  assert.equal(out.get(P), 1);
+  assert.equal(out.get(Q), 0);
+  assert.match(seen[0].sql, /startsWith\(SpanName, 'multi_agent_v1'\)/);
 });
 
 test("a capped tool-span scan leaves every list turn without a found subagent unknown", async () => {

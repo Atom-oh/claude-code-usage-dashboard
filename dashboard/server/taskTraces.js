@@ -637,11 +637,11 @@ async function codexTasks(from, to, q, run, prices, turnsBoundary) {
 
 // The page's Codex tasks with the subagent count their detail reports (codexListSubagents);
 // sorted by subagents, the page is ordered again by those counts.
-async function withCodexSubagents(page, q, turns, run) {
+async function withCodexSubagents(page, q, turns, run, to) {
   const byId = new Map(turns.map((t) => [`codex:${t.conversation_id}:${t.turn_id}`, t]));
   const pageTurns = page.filter((t) => t.client === "codex" && byId.has(t.id)).map((t) => byId.get(t.id));
   if (!pageTurns.length) return page;
-  const counts = await codexListSubagents(q.userExact, pageTurns, turns, { run });
+  const counts = await codexListSubagents(q.userExact, pageTurns, turns, { run, toMs: to.getTime() });
   const filled = page.map((t) => {
     const row = t.client === "codex" ? byId.get(t.id) : null;
     return row ? { ...t, subagents: counts.get(row.turn_id) ?? null } : t;
@@ -666,7 +666,7 @@ export async function userTasks(from, to, raw, enabledClients, run = defaultQuer
       limited: claude.considered >= COST_CANDIDATES };
   }
   if (codex) {
-    tasks = await withCodexSubagents(sortTasks([...tasks, ...codex.tasks], q.sort), q, codex.turns, run);
+    tasks = await withCodexSubagents(sortTasks([...tasks, ...codex.tasks], q.sort), q, codex.turns, run, to);
     coverage.codex = codex.limited ? "limited" : codex.tasks.length ? "observed" : "empty";
     unattached = { ...codex.unattached, cost_partial: codex.unattached.cost_partial || codex.limited,
       turns_without_conversation: codex.skipped_turns, turns_without_unique_id: codex.non_unique_turns };
