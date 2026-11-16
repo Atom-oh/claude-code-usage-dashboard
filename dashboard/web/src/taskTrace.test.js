@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { compactCount, contextSummary, cumulativeByLane, iconFor, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, withLaneIdentity, contextLines } from "./taskTrace.js";
+import { compactCount, contextSummary, cumulativeByLane, iconFor, laneCostUnplaced, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, withLaneIdentity, contextLines } from "./taskTrace.js";
 
 const lane = (id, kind = "general-purpose", extra = {}) => ({ id, label: kind, kind, spawned_by: null,
   llm_calls: 1, cost_usd: 1, cost_partial: false, ...extra });
@@ -228,4 +228,21 @@ test("cumulativeByLane leaves a lane with missing spans unknown and out of a par
   expect(points.every((p) => p.partial)).toBe(true);
   // Without such a lane the total is whole.
   expect(cumulativeByLane([llm("m", "main", 0, 2)], [lane("main", "main")], 4).at(-1).partial).toBe(false);
+});
+
+test("laneCostUnplaced excludes only Codex subagent lanes the band cannot place", () => {
+  const sub = (extra) => lane("conv", "custom", { spans_partial: false, completions_without_span: 0, ...extra });
+  expect(laneCostUnplaced(sub({}))).toBe(false);
+  expect(laneCostUnplaced(sub({ spans_partial: true }))).toBe(true);
+  expect(laneCostUnplaced(sub({ cost_partial: true }))).toBe(true);
+  expect(laneCostUnplaced(sub({ cost_usd: null }))).toBe(true);
+  expect(laneCostUnplaced(sub({ completions_without_span: 2 }))).toBe(true);
+  // Claude lanes carry no spans_partial: never excluded, even with partial cost.
+  expect(laneCostUnplaced(lane("a", "Explore", { cost_partial: true, cost_usd: null }))).toBe(false);
+});
+
+test("cumulativeByLane leaves a subagent lane with unplaced completions out of a partial total", () => {
+  const lanes = [lane("main", "main"), lane("conv", "custom", { spans_partial: false, completions_without_span: 1 })];
+  const last = cumulativeByLane([llm("m", "main", 0, 2), llm("c", "conv", 0, 3)], lanes, 4).at(-1);
+  expect([last.by_lane.conv, last.total, last.partial]).toEqual([null, 2, true]);
 });

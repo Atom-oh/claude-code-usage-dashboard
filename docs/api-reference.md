@@ -803,8 +803,11 @@ skills a minute either side, each capped at the list's reads) and equals its lis
   values (`cost_partial` when any is unknown or partial). Codex subagent lanes add
   `spans_partial`: true when some of their turns' spans are missing from the payload (no turn
   row, the read skipped because the subagent read budget was spent, cut by its row bound, or a
-  turn ending within a minute of `to` + 24h). The UI's cost band shows such a lane as unknown
-  and its total as a partial subtotal of the other lanes.
+  turn ending within a minute of `to` + 24h). They also add `completions_without_span` (their
+  read turns' linked completions matching none of their model-call spans). The UI's cost band
+  shows a subagent lane as not collected, and its total as a partial subtotal of the other
+  lanes, when its spans are partial, its cost is unknown or partial, or it has such
+  completions; without a priced call in a lane it draws, the band is not shown.
 - `spans`: `{id, parent, lane, kind: llm|tool|wait, name, start_ms, duration_ms, attrs}`;
   `start_ms` is the offset from the task start and `parent` is null when the parent is not
   in the payload. Claude emits one tool span per tool call: a `tool.execution` span whose

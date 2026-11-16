@@ -1970,6 +1970,7 @@ test("the Codex detail draws each subagent conversation as a lane spawned from i
     [["main", "main", "main", null, null], ["sub", "custom", null, "g", false], ["sub2", "custom", null, "g2", false]]);
   const sub = out.lanes[1];
   assert.equal(sub.llm_calls, 2);
+  assert.deepEqual(out.lanes.slice(1).map(l => l.completions_without_span), [0, 0]);
   assert.ok(Math.abs(sub.cost_usd - unitCost) < 1e-12);
   // Subagent spans sit on their lane, relative to the task's start, priced from their own completions.
   const s1 = out.spans.find(s => s.id === "s1");
@@ -2026,4 +2027,14 @@ test("a subagent turn running past the span read bound leaves its lane partial",
   assert.equal(fold(ms("2026-11-05T01:10:00Z")), false);
   // Ending within a minute of the bound, the turn's later spans are past the read.
   assert.equal(fold(ms("2026-11-05T01:00:30Z")), true);
+});
+
+test("a subagent lane counts its completions that match none of its spans", async () => {
+  // The subagent's completion at 01:00:09 falls after s1's end (01:00:03.5) plus the 5 s slack, so it matches no span.
+  const base = laneRun([], { agentSpans: childRows });
+  const run = async (sql, params) => (sql.includes("otel_logs") && params.conversationIds
+    ? [completion("2026-11-05T01:00:09Z", { conversation_id: "sub" })] : base(sql, params));
+  const out = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING);
+  assert.equal(out.lanes.find(l => l.id === "sub").completions_without_span, 1);
+  assert.ok(out.spans.filter(s => s.lane === "sub").every(s => s.cost_usd === undefined || s.cost_usd === null));
 });

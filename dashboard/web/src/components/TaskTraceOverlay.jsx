@@ -21,7 +21,7 @@ import { useApi } from "../useApi.js";
 import { maskEmail } from "../fmt.js";
 import { formatClientCost, formatObserved } from "../clientUsage.js";
 import { clientName, formatClientTimestamp, observedNumber } from "../clientPresentation.js";
-import { compactCount, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, timelineEnd, withLaneIdentity } from "../taskTrace.js";
+import { compactCount, laneCostUnplaced, laneName, laneOrder, modelBreakdown, modelKey, modelUsage, timelineEnd, withLaneIdentity } from "../taskTrace.js";
 import { taskSharePath } from "../clientNavigation.js";
 
 // Copies the task's share link (/tasks/<id>/<from>/<to>; no user in the URL). Without
@@ -210,7 +210,9 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
   }, [spans, _locale]);
   const end = useMemo(() => timelineEnd(spans, task.duration_ms), [spans, task.duration_ms, _locale]);
   const selected = spans.find((s) => s.id === selectedId) || null;
-  const priced = spans.some((s) => s.kind === "llm" && Object.prototype.hasOwnProperty.call(s, "cost_usd"));
+  // The band needs a priced call in a lane it draws; excluded subagent lanes do not count.
+  const unplacedLanes = useMemo(() => new Set(lanes.filter(laneCostUnplaced).map((l) => l.id)), [lanes]);
+  const priced = spans.some((s) => s.kind === "llm" && Object.prototype.hasOwnProperty.call(s, "cost_usd") && !unplacedLanes.has(s.lane));
   const unplaced = spans.filter((s) => observedNumber(s.start_ms) === null).length;
   const unlinked = observedNumber(task.completions_without_span) ?? 0;
   const models = useMemo(() => modelBreakdown(spans), [spans, _locale]);

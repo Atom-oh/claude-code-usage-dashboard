@@ -660,6 +660,8 @@ function codexLaneSpans(rows, turn, linked, lane, t0) {
 // turns' spans on the task's clock (`t0`). `spans_partial`: some of its turns' spans are missing
 // (not read, no turn row, cut by the read's row bound, or the turn ending within a minute of the
 // read's time bound `readToMs`), so the lane shows fewer than ran.
+// `completions_without_span`: its read turns' linked completions that match none of their
+// model-call spans (the cost band cannot place them).
 export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, t0, readToMs = null }) {
   const byTurn = new Map();
   for (const r of rows ?? []) byTurn.set(r.turn, [...(byTurn.get(r.turn) ?? []), r]);
@@ -670,7 +672,8 @@ export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, 
     if (!conv || conv === "main") continue;
     let lane = lanes.get(conv);
     if (!lane) {
-      lane = { id: conv, label: null, kind: "custom", spawned_by: l.tool_span_id ?? null, turns: [], spans_partial: false };
+      lane = { id: conv, label: null, kind: "custom", spawned_by: l.tool_span_id ?? null, turns: [], spans_partial: false,
+        completions_without_span: 0 };
       lanes.set(conv, lane);
     }
     lane.turns.push(childById.get(taskId(conv, l.child_turn)) ?? null);
@@ -680,7 +683,9 @@ export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, 
     if (rows === null || !turn || clipped || !own.length || own.length < (count(own[0].turn_spans) ?? own.length)) lane.spans_partial = true;
     if (!turn || !own.length) continue;
     const linked = entries.find(e => e.turn.turn_id === l.child_turn && e.turn.conversation_id === conv)?.linked ?? [];
-    spans.push(...codexLaneSpans(own, turn, linked, conv, t0).spans);
+    const laid = codexLaneSpans(own, turn, linked, conv, t0);
+    spans.push(...laid.spans);
+    lane.completions_without_span += linked.length - laid.withSpan;
   }
   const known = (values) => values.filter(v => v !== null && v !== undefined && Number.isFinite(v));
   const out = [...lanes.values()].map(({ turns, ...lane }) => {

@@ -81,16 +81,25 @@ export function timelineEnd(spans, durationMs = null) {
   return end;
 }
 
+// A Codex subagent lane (it carries `spans_partial`) whose cost the band cannot place from its
+// spans: spans missing, cost unknown or partial, or completions matching none of its spans.
+// Claude lanes (no `spans_partial`) are never excluded.
+export function laneCostUnplaced(lane) {
+  if (!lane || !Object.prototype.hasOwnProperty.call(lane, "spans_partial")) return false;
+  return Boolean(lane.spans_partial) || Boolean(lane.cost_partial) || lane.cost_usd === null || lane.cost_usd === undefined
+    || (observedNumber(lane.completions_without_span) ?? 0) > 0;
+}
+
 // Stacked cumulative cost per lane at `buckets + 1` evenly spaced times over [0, end]. A call
 // counts once it has finished (start + duration). Only llm spans carrying a `cost_usd` key are
 // priced calls (a Codex sampling span without a linked completion has none). A lane becomes
 // null from the first unknown-cost call on, and for the whole axis if an unknown or known
-// call cannot be placed in time; `total` is null whenever any lane is null. A lane whose spans
-// are not all in the payload (a Codex subagent lane with `spans_partial`) is unknown (null) and
+// call cannot be placed in time; `total` is null whenever any lane is null. A Codex subagent
+// lane whose cost its spans cannot place (laneCostUnplaced) is unknown (null) and
 // left out of `total`, which is then a known subtotal: every point says `partial`.
 export function cumulativeByLane(spans, lanes, buckets = 120, durationMs = null) {
   const end = timelineEnd(spans, durationMs);
-  const missing = new Set(lanes.filter((l) => l.spans_partial).map((l) => l.id));
+  const missing = new Set(lanes.filter(laneCostUnplaced).map((l) => l.id));
   const calls = new Map(lanes.filter((l) => !missing.has(l.id)).map((l) => [l.id, []]));
   const unplaced = new Set();
   for (const s of spans) {

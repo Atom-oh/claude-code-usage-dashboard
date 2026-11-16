@@ -709,3 +709,17 @@ test("a truncated Codex detail counts only its own spans against the span total"
   const status = await screen.findByRole("status");
   expect(status.textContent).toContain("(span 1 / 1)");
 });
+
+test("no cost band when the only priced calls are in a subagent lane it cannot place", async () => {
+  const d = activityDetail(null);
+  // The main span must have no cost key at all.
+  const { cost_usd: _c, tokens: _t, completion: _p, ...mainSpan } = d.spans[0];
+  body = { ...d,
+    spans: [mainSpan,
+      { id: "c1", parent: null, lane: "conv-a", kind: "llm", name: "codex.sampling", start_ms: 10, duration_ms: 5, attrs: {}, cost_usd: 0.4 }],
+    lanes: [...d.lanes, { id: "conv-a", label: null, kind: "custom", spawned_by: null, llm_calls: 1, cost_usd: 0.4,
+      cost_partial: false, spans_partial: true, completions_without_span: 0 }] };
+  mount({ taskId: CODEX_ID });
+  await screen.findByRole("group", { name: "서브에이전트 레인" });
+  expect(screen.queryByText(/누적 비용/)).toBeNull();
+});
