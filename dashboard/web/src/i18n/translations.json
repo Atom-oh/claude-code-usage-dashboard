@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-16T05:46:33.694729+00:00",
-  "source_messages": 2082,
+  "updated_at": "2026-11-16T07:26:47.292810+00:00",
+  "source_messages": 2085,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2082,
-      "bytes": 161612,
-      "sha256": "1e514e03410dc72a860876640a5721e34ac737eca1e3c95ab489c2b90a3bea7f"
+      "messages": 2085,
+      "bytes": 162067,
+      "sha256": "81e71ffcfc392526d2a02fe6dfe12848fae69cedea76105fe05ce80b30db20a7"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2082,
-      "bytes": 191100,
-      "sha256": "19e174ff31d36dde9bb8026e80bdfd33a92957e930adbe30738fb222f0c2892a"
+      "messages": 2085,
+      "bytes": 191649,
+      "sha256": "d470683b28d0d40ee128fd5deb485b127a1860369a73ab4fcf53dbd1333dc3fc"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2082,
-      "bytes": 200330,
-      "sha256": "509684be843a4f5eeb3ad94fe87adbff1fba6ae6edb7c9b0e15394cb664d4269"
+      "messages": 2085,
+      "bytes": 200995,
+      "sha256": "7bb10e36af8cc76c30dfd102b39e7b79a2be960d1b81cd9b6aeceb650451797f"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2082,
-      "bytes": 171812,
-      "sha256": "be2dc24ef5a6aa5297abc4c40f0f1d016086c5f4aa16173bc5d94954b14c01be"
+      "messages": 2085,
+      "bytes": 172358,
+      "sha256": "619395c64634a54e1605fdef7f87b0605d0ef6fb50ea69871ccc6bde188a33f6"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2082,
-      "bytes": 152884,
-      "sha256": "ff1387ea6eb8082c7555a23e8a20f1973b0201c33b42bdb562e557afdcb3b068"
+      "messages": 2085,
+      "bytes": 153304,
+      "sha256": "db020ca4363b62cca76396cb9307c94a77c6df681b09aece8060a383c05cf0ae"
     }
   ],
   "catalog_calls": [
@@ -1666,5 +1666,97 @@
         }
       ]
     }
+  },
+  "release_1140_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-16T07:24:19.406342+00:00",
+    "source_sha256": "d09233639eb2bca3809da55062bd52ae312557d2227c8ee0b425577ae7c257f8",
+    "output_sha256": "803bf13cb663ec78bdda9490daa1ccb57197ac6dc00b438e063f02405ddc2dae",
+    "added_message_count": 2,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "usage": {
+      "inputTokens": 259,
+      "outputTokens": 1056,
+      "totalTokens": 1315,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "added_keys": [
+      "m4b5e2e77b3ad",
+      "mc77f1693f3f2"
+    ],
+    "reused_keys": [
+      "mcf6cdd20424a"
+    ],
+    "host_corrections": {
+      "by": "claude-opus-5-5 (release host)",
+      "reason": "Luna wrote the body as an imperative instruction; rewritten as a descriptive sentence like the other release notes (es also costo, matching catalog terminology). output_sha256 is Luna's raw output before these corrections.",
+      "changes": [
+        {
+          "locale": "en",
+          "key": "mc77f1693f3f2",
+          "from": "In the timeline in Codex Task details, draw one lane for each subagent conversation and connect it with a dotted line to the call that started that subagent. Show LLM calls in the lane as the subagent’s own cost, and indicate when a lane is only partially shown because not all spans could be read.",
+          "to": "The timeline in Codex Task details draws one lane for each subagent conversation and connects it with a dotted line to the call that started that subagent. LLM calls in a lane are shown as the subagent’s own cost, and a lane whose spans could not all be read is marked as only partially shown."
+        },
+        {
+          "locale": "zh-CN",
+          "key": "mc77f1693f3f2",
+          "from": "在 Codex 任务详情的时间线中，为每个子代理对话绘制一条泳道，并用虚线将其连接到启动该子代理的调用。将泳道中的 LLM 调用显示为子代理自身产生的费用，并提示无法读取所有 span 的泳道仅显示部分内容。",
+          "to": "Codex 任务详情的时间线会为每个子代理对话绘制一条泳道，并用虚线连接到启动该子代理的调用。泳道中的 LLM 调用显示为子代理自身的费用，未能读取全部 span 的泳道会提示仅显示部分内容。"
+        },
+        {
+          "locale": "ja",
+          "key": "mc77f1693f3f2",
+          "from": "Codex のタスク詳細のタイムラインで、サブエージェントの会話ごとにレーンを 1 つ表示し、そのサブエージェントを起動した呼び出しと点線で接続します。レーン内の LLM 呼び出しはサブエージェント自身のコストとして表示し、すべての span を読み取れなかったレーンは一部のみ表示されることを案内します。",
+          "to": "Codex のタスク詳細のタイムラインでは、サブエージェントの会話ごとにレーンを 1 つ描き、そのサブエージェントを起動した呼び出しから点線でつなぎます。レーン内の LLM 呼び出しはサブエージェント自身のコストとして表示し、すべての span を読み取れなかったレーンは一部のみ表示であることを案内します。"
+        },
+        {
+          "locale": "es",
+          "key": "mc77f1693f3f2",
+          "from": "En la cronología de los detalles de la tarea de Codex, dibuja un carril para cada conversación de subagente y conéctalo con una línea discontinua a la llamada que inició ese subagente. Muestra las llamadas LLM del carril como un coste propio del subagente e indica cuándo un carril solo se muestra parcialmente porque no se pudieron leer todos los span.",
+          "to": "La cronología de los detalles de la tarea de Codex dibuja un carril por cada conversación de subagente y lo conecta con una línea discontinua a la llamada que inició ese subagente. Las llamadas LLM del carril se muestran como costo propio del subagente, y un carril cuyos spans no se pudieron leer todos se indica como parcialmente mostrado."
+        }
+      ]
+    }
+  },
+  "release_1140_summary_message": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-16T07:26:34.440148+00:00",
+    "source_sha256": "e7cc9fefc342e700f96473d4fb7848c941cc68278c151fa16ade43b7bce2ebfa",
+    "output_sha256": "d14140ce43d8181252e08b39675eba33a0e0e038cae709071396f8d5939c5c4b",
+    "added_message_count": 1,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "usage": {
+      "inputTokens": 210,
+      "outputTokens": 342,
+      "totalTokens": 552,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "added_keys": [
+      "m780ec32c774e"
+    ],
+    "reused_keys": [],
+    "note": "The v1.14.0 release summary, missed by the release_1140_messages batch; sha256 values are of the exact JSON sent and returned (hashed on the host)."
   }
 }
