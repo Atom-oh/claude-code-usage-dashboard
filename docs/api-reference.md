@@ -140,7 +140,9 @@ applied to Claude counters, Claude and Codex logs and the Codex cost facts;
 Backend is resolved from the model id prefix (region prefix → runtime, bare vendor
 namespace → mantle), falling back to the resource tag (Codex); otherwise `unknown`. Claude
 rows are `anthropic` first for an enterprise session or a bare `claude-*` record that
-carried `organization.id`; see [Claude channels](reference/data.md#claude-channels-users-and-projects)
+carried `organization.id`. Other bare `claude-*` rows, including every request log, take
+the backend of the session's routed Anthropic ids when they agree, then (provider mode)
+one reported `mantle` or `bedrock` provider; see [Claude channels](reference/data.md#claude-channels-users-and-projects)
 and [ADR-017](decisions/ADR-017-backend-cost-fallback.md). Task traces from device
 collectors lack the span attribute, so their login calls stay `unknown`.
 

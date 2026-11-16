@@ -13,11 +13,16 @@ export function resolveBackend(model, tag) {
   return VALID_BACKENDS.includes(tag) ? tag : "unknown";
 }
 
-// JS mirror of grouping.js claudeBackendSql() for one Claude call.
-export function resolveClaudeBackend(model, sessionGroup, providerBedrock = false, hasOrg = false) {
+// JS mirror of grouping.js claudeBackendSql() for one Claude call. hasOrg is the record's
+// organization.id flag; route (session_group.claude_route) and providerBedrock/providerMantle
+// are session evidence, omitted where claudeBackendSql passes sessionEvidence: false.
+export function resolveClaudeBackend(model, sessionGroup, { hasOrg = false, route = "",
+  providerBedrock = false, providerMantle = false } = {}) {
   const bare = String(model || "").startsWith("claude-");
   if (sessionGroup === "enterprise" || (hasOrg && bare)) return "anthropic";
-  if (providerBedrock && bare) return "bedrock-runtime";
+  if (bare && VALID_BACKENDS.includes(route)) return route;
+  if (bare && providerMantle && !providerBedrock) return "bedrock-mantle";
+  if (bare && providerBedrock && !providerMantle) return "bedrock-runtime";
   return resolveBackend(model, "");
 }
 

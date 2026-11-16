@@ -1,8 +1,8 @@
 # ADR-017: Model-prefix backend resolution and a computed-cost fallback for missing reports
 
 Status: accepted, 2026-09-25, following the user's explicit request. Amended 2026-10-07 for
-non-Anthropic models used through Claude Code, and 2026-10-28 for the AWS Price List rate source
-(see the amendments below).
+non-Anthropic models used through Claude Code, 2026-10-28 for the AWS Price List rate source,
+and 2026-11-16 for bare Claude ids (see the amendments below).
 
 ## Context
 
@@ -256,3 +256,54 @@ incomplete entries, failed refreshes and logging. `codexLogPricing.test.js`
 (`CODEX_PRICING_SQL_TEST=1`) checks SQL/JavaScript parity for every catalog entry in ClickHouse.
 `nonAnthropicCost.test.js` covers the bare-id factor. A full parse of the 2026-10-28 us-east-1
 responses matched an independent reference parser.
+
+## Amendment (2026-11-16): bare Claude ids inherit session route evidence
+
+Accepted 2026-11-16, following the user's explicit request. Narrows the Consequences entry
+"a bedrock-channel Claude row with a bare model reports `unknown`".
+
+### Context
+
+Live sessions on 2026-11-15 (`claude -p` with Runtime, Mantle only, and both Bedrock and
+Mantle flags) showed:
+
+- Metrics and spans record the id Claude Code sent (`global.anthropic.claude-opus-5-5`,
+  `anthropic.claude-opus-5-5`); `api_request` logs record `claude-opus-5-5` on every route.
+  Bedrock request logs therefore never resolved by prefix.
+- `anthropic.provider` follows the provider flags: `mantle` with `CLAUDE_CODE_USE_MANTLE`
+  alone, but `bedrock` for an `anthropic.*` id that Claude Code routes to Mantle when both
+  flags are set. The provider-mode rule "reported `bedrock` + bare id → `bedrock-runtime`"
+  mislabelled those logs, and `mantle` was not recognized.
+- Counters are bare only for a bare `ANTHROPIC_DEFAULT_*_MODEL` pinned under
+  `ANTHROPIC_BEDROCK_REGION_PREFIX` (the 2026-11-04 to 11-06 workshop); unset aliases
+  resolve to prefixed ids on both routes.
+
+### Decision
+
+A bare `claude-*` row that is not Anthropic by session or record takes, in order, the
+single backend of its session's `[<region>.]anthropic.claude-*` rollup ids (both grouping
+modes), then in provider mode a session that reported only `mantle` (`bedrock-mantle`) or
+only `bedrock` (`bedrock-runtime`), then the prefix rules above. `mantle` selects the
+`bedrock` channel. Task traces keep neither step, as before. The session's routed ids are
+evidence because Claude Code chooses the endpoint from the same id shape.
+
+### Consequences
+
+- In the 7 days to 2026-11-16, 2,289 production request logs (171 sessions) moved from
+  `unknown` to `bedrock-runtime` and 10 (3 sessions) to `bedrock-mantle`; no other request
+  log changed. Token and cost counters of 35 sessions moved from `unknown`: 26 sessions
+  from 2026-11-04 to 11-06 (bare Fable/Opus with prefixed Haiku) to `bedrock-runtime`, and 9 July
+  and August sessions to `bedrock-runtime` (8) or `bedrock-mantle` (1).
+- Those 9 sessions mix bare and routed ids for reasons the telemetry cannot confirm. A bare
+  row without `organization.id` from another route in the same session (an API-key or
+  gateway part of a resumed session) takes the Bedrock route, as the provider-mode rule
+  already assumed.
+- Sessions with both routes (7) and version-suffixed in-region ids, which still resolve
+  to `bedrock-mantle` by prefix, keep bare rows `unknown` outside provider mode.
+- Unverified: both provider flags with a bare pinned id resolve to `bedrock-runtime`.
+
+### Verification
+
+`grouping.test.js` pins the branch order, the route expression and the JS mirror against the
+observed sessions. The generated CTEs ran read-only against production on 2026-11-16 and
+classified the Runtime, Mantle-only, Bedrock+Mantle and unset-alias sessions as above.
