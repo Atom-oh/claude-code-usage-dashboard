@@ -681,8 +681,12 @@ export function foldCodexAgentLanes({ links, turnRows, entries, children, rows, 
     const own = byTurn.get(l.child_turn) ?? [];
     const clipped = turn && readToMs !== null && (count(turn.end_ms) ?? Infinity) + MINUTE_MS > readToMs;
     if (rows === null || !turn || clipped || !own.length || own.length < (count(own[0].turn_spans) ?? own.length)) lane.spans_partial = true;
-    if (!turn || !own.length) continue;
     const linked = entries.find(e => e.turn.turn_id === l.child_turn && e.turn.conversation_id === conv)?.linked ?? [];
+    if (!turn || !own.length) {
+      // No spans to place them on: every linked completion of the turn is without a span.
+      lane.completions_without_span += linked.length;
+      continue;
+    }
     const laid = codexLaneSpans(own, turn, linked, conv, t0);
     spans.push(...laid.spans);
     lane.completions_without_span += linked.length - laid.withSpan;

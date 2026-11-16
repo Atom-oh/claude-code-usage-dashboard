@@ -215,28 +215,31 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
   const priced = spans.some((s) => s.kind === "llm" && Object.prototype.hasOwnProperty.call(s, "cost_usd") && !unplacedLanes.has(s.lane));
   const unplaced = spans.filter((s) => observedNumber(s.start_ms) === null).length;
   const unlinked = observedNumber(task.completions_without_span) ?? 0;
-  const models = useMemo(() => modelBreakdown(spans), [spans, _locale]);
-  const usage = useMemo(() => modelUsage(spans), [spans, _locale]);
+  // The task's own spans: Codex subagent lanes (spans_partial set) are read apart, and span_total,
+  // the model-call table, the Why panel's model share and the model highlight cover only these.
+  const ownSpanList = useMemo(() => {
+    const apart = new Set((data.lanes || []).filter((l) => "spans_partial" in l).map((l) => l.id));
+    return spans.filter((s) => !apart.has(s.lane));
+  }, [data.lanes, spans, _locale]);
+  const models = useMemo(() => modelBreakdown(ownSpanList), [ownSpanList, _locale]);
+  const usage = useMemo(() => modelUsage(ownSpanList), [ownSpanList, _locale]);
   // Call source per span id: the context chart joins only a lane's main source.
   const sourceOf = useMemo(() => {
     const m = new Map(spans.map((x) => [x.id, x.attrs?.query_source_safe ?? null]));
     return (id) => m.get(id) ?? null;
   }, [spans, _locale]);
   const activeKey = models.some((m) => m.key === highlightKey) ? highlightKey : null;
-  const highlight = useMemo(() => (activeKey === null ? null : (s) => modelKey(s) === activeKey), [activeKey, _locale]);
+  const ownIds = useMemo(() => new Set(ownSpanList.map((s) => s.id)), [ownSpanList]);
+  const highlight = useMemo(() => (activeKey === null ? null : (s) => ownIds.has(s.id) && modelKey(s) === activeKey),
+    [activeKey, ownIds, _locale]);
   // Codex's own operation spans (no tool_name) crowd the timeline; they are hidden until asked.
   const [showInternal, setShowInternal] = useState(false);
   const internal = spans.filter((s) => s.internal).length;
-  // span_total counts the task's own spans; Codex subagent lanes (spans_partial set) are read apart.
-  const ownSpans = useMemo(() => {
-    const apart = new Set((data.lanes || []).filter((l) => "spans_partial" in l).map((l) => l.id));
-    return spans.filter((s) => !apart.has(s.lane)).length;
-  }, [data.lanes, spans, _locale]);
   const shown = useMemo(() => (showInternal || !internal ? spans : spans.filter((s) => !s.internal)),
     [spans, showInternal, internal, _locale]);
   return <>
     {truncated ? <p role="status" className="rounded-md bg-warning-surface px-3 py-2 text-sm text-warning-text">
-      <span>{translateSource(TRUNCATED)}</span>{` (span ${formatObserved(ownSpans)} / ${formatObserved(data.span_total)})`}</p>
+      <span>{translateSource(TRUNCATED)}</span>{` (span ${formatObserved(ownSpanList.length)} / ${formatObserved(data.span_total)})`}</p>
       : <Kpis task={task} />}
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
       <div className="min-w-0 rounded-lg border border-ink-100 p-4">

@@ -2004,6 +2004,7 @@ test("a spent subagent budget keeps the lanes without spans, partial", async () 
   const out = await userTaskDetail(from, to, { id: `codex:c1:${U1}`, userExact: "kim@x.com" }, both, run, DEFAULT_CODEX_PRICING,
     undefined, () => t);
   assert.deepEqual(out.lanes.map(l => [l.id, l.spans_partial ?? null]), [["main", null], ["sub", true], ["sub2", true]]);
+  assert.equal(out.lanes.find(l => l.id === "sub").completions_without_span, 1);
   assert.ok(out.spans.every(s => s.lane === "main"));
   assert.ok(!seen.some(s => s.sql.includes("PARTITION BY turn")));
 });
