@@ -17,6 +17,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Each published `vX.Y.Z` GitHub release gets the linux/arm64 dashboard image as an asset
+  (`ccdash-dashboard-vX.Y.Z-linux-arm64.tar.gz`, for `docker load`), with a manifest of
+  its revision and image ID, `SHA256SUMS` and, for runs started from the tag, build
+  provenance attestations. The image is
+  built from the tag with the release helper's inspections on a GitHub-hosted ARM runner;
+  existing assets are never replaced. The receiver image is not included:
+  [release image asset](docs/reference/runtime-distribution.md#release-image-asset).
 - The Codex task detail timeline draws each subagent conversation as its own lane, with a
   dashed line from the spawn or follow-up call that started it, like Claude subagents. Its
   spans come from one more read within the subagent read budget, priced from the subagent's
@@ -24,6 +31,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   shows a lane it cannot place (spans or cost partial, or completions matching no span) as not
   collected and its total as a partial subtotal. The model-call table, the Why panel and the
   task's totals, `why` and tool activity stay its own turn's.
+
+## [1.13.1] - 2026-11-16
 
 ### Fixed
 
@@ -43,6 +52,7 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Production, 7 days to 2026-11-16: 2,289 request logs moved to `bedrock-runtime` and 10
   to `bedrock-mantle`; limits in the
   [ADR-017 amendment](docs/decisions/ADR-017-backend-cost-fallback.md#amendment-2026-11-16-bare-claude-ids-inherit-session-route-evidence).
+
 ### Changed
 
 - ClickHouse system logs that the operator left without retention now expire:

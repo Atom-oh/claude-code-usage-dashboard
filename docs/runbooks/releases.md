@@ -57,6 +57,17 @@ out. Follow the [deployment runbook](deploy-production.md) to ship a tagged revi
 
    Confirm `origin/main` is still the release merge commit before tagging; otherwise tag
    that commit explicitly.
+6. Publishing the release starts [release-images.yml](../../.github/workflows/release-images.yml),
+   which attaches the ARM64 dashboard image archive, its manifest and `SHA256SUMS`
+   ([release image asset](../reference/runtime-distribution.md#release-image-asset)). Confirm
+   the run succeeded and the three assets are listed (`gh release view vX.Y.Z`). For a run
+   that failed before uploading, start it again from the tag:
+   `gh workflow run release-images.yml --ref vX.Y.Z -f tag=vX.Y.Z`. A tag that predates the
+   workflow but contains `scripts/build-release.py` can be run from `main` (omit `--ref`);
+   that run publishes no provenance attestation. A rerun never replaces an
+   existing asset, so after a partial upload it fails at the upload step. Delete only the
+   assets that incomplete run uploaded (`gh release delete-asset vX.Y.Z <name>`), then
+   rerun; never delete assets of a complete set.
 
 ## Deploying a release
 
