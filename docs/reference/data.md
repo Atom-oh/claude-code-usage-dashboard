@@ -202,7 +202,10 @@ would be labelled `bedrock`; re-run the census before relying on this in another
 With `CLAUDE_PROVIDER_GROUPS=true` (after [migration 009](../runbooks/claude-provider-schema.md)),
 the `anthropic.provider` value reported by Claude Code v2.1.317+ is applied first:
 
-1. Any `bedrock` provider value selects `bedrock`.
+1. Any `bedrock` or `mantle` provider value selects `bedrock`. The value follows the
+   provider flags, not the endpoint: with both `CLAUDE_CODE_USE_BEDROCK` and
+   `CLAUDE_CODE_USE_MANTLE`, an `anthropic.*` id reaches Mantle and reports `bedrock`
+   (observed 2026-11-15). `CLAUDE_CODE_USE_MANTLE` alone reports `mantle`.
 2. Otherwise step 1 above (Bedrock-style model ids) still selects `bedrock`; the attribute
    covers only the post-upgrade part of a resumed session.
 3. Otherwise `firstParty` selects `enterprise` with `has_org=1`, else `unknown` (API key or
@@ -228,14 +231,29 @@ Channel and `backend` are separate. Claude `backend` is resolved per row
    read the attribute from their own record. Device collectors drop `organization.id` from
    trace spans, so their task-trace login calls stay `unknown` while the session's counters
    resolve to `anthropic`. The organization id never leaves SQL.
-3. In provider mode, a bare `claude-*` row in a session that reported `bedrock` is
-   `bedrock-runtime`. It does not apply to task traces, whose per-call organization
-   evidence can be scrubbed.
-4. Otherwise the model id prefix decides, as for Codex ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)).
+3. A bare `claude-*` row takes the session's route evidence when it names one backend:
+   the backends of the session's `[<region>.]anthropic.claude-*` ids in the hourly rollup
+   (`claude_route`, in both grouping modes). Metrics and spans record the id Claude Code
+   sent, while `api_request` logs always record the bare alias, so request logs inherit
+   the route of the session's counters. A session on both routes keeps its bare rows
+   for the next steps.
+4. In provider mode, a remaining bare row is `bedrock-mantle` in a session that reported
+   only `mantle`, and `bedrock-runtime` in one that reported only `bedrock`. These are
+   sessions whose counters are bare too: a bare `ANTHROPIC_DEFAULT_*_MODEL` pinned under
+   `ANTHROPIC_BEDROCK_REGION_PREFIX` (observed 2026-11-04 to 11-06). Unset aliases resolve
+   to prefixed ids on both Runtime and Mantle (observed 2026-11-15).
+5. Otherwise the model id prefix decides, as for Codex ([ADR-017](../decisions/ADR-017-backend-cost-fallback.md)).
    A bare, unrecognized model is `unknown`.
 
-Without provider mode, Bedrock request logs that name a bare model still count as
-`unknown` requests with no cost; their counters carry the prefixed id.
+Steps 3-4 do not apply to task traces, whose per-call organization evidence can be
+scrubbed. Bare rows without route evidence outside provider mode still count as `unknown`,
+with no cost for request logs. Limitations: a bare row without `organization.id` from
+another route in the same session (an API-key or gateway part of a resumed session)
+takes the session's Bedrock route; 9 sessions from July and August 2026 mix bare and
+routed counter ids for reasons the telemetry cannot confirm. A version-suffixed in-region
+Runtime id (`anthropic.claude-haiku-4-5-20251001-v1:0`) resolves to `bedrock-mantle` by
+prefix, so a session that also used a `us.` id has no single route. Both provider flags
+with a bare pinned id are unverified; step 4 reports `bedrock-runtime`.
 
 For Claude model breakdowns and diagnostic pricing, SQL `normModel` and JavaScript
 `normalizeModelId` strip the context-window suffix, routing prefix (`us`, `us-gov`, `eu`, `apac`, `jp`, `au`,

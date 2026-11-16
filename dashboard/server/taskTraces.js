@@ -119,7 +119,7 @@ export function claudeTaskListSql(from, to, q) {
     // Backend evidence comes from the task's calls ([model, org flag]); a task without
     // models is unknown.
     conds.push(`if(empty(s.raw_models), 'unknown' = {backend:String},
-      arrayExists(m -> ${claudeBackendSql("m[1]", "''", "m[2] = '1'", { provider: false })} = {backend:String}, s.raw_models))`);
+      arrayExists(m -> ${claudeBackendSql("m[1]", "''", "m[2] = '1'", { sessionEvidence: false })} = {backend:String}, s.raw_models))`);
     params.backend = q.backend;
   }
   const order = q.sort === "duration" ? "t.duration_ms DESC, s.sort_tokens DESC, t.TraceId"
@@ -264,12 +264,12 @@ export const CALL_ORG_SQL = "if(SpanAttributes['organization.id'] != '', '1', ''
 // One Claude llm_request call: [request_id, model, input, cache_read, cache_write, output,
 // org] values as the SQL returns them, priced by claudeCallCost with the call's backend.
 // Spans keep organization.id only when the collector does not scrub it (device collectors
-// drop it), so the provider rule is not applied to calls.
+// drop it), so session route/provider evidence is not applied to calls.
 export function priceClaudeCall(raw, sessionGroup, costs) {
   const [requestId, model = "", ...values] = raw;
   const tokens = Object.fromEntries(TOKEN_FIELDS.map((k, i) => [k, count(values[i])]));
   const hasOrg = values[TOKEN_FIELDS.length] === "1";
-  const backend = resolveClaudeBackend(model, sessionGroup, false, hasOrg);
+  const backend = resolveClaudeBackend(model, sessionGroup, { hasOrg });
   const { cost_usd, basis } = claudeCallCost({ model, backend, tokens,
     reported: requestId && costs.has(requestId) ? costs.get(requestId) : null });
   return { model, tokens, cost_usd, basis };

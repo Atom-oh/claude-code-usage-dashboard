@@ -15,9 +15,13 @@ reads the table before its model/organization heuristic; see
 installation alone changes no query. The flag is off by default because the query
 fails while the table is absent.
 
-Observed values on 2026-11-04 were `bedrock` and `firstParty`. Other values (for
-example Vertex or gateway routes) fall back to the heuristic until they are observed
-and classified explicitly.
+Observed values were `bedrock` and `firstParty` on 2026-11-04 and `mantle`
+(`CLAUDE_CODE_USE_MANTLE` alone) on 2026-11-15; `mantle` selects the `bedrock` channel.
+The value follows the provider flags, not the endpoint: with both Bedrock and Mantle flags,
+Mantle requests report `bedrock`. Backend resolution therefore reads the session's routed
+model ids before the provider value ([backend rules](../reference/data.md#claude-channels-users-and-projects)).
+Other values (for example Vertex or gateway routes) fall back to the heuristic until they
+are observed and classified explicitly.
 
 ## Install and backfill
 

@@ -53,12 +53,25 @@ const LEGACY_GROUP = `multiIf(
             'unknown'
         )`;
 
+// Session route evidence for bare claude-* rows (claudeBackendSql): the backends of the
+// session's Anthropic ids that kept their routing shape, comma-joined. Metrics and spans
+// carry the id Claude Code sent, while api_request logs always carry the bare alias
+// (observed 2026-11-15 on Runtime, Mantle-only and Bedrock+Mantle sessions), so a log row
+// inherits the route when it is unambiguous. Token/cost counters are bare only for a pinned
+// bare ANTHROPIC_DEFAULT_*_MODEL (with ANTHROPIC_BEDROCK_REGION_PREFIX); lines_of_code.count
+// is always bare and never route evidence.
+const CLAUDE_ROUTE = `arrayStringConcat(groupUniqArrayIf(${backendSql("Model", "''")},
+            match(Model, '^([a-z][a-z0-9-]*\\\\.)?anthropic\\\\.claude-')), ',')`;
+
 // Claude Code v2.1.317+ reports the API provider as `anthropic.provider` on
-// every metric (observed 2026-11-04: 'bedrock', 'firstParty'). Migration 009
-// keeps session-hour membership in claude_session_providers_v1. When enabled,
-// reported evidence precedes the heuristic above:
-//   - any 'bedrock' → bedrock (a resumed session that crossed providers keeps
-//     the existing "bedrock evidence wins" precedence);
+// every metric (observed: 'bedrock', 'firstParty' on 2026-11-04; 'mantle' on 2026-11-15).
+// Migration 009 keeps session-hour membership in claude_session_providers_v1. When
+// enabled, reported evidence precedes the heuristic above:
+//   - any 'bedrock' or 'mantle' → bedrock (a resumed session that crossed providers
+//     keeps the existing "bedrock evidence wins" precedence). The value follows the
+//     provider flags, not the endpoint: with CLAUDE_CODE_USE_BEDROCK and
+//     CLAUDE_CODE_USE_MANTLE both set, an anthropic.* id goes to Mantle and still
+//     reports 'bedrock';
 //   - Bedrock-style model ids still win over 'firstParty': the attribute covers
 //     only the post-upgrade part of a resumed session (observed: a session on
 //     global.anthropic.* under 2.1.303 that reports 'firstParty' after 2.1.317);
@@ -73,7 +86,9 @@ WITH session_group AS (
     SELECT
         SessionId,
         ${LEGACY_GROUP} AS grp,
-        toUInt8(0) AS provider_bedrock
+        toUInt8(0) AS provider_bedrock,
+        toUInt8(0) AS provider_mantle,
+        ${CLAUDE_ROUTE} AS claude_route
     FROM claude_code.otel_metrics_sum_hourly
     WHERE SessionId != ''
     GROUP BY SessionId
@@ -83,6 +98,7 @@ WITH session_provider AS (
     SELECT
         SessionId,
         max(Provider = 'bedrock') AS provider_bedrock,
+        max(Provider = 'mantle') AS provider_mantle,
         max(Provider = 'firstParty') AS provider_first_party
     FROM claude_code.claude_session_providers_v1
     GROUP BY SessionId
@@ -90,19 +106,22 @@ WITH session_provider AS (
     SELECT
         r.SessionId AS SessionId,
         multiIf(
-            p.provider_bedrock = 1, 'bedrock',
+            p.provider_bedrock = 1 OR p.provider_mantle = 1, 'bedrock',
             r.bedrock_model = 1, 'bedrock',
             p.provider_first_party = 1 AND r.org = 1, 'enterprise',
             p.provider_first_party = 1, 'unknown',
             r.legacy_grp
         ) AS grp,
-        toUInt8(p.provider_bedrock = 1) AS provider_bedrock
+        toUInt8(p.provider_bedrock = 1) AS provider_bedrock,
+        toUInt8(p.provider_mantle = 1) AS provider_mantle,
+        r.claude_route AS claude_route
     FROM (
         SELECT
             SessionId,
             max(has_org) AS org,
             countIf(Model != '' AND NOT startsWith(Model, 'claude-')) > 0 AS bedrock_model,
-            ${LEGACY_GROUP} AS legacy_grp
+            ${LEGACY_GROUP} AS legacy_grp,
+            ${CLAUDE_ROUTE} AS claude_route
         FROM claude_code.otel_metrics_sum_hourly
         WHERE SessionId != ''
         GROUP BY SessionId
@@ -128,15 +147,20 @@ export const GROUP_EXPR = "if(ug.grp = '' OR ug.grp IS NULL, 'unknown', ug.grp)"
 // Claude row backend: enterprise sessions are Anthropic. A row whose own data point carried
 // organization.id (`orgExpr`) and a bare claude-* id is Anthropic too: only a Claude login
 // emits that pair, and a resumed session can cross from Bedrock to a login, so the per-row
-// signal outranks the session channel. A session whose client reported
-// anthropic.provider = 'bedrock' (provider mode only; the legacy CTE always yields 0) serves
-// bare claude-* ids from Bedrock runtime, since Bedrock Mantle serves only non-Anthropic
-// models; otherwise the model id decides (backend.js), and a bare id stays unknown.
+// signal outranks the session channel. Any other bare claude-* row takes the session's
+// unambiguous route evidence (CLAUDE_ROUTE), then a single reported Bedrock provider value
+// (provider mode only; the legacy CTE yields 0): 'mantle' → bedrock-mantle, 'bedrock' →
+// bedrock-runtime. The latter is the pinned bare id case: Mantle sessions report
+// anthropic.* ids in their metrics, which the route evidence already covers. Otherwise the
+// model id decides (backend.js), and a bare id stays unknown.
 // Callers whose per-row organization evidence can be scrubbed (task traces from device
-// collectors) pass `provider: false`, so an ambiguous bare id stays unknown.
-export function claudeBackendSql(modelExpr, tagExpr = "''", orgExpr = "", { provider = true } = {}) {
+// collectors) pass `sessionEvidence: false`, so an ambiguous bare id stays unknown.
+export function claudeBackendSql(modelExpr, tagExpr = "''", orgExpr = "", { sessionEvidence = true } = {}) {
+  const bare = `startsWith(${modelExpr}, 'claude-')`;
   return `multiIf(${GROUP_EXPR} = 'enterprise', 'anthropic',
-    ${orgExpr ? `(${orgExpr}) AND startsWith(${modelExpr}, 'claude-'), 'anthropic',
-    ` : ""}${provider ? `ug.provider_bedrock = 1 AND startsWith(${modelExpr}, 'claude-'), 'bedrock-runtime',
+    ${orgExpr ? `(${orgExpr}) AND ${bare}, 'anthropic',
+    ` : ""}${sessionEvidence ? `${bare} AND ug.claude_route IN ('bedrock-mantle', 'bedrock-runtime'), ug.claude_route,
+    ${bare} AND ug.provider_mantle = 1 AND ug.provider_bedrock = 0, 'bedrock-mantle',
+    ${bare} AND ug.provider_bedrock = 1 AND ug.provider_mantle = 0, 'bedrock-runtime',
     ` : ""}${backendSql(modelExpr, tagExpr)})`;
 }
