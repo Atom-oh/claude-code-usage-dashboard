@@ -12,8 +12,18 @@ export const RELEASES = localize([
   {
     "version": "1.13.1",
     "date": "2026-11-16",
-    "summary": "작업 목록에서 Codex 작업의 서브에이전트 수를 보여 줍니다.",
+    "summary": "Bedrock 요청과 사용량의 백엔드를 Runtime과 Mantle로 구분하고, 작업 목록에서 Codex 작업의 서브에이전트 수를 보여 줍니다.",
     "items": [
+      {
+        "kind": "fixed",
+        "title": "Bedrock 백엔드 구분",
+        "body": "Bedrock 세션의 요청 기록과, 접두사 없는 모델 ID(예: claude-fable-5-1)로 기록된 사용량을 '알 수 없음' 대신 같은 세션의 모델 ID에 따라 Bedrock Runtime 또는 Bedrock Mantle로 표시합니다.",
+        "to": "/",
+        "where": "상단 필터 → 백엔드",
+        "refs": [
+          323
+        ]
+      },
       {
         "kind": "fixed",
         "title": "작업 목록의 Codex 서브에이전트 수",
