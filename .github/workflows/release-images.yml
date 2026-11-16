@@ -1,0 +1,119 @@
+name: Release images
+
+# Attaches the linux/arm64 dashboard image to a published vX.Y.Z GitHub release as a
+# `docker load` archive, with SHA256SUMS and a build provenance attestation. The image is
+# built from the tag by scripts/build-release.py with every inspection the deployment
+# runbook relies on. The receiver stays the upstream Collector image until the packaged
+# install's own build replaces it. Runs on a GitHub-hosted ARM runner: the job holds a
+# release-write token, so it never shares the self-hosted runners. Actions are pinned to
+# commit SHAs for the same reason.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z release tag
+        required: true
+      upload:
+        description: Attach to the release (off keeps a workflow artifact only, without attestation)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# `shell: bash` runs every step with -eo pipefail, so a failed command inside a pipeline
+# (docker save | gzip) fails the step instead of publishing a truncated archive.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-images-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      UPLOAD: ${{ github.event_name == 'release' || inputs.upload }}
+      # Provenance names the run's ref and commit, so attest only when the run starts from
+      # the tag itself (the release event, or a dispatch with --ref vX.Y.Z) and uploads.
+      ATTEST: ${{ (github.event_name == 'release' || inputs.upload) && github.ref == format('refs/tags/{0}', github.event.release.tag_name || inputs.tag) }}
+    steps:
+      - name: Validate the release tag
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "::error::not a vX.Y.Z release tag: $TAG"; exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require an annotated tag on main
+        run: |
+          [ "$(git cat-file -t "refs/tags/$TAG")" = tag ] || { echo "::error::$TAG is not annotated"; exit 1; }
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$(git rev-parse "$TAG^{commit}")" FETCH_HEAD \
+            || { echo "::error::$TAG is not on main"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$(git rev-parse "$TAG^{commit}")" ]
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build and inspect the ARM64 image from the tag
+        run: |
+          python3 scripts/build-release.py --image "ccdash-dashboard:$TAG" \
+            --record "$RUNNER_TEMP/ccdash-release.json"
+      - name: Package the image archive, manifest and checksums
+        run: |
+          set -o pipefail
+          mkdir dist
+          archive="ccdash-dashboard-$TAG-linux-arm64.tar.gz"
+          docker save "ccdash-dashboard:$TAG" | gzip -n -9 > "dist/$archive"
+          gzip -t "dist/$archive"
+          tar -xzOf "dist/$archive" manifest.json > /dev/null
+          # Public identity only; the full build record stays private (runtime-distribution.md).
+          python3 - "$RUNNER_TEMP/ccdash-release.json" "dist/ccdash-dashboard-$TAG-linux-arm64.json" <<'PY'
+          import json, sys
+          record = json.load(open(sys.argv[1]))
+          manifest = {key: record[key] for key in ("revision", "image", "platform", "localImageId", "digest")}
+          manifest["imageId"] = manifest.pop("localImageId")
+          manifest["buildDigest"] = manifest.pop("digest")
+          with open(sys.argv[2], "w") as out:
+              json.dump(manifest, out, indent=2)
+              out.write("\n")
+          PY
+          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - name: Decide on provenance
+        run: |
+          if [ "$ATTEST" = true ]; then
+            [ "$GITHUB_SHA" = "$(git rev-parse "$TAG^{commit}")" ] \
+              || { echo "::error::run commit $GITHUB_SHA is not $TAG"; exit 1; }
+          else
+            msg="No provenance attestation: this run's ref ($GITHUB_REF) is not refs/tags/$TAG, or upload is off."
+            echo "::notice::$msg"; echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: env.ATTEST == 'true'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            dist/ccdash-dashboard-*-linux-arm64.tar.gz
+            dist/ccdash-dashboard-*-linux-arm64.json
+      - name: Attach to the release (existing assets are never replaced)
+        if: env.UPLOAD == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
+      - name: Keep a workflow artifact instead
+        if: env.UPLOAD != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ccdash-dashboard-${{ env.TAG }}-linux-arm64
+          path: dist/
+          retention-days: 7
