@@ -15,6 +15,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- Codex content opt-ins are unsupported: both Codex launchers also pass
+  `otel.log_agent_responses=false` and `otel.log_guardian_assessments=false`, and every
+  Collector (central and device packages) drops `codex.agent_response` and
+  `codex.guardian_assessment` events, which exist only when a host opts into them.
+  Production had none of these events, so stored data and existing views are unchanged:
+  [content opt-ins](docs/reference/codex-observability.md).
+
 ## [1.14.0] - 2026-11-16
 
 ### Added

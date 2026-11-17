@@ -125,6 +125,8 @@ class ClientConfigurationTests(unittest.TestCase):
                 overrides = [command[i + 1] for i, value in enumerate(command[:-1]) if value == "-c"]
                 self.assertIn('model_provider="' + provider + '"', overrides)
                 self.assertIn('otel.log_user_prompt=false', overrides)
+                self.assertIn('otel.log_agent_responses=false', overrides)
+                self.assertIn('otel.log_guardian_assessments=false', overrides)
                 for key, signal in [("exporter", "logs"), ("metrics_exporter", "metrics"), ("trace_exporter", "traces")]:
                     setting = next(value for value in overrides if value.startswith("otel." + key + "="))
                     self.assertIn("127.0.0.1:4318/v1/" + signal, setting)
