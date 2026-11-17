@@ -15,6 +15,12 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- A task's trace overlay and the task list behind it no longer flash to the loading
+  placeholder on each refresh when the task was opened from the whole range (no trend
+  bucket selected); polling that moves the range now refreshes them in place.
+
 ## [1.14.0] - 2026-11-16
 
 ### Added

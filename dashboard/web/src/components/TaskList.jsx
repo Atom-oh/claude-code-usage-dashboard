@@ -83,7 +83,9 @@ function Cost({ row }) {
 
 // Top-20 tasks (Claude interactions, Codex turns) of one exact user in the selected range, from
 // /api/users/tasks. Task ids are opaque and never displayed; rows show time and model instead.
-export function TaskList({ user, clients, group = null, from, to, onOpen, selectedId = null }) {
+// linkedRange: from/to follow the parent response's effective range (no bucket selected), so polling
+// that moves them refreshes in place instead of clearing the list.
+export function TaskList({ user, clients, group = null, from, to, onOpen, selectedId = null, linkedRange = false }) {
   const _locale = useLocale();
   const [sort, setSort] = useState("tokens");
   const { backend } = useFilters();
@@ -101,7 +103,7 @@ export function TaskList({ user, clients, group = null, from, to, onOpen, select
   const params = { from, to, userExact: user, client, sort,
     ...(group && clients.includes("claude") ? { group } : {}), ...(backend ? { backend } : {}),
     ...(workflow ? { workflowRunId: workflow.run_id } : {}) };
-  const api = useApi("/api/users/tasks", params, !expired, { unfiltered: true });
+  const api = useApi("/api/users/tasks", params, !expired, { unfiltered: true, linkedRange });
   const rows = useMemo(() => (api.data?.tasks || []).map((t) => ({
     ...t, model: t.models?.length ? t.models.join(", ") : null, observed_tokens: t.tokens?.observed_tokens ?? null,
   })), [api.data, _locale]);

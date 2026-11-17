@@ -186,6 +186,39 @@ test("opening a task shows its trace overlay for the bucket and Escape closes it
   expect(screen.getByText("claude-opus-5-5")).toBeTruthy();
 });
 
+test("polling that moves the default range keeps the open trace and task list on screen", async () => {
+  const parent = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-04T00:00:00.000Z" };
+  const moved = { from: "2026-09-01T00:02:00.000Z", to: "2026-09-04T00:02:00.000Z" };
+  const detail = (props) => <UserDetail user={USER} clients={["claude", "codex"]} hours={24} stale={false}
+    onClose={() => {}} {...props} />;
+  const view = wrap(detail({ parentRange: parent }));
+  fireEvent.click((await screen.findByText("claude-opus-5-5")).closest("tr"));
+  const dialog = await screen.findByRole("dialog", { name: "작업 상세" });
+  await within(dialog).findByRole("group", { name: "메인 세션 레인" });
+  // Hold the refreshed responses so the in-between frames are observable.
+  const held = [];
+  const respond = fetchMock.getMockImplementation();
+  fetchMock.mockImplementation((url) => {
+    const u = new URL(String(url), "http://localhost");
+    if (u.pathname === "/api/users/tasks" || u.pathname === "/api/users/tasks/detail") {
+      return new Promise((resolve) => held.push(() => resolve(respond(url))));
+    }
+    return respond(url);
+  });
+  view.rerender(<MemoryRouter><ConfigProvider config={{ piiMask: true }}>
+    <RefreshProvider><RangeProvider><FilterProvider>{detail({ parentRange: moved })}</FilterProvider></RangeProvider></RefreshProvider>
+  </ConfigProvider></MemoryRouter>);
+  const detailFor = (to) => fetchMock.mock.calls.map(([url]) => new URL(String(url), "http://localhost"))
+    .some((u) => u.pathname === "/api/users/tasks/detail" && u.searchParams.get("to") === to);
+  await waitFor(() => expect(detailFor(moved.to)).toBe(true));
+  const open = screen.getByRole("dialog", { name: "작업 상세" });
+  expect(within(open).queryByText("불러오는 중...")).toBeNull();
+  expect(within(open).getByRole("group", { name: "메인 세션 레인" })).toBeTruthy();
+  expect(screen.getByText("claude-opus-5-5")).toBeTruthy();
+  held.forEach((release) => release());
+  await waitFor(() => expect(within(open).getByRole("group", { name: "메인 세션 레인" })).toBeTruthy());
+});
+
 test("bucket older than 90 days shows retention notice without fetching", async () => {
   mount({ from: "2026-06-01T00:00:00.000Z", to: "2026-06-02T00:00:00.000Z" });
   expect(await screen.findByText("trace 보관 기간(90일) 경과 · 미수집")).toBeTruthy();
