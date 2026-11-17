@@ -17,6 +17,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- Device collector setup no longer fails with "removing managed telemetry would change other
+  Codex settings" when Codex wrote its own tables (for example `codex mcp add`) inside the
+  managed `[otel]` markers in `~/.codex/config.toml`; those tables stay in place and only the
+  `[otel]` tables are replaced, so the legacy-collector migration can finish.
 - A task's trace overlay and the task list behind it no longer flash to the loading
   placeholder on each refresh when the task was opened from the whole range (no trend
   bucket selected); polling that moves the range now refreshes them in place.
