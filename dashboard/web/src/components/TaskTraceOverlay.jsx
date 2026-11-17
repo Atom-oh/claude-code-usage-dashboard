@@ -284,11 +284,12 @@ function Body({ data, from, to, selectedId, onSelect, highlightKey, onHighlight 
 }
 
 // `user` is the exact user the task list belongs to. A shared link has none: the server
-// resolves the owner and returns it, and the header masks that instead.
-export function TaskTraceOverlay({ taskId, user, from, to, onClose }) {
+// resolves the owner and returns it, and the header masks that instead. `linkedRange`: from/to
+// follow the parent response's effective range, so polling that moves them refreshes in place.
+export function TaskTraceOverlay({ taskId, user, from, to, onClose, linkedRange = false }) {
   const _locale = useLocale();
   const api = useApi("/api/users/tasks/detail", { id: taskId, from, to, userExact: user || undefined }, Boolean(taskId),
-    { unfiltered: true });
+    { unfiltered: true, linkedRange });
   const [selectedId, setSelectedId] = useState(null);
   const [highlightKey, setHighlightKey] = useState(null);
   const dialogRef = useRef(null);

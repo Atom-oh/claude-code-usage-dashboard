@@ -193,6 +193,8 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
   const supported = overview.data?.applied_filters?.userExact === user;
   const ready = !pending && !overview.error && supported;
   const bucket = ready ? current?.bucket ?? overview.data?.effective_range : null;
+  // Without a selected bucket the bounds are the overview's effective range, which polling moves.
+  const followsRange = !current?.bucket;
   const taskId = current?.taskId ?? null;
   const selectBucket = (next) => {
     setSelection({ key: selectionKey, bucket: next, taskId: null });
@@ -225,9 +227,9 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
         className="rounded-md border border-ink-200 px-3 py-1 text-sm text-ink-700 hover:bg-ink-50">{translate("mfd07e0d84d12")}</button>
     </div>}
     {bucket?.from && bucket?.to && <TaskList user={user} clients={clients} group={group}
-      from={bucket.from} to={bucket.to} onOpen={openTask} selectedId={taskId} />}
+      from={bucket.from} to={bucket.to} onOpen={openTask} selectedId={taskId} linkedRange={followsRange} />}
     {bucket && taskId && <TaskTraceOverlay key={taskId} taskId={taskId} user={user} from={bucket.from} to={bucket.to}
-      onClose={closeTask} />}
+      onClose={closeTask} linkedRange={followsRange} />}
     <Card title={translate("m3063271fad21")} subtitle={translate("m0f8bfd1a87ce")}>
       {heat.error ? <ErrorBox error={heat.error} /> : heat.loading || heat.stale || stale ? <Loading />
         : !heatSupported ? <p role="alert" className="text-sm text-ink-700">{translate("mf73b0574988d")}</p>
