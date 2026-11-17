@@ -2083,5 +2083,10 @@
   "mc2b1b9568ccd": "Some subagent lanes show only part of their spans because not all of them could be read.",
   "m4b5e2e77b3ad": "Codex subagent timeline lane",
   "mc77f1693f3f2": "The timeline in Codex Task details draws one lane for each subagent conversation and connects it with a dotted line to the call that started that subagent. LLM calls in a lane are shown as the subagent’s own cost, and a lane whose spans could not all be read is marked as only partially shown.",
-  "m780ec32c774e": "Shows subagents as lanes in the timeline in Codex Task details."
+  "m780ec32c774e": "Shows subagents as lanes in the timeline in Codex Task details.",
+  "mb3c092541768": "Codex configuration conflict during collector migration",
+  "m9bbe788ebb2e": "Even when other settings, such as MCP servers, are included in the collection settings section of the Codex configuration file, collector installation now completes the migration by changing only the collection settings and leaving the other settings unchanged. Previously, installation stopped with an error stating that other Codex settings would be changed.",
+  "m6156875f815d": "Fixed an issue that stopped collector switching because of Codex settings, and an issue that caused Task details to flicker on every refresh.",
+  "m06053d114115": "Task details refresh flicker",
+  "m774351c38de1": "Task details opened from the full time range and the task list behind them now update in place during automatic refreshes instead of switching to a loading screen each time."
 }
