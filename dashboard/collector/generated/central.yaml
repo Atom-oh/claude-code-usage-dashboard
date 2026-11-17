@@ -53,6 +53,7 @@ processors:
       log_record:
         - 'not IsMatch("${env:CODEX_ENABLED:-true}", "(?i)^(true|1)$")'
         - 'attributes["event.name"] == nil or not IsMatch(attributes["event.name"], "^codex[.]")'
+        - 'IsMatch(attributes["event.name"], "^codex[.](agent_response|guardian_assessment)$")'
 
   filter/traces_claude:
     error_mode: propagate

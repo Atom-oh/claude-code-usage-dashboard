@@ -214,7 +214,9 @@ already be enabled. Both modes configure:
 
 - `${CODEX_HOME:-$HOME/.codex}/config.toml`: a managed `[otel]` table with all
   three native OTLP/gRPC exporters on `127.0.0.1:4317` and `log_user_prompt=false`; an
-  existing copy of the previous OTLP/HTTP JSON default moves to gRPC. Plain Codex,
+  existing copy of the previous OTLP/HTTP JSON default moves to gRPC. The launchers also
+  pin `log_agent_responses`/`log_guardian_assessments` off, and the Collector drops those
+  events from any host ([content opt-ins](../reference/codex-observability.md)). Plain Codex,
   `icodex` and other wrappers that retain user configuration use the same settings.
 - `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`: Claude telemetry environment
   defaults, preserving other settings/env entries. It updates resource attributes only
