@@ -93,7 +93,10 @@ def launch_command(config, arguments, environment, provenance_known=True):
     # resolves independently. Preserve those selections without claiming a backend.
     if local or profile_selected or not provenance_known:
         backend = None
-    command = ["codex", "-c", "otel.log_user_prompt=false"]
+    # Content opt-ins are unsupported; the Collector also drops their events.
+    command = ["codex"]
+    for flag in ("log_user_prompt", "log_agent_responses", "log_guardian_assessments"):
+        command += ["-c", "otel." + flag + "=false"]
     # Codex merges these into the user's [otel] table, so they use its exporter kind:
     # loopback gRPC (the managed default) unless a legacy HTTP table is still configured.
     kind = configurator.codex_exporter_kind(config)

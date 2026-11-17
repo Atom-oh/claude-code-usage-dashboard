@@ -52,6 +52,12 @@ def payload():
             "input_token_count": "100", "output_token_count": "30", "cached_token_count": 40,
             "cache_write_token_count": 11, "reasoning_token_count": 10, "model": "openai.gpt-6-astra",
         }),
+        # Content opt-ins (otel.log_agent_responses / otel.log_guardian_assessments) are
+        # unsupported: the Collector drops these events even when a client enables them.
+        log("codex.agent_response", NOW, **{"conversation.id": "fixture-conversation",
+                                            "response": "private response", "text": "private text"}),
+        log("codex.guardian_assessment", NOW, **{"conversation.id": "fixture-conversation",
+                                                 "rationale": "private rationale", "decision": "allow"}),
         log("codex.tool_result", NOW - 1, **{
             "call_id": "call_fixture", "tool_name": "exec_command", "duration_ms": 5,
             "success": "true", "tool_arguments": "private arguments", "arguments": "private arguments",

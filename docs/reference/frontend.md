@@ -223,8 +223,9 @@ already true in the render that changes the period.
 
 Codex details opt into `linkedRange` because their explicit `from`/`to` follow the
 parent response's effective bounds; moving them is a refresh of the same view, not a
-period change. Do not use `linkedRange` for independent user-selected bounds, which
-are period changes. Request quantization and cache keys are unchanged. Codex details
+period change. A user's task list and trace overlay opt in only while no trend bucket
+is selected, because their bounds are then the overview's effective range. Do not use
+`linkedRange` for independent user-selected bounds, which are period changes. Request quantization and cache keys are unchanged. Codex details
 also pass `hold: stale` of the overview hook. While held, the hook sends no request
 and keeps its selection and state; an in-flight request still completes. After
 release, a period change made during the hold is a period change requested with the

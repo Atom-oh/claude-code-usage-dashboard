@@ -10,6 +10,33 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.14.1",
+    "date": "2026-11-17",
+    "summary": "수집기 전환이 Codex 설정 때문에 멈추던 문제와 작업 상세가 새로 고칠 때마다 깜박이던 문제를 고쳤습니다.",
+    "items": [
+      {
+        "kind": "fixed",
+        "title": "수집기 전환 중 Codex 설정 충돌",
+        "body": "Codex 설정 파일의 수집 설정 구간 안에 MCP 서버 같은 다른 설정이 함께 들어 있어도, 수집기 설치가 그 설정은 그대로 두고 수집 설정만 바꿔 전환을 마칩니다. 이전에는 다른 Codex 설정이 바뀐다는 오류로 설치가 중단됐습니다.",
+        "to": null,
+        "where": "사이드바 수집기 설치 → 터미널에서 설치 (editor·admin)",
+        "refs": [
+          327
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "작업 상세 새로 고침 깜박임",
+        "body": "전체 기간에서 연 작업 상세와 그 뒤의 작업 목록이 자동 새로 고침 때마다 로딩 화면으로 바뀌지 않고, 표시 중인 내용을 그 자리에서 갱신합니다.",
+        "to": "/users",
+        "where": "Users → 작업 목록 → 작업 상세",
+        "refs": [
+          328
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.0",
     "date": "2026-11-16",
     "summary": "Codex 작업 상세의 타임라인에 서브에이전트를 레인으로 보여 줍니다.",

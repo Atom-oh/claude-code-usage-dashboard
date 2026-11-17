@@ -222,6 +222,9 @@ class Installer(unittest.TestCase):
         self.assertFalse(any(value.startswith(("model=", "model_provider=", "model_providers.")) for value in command))
         self.assertEqual(sum("x-ccdash-backend" in value and "bedrock-runtime" in value for value in command), 3)
         self.assertEqual(config["model"], "leave-this-model")
+        # Content opt-ins stay off whatever the user's config says; the Collector also drops them.
+        for flag in ["log_user_prompt", "log_agent_responses", "log_guardian_assessments"]:
+            self.assertEqual(command[command.index("otel." + flag + "=false") - 1], "-c")
         # Overrides use loopback gRPC unless the configured table is still the legacy HTTP one:
         # Codex merges them, and two exporter kinds in one table fail its config load.
         self.assertEqual(sum('otlp-grpc={endpoint="http://127.0.0.1:4317"' in value for value in command), 3)
