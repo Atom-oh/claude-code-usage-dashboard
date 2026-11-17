@@ -12,7 +12,7 @@ export const RELEASES = localize([
   {
     "version": "1.14.1",
     "date": "2026-11-17",
-    "summary": "이전 방식 수집기를 새 수집기로 전환할 때 Codex 설정 때문에 설치가 멈추던 문제를 고쳤습니다.",
+    "summary": "수집기 전환이 Codex 설정 때문에 멈추던 문제와 작업 상세가 새로 고칠 때마다 깜박이던 문제를 고쳤습니다.",
     "items": [
       {
         "kind": "fixed",
@@ -22,6 +22,16 @@ export const RELEASES = localize([
         "where": "사이드바 수집기 설치 → 터미널에서 설치 (editor·admin)",
         "refs": [
           327
+        ]
+      },
+      {
+        "kind": "fixed",
+        "title": "작업 상세 새로 고침 깜박임",
+        "body": "전체 기간에서 연 작업 상세와 그 뒤의 작업 목록이 자동 새로 고침 때마다 로딩 화면으로 바뀌지 않고, 표시 중인 내용을 그 자리에서 갱신합니다.",
+        "to": "/users",
+        "where": "Users → 작업 목록 → 작업 상세",
+        "refs": [
+          328
         ]
       }
     ]

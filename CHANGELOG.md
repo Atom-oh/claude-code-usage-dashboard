@@ -17,12 +17,24 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [1.14.1] - 2026-11-17
 
+### Changed
+
+- Codex content opt-ins are unsupported: both Codex launchers also pass
+  `otel.log_agent_responses=false` and `otel.log_guardian_assessments=false`, and every
+  Collector (central and device packages) drops `codex.agent_response` and
+  `codex.guardian_assessment` events, which exist only when a host opts into them.
+  Production had none of these events, so stored data and existing views are unchanged:
+  [content opt-ins](docs/reference/codex-observability.md) (#329).
+
 ### Fixed
 
 - Device collector setup no longer fails with "removing managed telemetry would change other
   Codex settings" when Codex wrote its own tables (for example `codex mcp add`) inside the
   managed `[otel]` markers in `~/.codex/config.toml`; those tables stay in place and only the
   `[otel]` tables are replaced, so the legacy-collector migration can finish (#327).
+- A task's trace overlay and the task list behind it no longer flash to the loading
+  placeholder on each refresh when the task was opened from the whole range (no trend
+  bucket selected); polling that moves the range now refreshes them in place (#328).
 
 ## [1.14.0] - 2026-11-16
 

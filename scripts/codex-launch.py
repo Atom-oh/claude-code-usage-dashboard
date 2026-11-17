@@ -165,7 +165,10 @@ def launch_command(env, arguments):
     child["AWS_DEFAULT_REGION"] = config["region"]
     overrides = [
         "model=" + json.dumps(config["model"]),
+        # Content opt-ins are unsupported; the Collector also drops their events.
         'otel.log_user_prompt=false',
+        'otel.log_agent_responses=false',
+        'otel.log_guardian_assessments=false',
     ]
     # The native providers can build their own resources. Carry deployment
     # provenance on every loopback request as well as in the resource.

@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-17T13:53:18.351080+00:00",
-  "source_messages": 2088,
+  "updated_at": "2026-11-17T14:11:12.272812+00:00",
+  "source_messages": 2090,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2088,
-      "bytes": 162687,
-      "sha256": "a2e263663b2b8d61209828acbc5254bddadacbcbb663c129903390dbfa1dda93"
+      "messages": 2090,
+      "bytes": 162939,
+      "sha256": "32312f069670b65c3eadb60e2b0bb3ec4aa94096042aa89c1611785692184753"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2088,
-      "bytes": 192308,
-      "sha256": "0c5c10aff64f72197a39e7e2d8beec270016a925c4578935e75a9766972fc54e"
+      "messages": 2090,
+      "bytes": 192710,
+      "sha256": "166bf72a5985e95e8c6e223910bdb67f9a4216cba68207f4f14d1577b8f4ad36"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2088,
-      "bytes": 201719,
-      "sha256": "fde416dc3a9c7a432803e84b5e85db701218cc5967817dbb269e7556b2aa68b9"
+      "messages": 2090,
+      "bytes": 202038,
+      "sha256": "737a58cd1dce7c66e7fabb5429557f3447f6298003a5cfe6fb5eceeac5bd0024"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2088,
-      "bytes": 172892,
-      "sha256": "639aa17efdeba4be15ee615059d02d8265a9a27a0aa37dac4125dfa7ee8f6df7"
+      "messages": 2090,
+      "bytes": 173186,
+      "sha256": "7ef15bca65e484924fecf4608c6cd670f6ede012e8d88ecbdb999262e7790861"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2088,
-      "bytes": 153760,
-      "sha256": "af15332530f525fa30b5cb9756cef7f329291b50d42ea407a8f32e76c01a52f6"
+      "messages": 2090,
+      "bytes": 154025,
+      "sha256": "7182ebd78a5635482788ffad6c9627d7b93544da0625bf0da6d88f0b3a256144"
     }
   ],
   "catalog_calls": [
@@ -1767,7 +1767,7 @@
     "timestamp_utc": "2026-11-17T13:53:18.324232+00:00",
     "source_sha256": "0bc9ebd7ef5013f893f63d09da583deb2c3015ef72201c65f0b49321b15e5303",
     "output_sha256": "7290472684e1d00318472eb670c890054d2517ce4d3a863315d2b56f7e983db4",
-    "added_message_count": 3,
+    "added_message_count": 2,
     "source_locale": "ko",
     "target_locales": [
       "en",
@@ -1784,7 +1784,6 @@
     },
     "stop_reason": "end_turn",
     "added_keys": [
-      "m5d91de99c7cf",
       "mb3c092541768",
       "m9bbe788ebb2e"
     ],
@@ -1797,12 +1796,6 @@
       "changes": [
         {
           "locale": "zh-CN",
-          "key": "m5d91de99c7cf",
-          "from": "修复了从旧版收集器切换到新版收集器时，因 Codex 设置导致安装中断的问题。",
-          "to": "修复了从旧版采集器切换到新版采集器时，因 Codex 设置导致安装中断的问题。"
-        },
-        {
-          "locale": "zh-CN",
           "key": "mb3c092541768",
           "from": "收集器切换期间的 Codex 配置冲突",
           "to": "采集器切换期间的 Codex 配置冲突"
@@ -1812,6 +1805,65 @@
           "key": "m9bbe788ebb2e",
           "from": "即使 Codex 配置文件的收集设置部分包含 MCP 服务器等其他设置，收集器安装也会仅更改收集设置并保留其他设置，从而完成切换。此前，安装会因提示其他 Codex 设置将被更改而中断。",
           "to": "即使 Codex 配置文件的收集设置部分包含 MCP 服务器等其他设置，采集器安装也会仅更改收集设置并保留其他设置，从而完成切换。此前，安装会因提示其他 Codex 设置将被更改而中断。"
+        }
+      ]
+    },
+    "note": "Its summary message (m5d91de99c7cf) was removed before release when v1.14.1 grew to include #328; release_1141_update_messages carries the replacement summary."
+  },
+  "release_1141_update_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-17T14:10:53.150635+00:00",
+    "source_sha256": "082a51b5928f892affa9891cd29d5c1c6ac905ac9dc27512c6a56ca168e424c6",
+    "output_sha256": "cdf70c1527c0297fcbf4ecd15d5ba469783ec5d4eb7ed1616672df75a2b77022",
+    "added_message_count": 3,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "usage": {
+      "inputTokens": 288,
+      "outputTokens": 808,
+      "totalTokens": 1096,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "stop_reason": "end_turn",
+    "added_keys": [
+      "m6156875f815d",
+      "m06053d114115",
+      "m774351c38de1"
+    ],
+    "reused_keys": [
+      "mcf6cdd20424a"
+    ],
+    "note": "Sent with placeholder keys (KSUM/KTITLE/KBODY) mapped on the host to the catalog keys; sha256 values are of the JSON sent and Luna's parsed output re-serialized on the host.",
+    "host_corrections": {
+      "by": "claude-opus-5-5 (release host)",
+      "reason": "Luna rendered 전체 기간 as a named \"All time\" range option, which the UI does not have; it means the task was opened from the whole selected range (no trend bucket). output_sha256 is before these corrections.",
+      "changes": [
+        {
+          "locale": "en",
+          "key": "m774351c38de1",
+          "from": "Task details opened with the All time range and the task list behind them now update in place during automatic refreshes instead of switching to a loading screen each time.",
+          "to": "Task details opened from the full time range and the task list behind them now update in place during automatic refreshes instead of switching to a loading screen each time."
+        },
+        {
+          "locale": "zh-CN",
+          "key": "m774351c38de1",
+          "from": "在“全部时间”范围内打开的任务详情及其后方的任务列表，在自动刷新时不再每次都切换到加载界面，而是在原位置更新当前显示的内容。",
+          "to": "在完整时间范围内打开的任务详情及其后方的任务列表，在自动刷新时不再每次都切换到加载界面，而是在原位置更新当前显示的内容。"
+        },
+        {
+          "locale": "es",
+          "key": "m774351c38de1",
+          "from": "Los detalles de la tarea abiertos con el intervalo Todo el tiempo y la lista de tareas que aparece detrás ahora actualizan el contenido mostrado en el mismo lugar durante las actualizaciones automáticas, en lugar de cambiar a una pantalla de carga cada vez.",
+          "to": "Los detalles de la tarea abiertos desde el intervalo completo y la lista de tareas que aparece detrás ahora actualizan el contenido mostrado en el mismo lugar durante las actualizaciones automáticas, en lugar de cambiar a una pantalla de carga cada vez."
         }
       ]
     }

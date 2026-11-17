@@ -34,9 +34,16 @@ disabling analytics can disable metrics collection. Preserve the user's privacy
 choice and verify the client version and received signals instead of changing that
 preference to repair a missing cost row.
 
-Keep prompt-content logging disabled unless explicitly intended. The Collector
-scrubs known content fields, but neither those rules nor UI masking prove arbitrary
-sensitive content is absent or access is restricted.
+Codex content opt-ins are unsupported. Both launchers pass `otel.log_user_prompt`,
+`otel.log_agent_responses` and `otel.log_guardian_assessments` as `false`, and every
+Collector drops `codex.agent_response` and `codex.guardian_assessment` events, so a
+host that enables them elsewhere (plain `codex exec`, app-server) stores nothing from
+them. `codex.user_prompt` keeps its metadata (`prompt_length`) without text. Codex
+0.164.0 and earlier lack the two newer flags; unknown `[otel]` keys still load (checked
+on 0.162.1).
+`otel.log_sse_deltas` is not pinned: delta events are already collected and scrubbed.
+The Collector scrubs known content fields, but neither those rules nor UI masking prove
+arbitrary sensitive content is absent or access is restricted.
 
 ## Missing users or costs
 
