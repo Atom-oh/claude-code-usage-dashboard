@@ -58,6 +58,26 @@ theme = "dark"
         self.assertEqual(setup.toml_load(dotted)["otel"], setup.toml_load(setup.LEGACY_CODEX_OTEL)["otel"])
         self.assertEqual(setup.codex_config(dotted, True), dotted)
 
+    def test_codex_keeps_tables_another_tool_wrote_inside_the_managed_block(self):
+        # `codex mcp add` appends its table after the last one, i.e. inside our markers.
+        base = 'model = "m"\n[tui]\ntheme = "dark"\n'
+        foreign = '\n[mcp_servers.docs]\nurl = "https://example.invalid/mcp"\n[mcp_servers.docs.oauth]\ncallback_port = 9876\n'
+        after = '\n[projects."/work"]\ntrust_level = "trusted"\n'
+        for otel in [setup.LEGACY_CODEX_OTEL, setup.CODEX_OTEL]:
+            with self.subTest(otel=otel):
+                original = base + "\n" + setup.BEGIN + "\n" + otel + foreign + setup.END + "\n" + after
+                rendered = setup.codex_config(original, True)
+                parsed = setup.toml_load(rendered)
+                self.assertEqual(parsed["otel"], setup.toml_load(setup.CODEX_OTEL)["otel"])
+                self.assertEqual({k: v for k, v in parsed.items() if k != "otel"},
+                                 {k: v for k, v in setup.toml_load(original).items() if k != "otel"})
+                block = rendered[rendered.index(setup.BEGIN):rendered.index(setup.END)]
+                self.assertNotIn("mcp_servers", block)
+                self.assertEqual(setup.codex_config(rendered, True), rendered)
+                removed = setup.toml_load(setup.codex_config(rendered, False))
+                self.assertNotIn("otel", removed)
+                self.assertEqual(removed["mcp_servers"]["docs"]["oauth"]["callback_port"], 9876)
+
     def test_codex_launcher_overrides_match_the_configured_exporter_kind(self):
         self.assertEqual(setup.codex_exporter_kind({}), "otlp-grpc")
         self.assertEqual(setup.codex_exporter_kind(setup.toml_load(setup.CODEX_OTEL)), "otlp-grpc")
