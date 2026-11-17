@@ -127,7 +127,18 @@ def codex_config(text, enabled):
     if starts or ends:
         if len(starts) != 1 or len(ends) != 1 or ends[0] <= starts[0]:
             raise ValueError("malformed managed Codex telemetry markers; no files changed")
-        stripped = "".join(lines[:starts[0]] + lines[ends[0] + 1:])
+        # Codex appends tables it writes (e.g. `codex mcp add`) after the last table, which
+        # puts them inside our markers: keep every non-otel table where it is.
+        header = re.compile(r"\s*\[\s*([^\[\]]+?)\s*\]\s*(#.*)?$")
+        foreign, skipping = [], True
+        for line in lines[starts[0] + 1:ends[0]]:
+            match = header.match(line.rstrip("\r\n"))
+            if match:
+                name = match.group(1)
+                skipping = name == "otel" or name.startswith("otel.")
+            if not skipping:
+                foreign.append(line)
+        stripped = "".join(lines[:starts[0]] + foreign + lines[ends[0] + 1:])
     else:
         stripped = text
     remaining = toml_load(stripped)
