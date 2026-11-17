@@ -237,6 +237,9 @@ processors:
         statements:
           - delete_key(attributes, "prompt")
           - delete_key(attributes, "prompt_text")
+          # Claude Code sends "<REDACTED>" here, but other Claude hosts have sent the
+          # assistant's text. response_length stays; feedback_survey ratings are kept.
+          - delete_key(attributes, "response") where attributes["event.name"] != nil and IsMatch(attributes["event.name"], "^(claude_code[.])?assistant_response$")
           # Supported Claude measurements and deduplication use structured attributes,
           # not free-text bodies. Keep the documented no-body storage contract.
           - set(body, "")

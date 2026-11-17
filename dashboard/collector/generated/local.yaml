@@ -198,6 +198,7 @@ processors:
         statements:
           - delete_key(attributes, "prompt")
           - delete_key(attributes, "prompt_text")
+          - delete_key(attributes, "response") where attributes["event.name"] != nil and IsMatch(attributes["event.name"], "^(claude_code[.])?assistant_response$")
           - set(body, "")
 
   batch:

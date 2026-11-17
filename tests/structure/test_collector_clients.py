@@ -235,6 +235,26 @@ class CollectorTests(unittest.TestCase):
                 self.assertEqual(len(resources), 1)
                 self.assertEqual(resources[0].get("user.email") or None, expected)
 
+    def test_claude_assistant_response_text_is_scrubbed(self):
+        # Claude Code sends "<REDACTED>"; other Claude hosts have sent response text.
+        records = [
+            log("assistant_response", NOW, response="private response", response_length=16),
+            log("claude_code.assistant_response", NOW, response="private response", response_length=16),
+            log("feedback_survey", NOW, response="good"),
+        ]
+        body = {"resourceLogs": [{"resource": {"attributes": attributes({"service.name": "claude-code"})},
+                "scopeLogs": [{"scope": {"name": "fixture"}, "logRecords": records}]}]}
+        events = self.run_collector("true", "false", requests=[("/v1/logs", body, {})])
+        logs = {values(record["attributes"])["event.name"]: values(record["attributes"])
+                for batch in events for resource in batch.get("resourceLogs", [])
+                for scope in resource["scopeLogs"] for record in scope["logRecords"]}
+        self.assertEqual(set(logs), {"assistant_response", "claude_code.assistant_response", "feedback_survey"})
+        for name in ["assistant_response", "claude_code.assistant_response"]:
+            self.assertNotIn("response", logs[name])
+            self.assertEqual(logs[name]["response_length"], "16")
+        # Survey answers are short ratings (4 characters at most in production), kept.
+        self.assertEqual(logs["feedback_survey"]["response"], "good")
+
 
 if __name__ == "__main__":
     unittest.main()

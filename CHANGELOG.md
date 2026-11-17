@@ -21,6 +21,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Codex settings" when Codex wrote its own tables (for example `codex mcp add`) inside the
   managed `[otel]` markers in `~/.codex/config.toml`; those tables stay in place and only the
   `[otel]` tables are replaced, so the legacy-collector migration can finish.
+- Every Collector (central and device packages) now removes the `response` attribute from
+  Claude `assistant_response` events and keeps `response_length`. Claude Code sends
+  `<REDACTED>` there, but a Cowork host had stored assistant text in two production rows
+  (2026-10-13); `feedback_survey` ratings are unchanged. Already stored rows need a separate,
+  approved ClickHouse mutation.
 
 ## [1.14.0] - 2026-11-16
 
