@@ -15,12 +15,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-11-17
+
 ### Fixed
 
 - Device collector setup no longer fails with "removing managed telemetry would change other
   Codex settings" when Codex wrote its own tables (for example `codex mcp add`) inside the
   managed `[otel]` markers in `~/.codex/config.toml`; those tables stay in place and only the
-  `[otel]` tables are replaced, so the legacy-collector migration can finish.
+  `[otel]` tables are replaced, so the legacy-collector migration can finish (#327).
 
 ## [1.14.0] - 2026-11-16
 

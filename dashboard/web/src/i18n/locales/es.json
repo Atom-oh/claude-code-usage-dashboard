@@ -2083,5 +2083,8 @@
   "mc2b1b9568ccd": "Algunos carriles de subagente muestran solo parte de sus spans porque no se pudieron leer todos.",
   "m4b5e2e77b3ad": "Carril de la cronología de subagentes de Codex",
   "mc77f1693f3f2": "La cronología de los detalles de la tarea de Codex dibuja un carril por cada conversación de subagente y lo conecta con una línea discontinua a la llamada que inició ese subagente. Las llamadas LLM del carril se muestran como costo propio del subagente, y un carril cuyos spans no se pudieron leer todos se indica como parcialmente mostrado.",
-  "m780ec32c774e": "Muestra los subagentes como carriles en la cronología de Detalles de la tarea de Codex."
+  "m780ec32c774e": "Muestra los subagentes como carriles en la cronología de Detalles de la tarea de Codex.",
+  "m5d91de99c7cf": "Se corrigió un problema que detenía la instalación debido a la configuración de Codex al cambiar del recopilador antiguo al nuevo.",
+  "mb3c092541768": "Conflicto de configuración de Codex durante el cambio de recopilador",
+  "m9bbe788ebb2e": "Aunque la sección de configuración de recopilación del archivo de configuración de Codex incluya otros ajustes, como servidores MCP, la instalación del recopilador ahora completa el cambio modificando únicamente los ajustes de recopilación y dejando los demás intactos. Antes, la instalación se interrumpía con un error que indicaba que se modificarían otros ajustes de Codex."
 }
