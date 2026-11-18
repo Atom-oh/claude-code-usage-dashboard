@@ -15,6 +15,15 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- A minimal OpenTelemetry Collector Builder image for the central OTLP receiver
+  (`collector-build/`), with only the components `central.yaml` uses. CI builds it, validates
+  `central.yaml` inside it with the production security context and exports both clients'
+  telemetry through it into the existing ClickHouse schema. It is not published or deployed;
+  production still runs the upstream Collector image:
+  [runtime distribution](docs/reference/runtime-distribution.md#receiver-image).
+
 ### Changed
 
 - The dashboard image is smaller: the server ships as an esbuild bundle without

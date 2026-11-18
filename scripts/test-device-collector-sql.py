@@ -89,8 +89,11 @@ def main():
             config_path.write_text(config)
             environment = dict(os.environ, CH_HOST="127.0.0.1", CH_PORT=ports["9000/tcp"][0]["HostPort"],
                                CH_DB="claude_code", CH_USER="fixture_ingest")
+            # The ClickHouse leg may target another build (the OCB receiver); the
+            # fixtures above keep the contrib binary for the local hop and file exporter.
+            receiver = os.environ.get("CCDASH_TEST_RECEIVER_BINARY") or binary
             with (scratch / "collector.log").open("w") as output:
-                collector = subprocess.Popen([binary, "--config", str(config_path)], env=environment,
+                collector = subprocess.Popen([receiver, "--config", str(config_path)], env=environment,
                                              stdout=output, stderr=output)
                 for attempt in range(100):
                     if collector.poll() is not None:

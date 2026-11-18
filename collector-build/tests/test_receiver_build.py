@@ -1,7 +1,9 @@
-"""Static checks for the minimal OCB receiver distribution."""
+"""Static and opt-in binary checks for the minimal OCB receiver distribution."""
 import json
 import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -117,6 +119,46 @@ class ReceiverBuild(unittest.TestCase):
         self.assertIn('ENTRYPOINT ["/otelcol-ccdash-receiver"]', text)
         for host in ("docker.io", "ghcr.io"):
             self.assertNotIn(host, text)
+
+
+BINARY = os.environ.get("CCDASH_RECEIVER_BINARY")
+
+
+@unittest.skipUnless(BINARY, "set CCDASH_RECEIVER_BINARY to the built receiver binary")
+class ReceiverBinary(unittest.TestCase):
+    def test_binary_components_equal_manifest(self):
+        output = subprocess.run([BINARY, "components"], capture_output=True, text=True,
+                                check=True, timeout=60).stdout
+        names, empty, section = {}, set(), None
+        for line in output.splitlines():
+            if m := re.match(r"^([a-z]+):\s*(\[\])?\s*$", line):
+                section = m.group(1)
+                names.setdefault(section, set())
+                if m.group(2):
+                    empty.add(section)
+            elif m := re.match(r"^\s+-\s+name:\s*(\S+)\s*$", line):
+                names[section].add(m.group(1))
+        found = set().union(*(names.get(s, set())
+                              for s in ("receivers", "processors", "exporters", "extensions")))
+        self.assertEqual(found, set(COMPONENT_TYPES.values()))
+        self.assertIn("connectors", empty)
+        self.assertEqual(names["connectors"], set())
+
+    def test_binary_validates_central_config(self):
+        with tempfile.TemporaryDirectory(prefix="ccdash-receiver-") as temporary:
+            token, password = Path(temporary, "token"), Path(temporary, "password")
+            token.write_text("fixture-internal-token")
+            password.write_text("fixture-only")
+            config = CENTRAL.read_text()
+            config = config.replace("/var/run/ccdash-ingest/token", str(token))
+            config = config.replace("/var/run/ccdash-clickhouse/CH_PASSWORD", str(password))
+            path = Path(temporary, "central.yaml")
+            path.write_text(config)
+            env = dict(os.environ, CH_HOST="127.0.0.1", CH_PORT="9000",
+                       CH_DB="claude_code", CH_USER="fixture")
+            result = subprocess.run([BINARY, "validate", "--config", str(path)], env=env,
+                                    capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
