@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import {
   REQUIRED_RUNTIME_ZLIB_VERSION, REQUIRED_RUNTIME_NODE_VERSION,
-  REQUIRED_RUNTIME_OPENSSL_VERSION, REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION, verifyRuntime,
+  REQUIRED_RUNTIME_OPENSSL_VERSION, REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION, REQUIRED_SERVER_ENTRIES,
+  verifyRuntime,
 } from "../verify-runtime.mjs";
 
 const hash = (text) => createHash("sha256").update(text).digest("hex");
@@ -16,9 +17,13 @@ const opensslMetadata = ["libcrypto3", "libssl3"].map(name =>
 function fixture(run) {
   const root = mkdtempSync(path.join(tmpdir(), "ccdash-runtime-"));
   try {
-    for (const directory of ["opt", "app/notices", "app/server", "app/collector-packages", "usr/local/bin", "lib/apk/db"]) {
+    for (const directory of ["opt", "app/notices", "app/server", "app/collector-packages", "usr/local/bin", "lib/apk/db",
+      "tmp", "home/node"]) {
       mkdirSync(path.join(root, directory), { recursive: true });
     }
+    chmodSync(path.join(root, "tmp"), 0o1777);
+    for (const name of REQUIRED_SERVER_ENTRIES)
+      writeFileSync(path.join(root, "app/server", name), `// synthetic bundled ${name}\n`);
     const license = "Synthetic fixture license.\n";
     const serverLock = '{"fixture":"server"}\n';
     const expectedLockfiles = { server: hash(serverLock), web: hash('{"fixture":"web"}\n') };
@@ -45,7 +50,7 @@ function fixture(run) {
     writeFileSync(path.join(root, "lib/apk/db/installed"),
       `P:busybox\nV:synthetic\n\nP:zlib\nV:${REQUIRED_RUNTIME_ZLIB_VERSION}\nA:aarch64\n\n${opensslMetadata}`);
     const options = {
-      root, uid: 1000, sharedOpenSSL: true,
+      root, uid: 1000, homeOwner: 1000, sharedOpenSSL: true,
       versions: { node: REQUIRED_RUNTIME_NODE_VERSION, openssl: REQUIRED_RUNTIME_OPENSSL_VERSION, zlib: "synthetic-node-zlib" },
       revision: "a".repeat(40), expectedRevision: "a".repeat(40),
       expectedLicenseSha256: hash(license), expectedLockfiles,
@@ -77,6 +82,50 @@ test("runtime inspection binds actual notices, license, lock and nonroot release
     assert.equal(result.collectorVersion, "0.163.1");
     assert.equal(Object.keys(result.collectorPackages).length, 2);
     assert.match(result.collectorEnrollHelper, /^[a-f0-9]{64}$/);
+    assert.deepEqual(result.serverEntries, Object.fromEntries(REQUIRED_SERVER_ENTRIES.map(name =>
+      [name, hash(`// synthetic bundled ${name}\n`)])));
+  });
+});
+
+test("runtime inspection requires each bundled server entry", () => {
+  assert.deepEqual(REQUIRED_SERVER_ENTRIES, ["backupHealth.js", "clickhouse.js", "index.js"]);
+  for (const name of REQUIRED_SERVER_ENTRIES) {
+    for (const change of ["missing", "empty", "directory", "symlink"]) {
+      fixture(({ root, options }) => {
+        const entry = path.join(root, "app/server", name);
+        rmSync(entry);
+        if (change === "empty") writeFileSync(entry, "");
+        if (change === "directory") mkdirSync(entry);
+        if (change === "symlink") symlinkSync("package-lock.json", entry);
+        assert.throws(() => verifyRuntime(options), /server bundle entry/);
+      });
+    }
+  }
+});
+
+test("runtime inspection rejects installed server node_modules", () => {
+  for (const name of ["app/server/node_modules", "app/server/scripts"]) {
+    fixture(({ root, options }) => {
+      mkdirSync(path.join(root, name), { recursive: true });
+      assert.throws(() => verifyRuntime(options),
+        new RegExp(`unexpected build artifact: ${name.replaceAll("/", "\\/")}`));
+    });
+  }
+});
+
+test("runtime inspection keeps /tmp sticky and the node home owned by the runtime user", () => {
+  fixture(({ root, options }) => {
+    chmodSync(path.join(root, "tmp"), 0o777);
+    assert.throws(() => verifyRuntime(options), /\/tmp mode/);
+  });
+  fixture(({ root, options }) => {
+    rmSync(path.join(root, "tmp"), { recursive: true });
+    assert.throws(() => verifyRuntime(options), /\/tmp mode/);
+  });
+  fixture(({ root, options }) => {
+    assert.throws(() => verifyRuntime({ ...options, homeOwner: 0 }), /node home owner/);
+    rmSync(path.join(root, "home/node"), { recursive: true });
+    assert.throws(() => verifyRuntime(options), /node home/);
   });
 });
 
@@ -133,7 +182,7 @@ test("runtime inspection rejects absent, old and ambiguous OpenSSL package recor
 
 test("runtime Dockerfile pin agrees with actual-image OS zlib verification", () => {
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
-  const runtime = dockerfile.split("FROM server-deps AS runtime\n")[1];
+  const runtime = dockerfile.split(/^FROM /m).find(stage => stage.startsWith("node-base AS runtime-root\n"));
   assert.ok(runtime?.includes(`apk add --no-cache 'zlib=${REQUIRED_RUNTIME_ZLIB_VERSION}'`));
   assert.ok(!runtime.includes("--allow-untrusted"));
 });
@@ -142,7 +191,12 @@ test("official Node base pin agrees with the runtime inspector", () => {
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
   assert.match(dockerfile, new RegExp(`^ARG NODE_IMAGE=[a-z0-9./-]+/node:${REQUIRED_RUNTIME_NODE_VERSION.replaceAll(".", "\\.")}-alpine@sha256:[a-f0-9]{64}$`, "m"));
   assert.match(dockerfile, /^FROM \$\{NODE_IMAGE\} AS node-base$/m);
-  assert.equal(dockerfile.match(/^FROM /gm).length, dockerfile.match(/^FROM (?:\$\{NODE_IMAGE\}|node-base|server-deps) AS /gm).length);
+  const stages = dockerfile.match(/^FROM .*$/gm);
+  // The final stage flattens the cleaned base; every other stage derives from the one pinned index.
+  assert.deepEqual(stages.filter(line => !/^FROM (?:\$\{NODE_IMAGE\}|node-base|server-deps) AS [a-z-]+$/.test(line)),
+    ["FROM scratch AS runtime"]);
+  assert.equal(stages.at(-1), "FROM scratch AS runtime");
+  assert.match(dockerfile, /^COPY --from=runtime-root \/ \/$/m);
   for (const forbidden of ["nodejs.org/dist", "./configure", "make -j", "--allow-untrusted"])
     assert.ok(!dockerfile.includes(forbidden), forbidden);
 });

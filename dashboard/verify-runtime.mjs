@@ -7,6 +7,7 @@ export const REQUIRED_RUNTIME_ZLIB_VERSION = "1.4-r0";
 export const REQUIRED_RUNTIME_NODE_VERSION = "24.22.1";
 export const REQUIRED_RUNTIME_OPENSSL_VERSION = "3.5.9";
 export const REQUIRED_RUNTIME_OPENSSL_PACKAGE_VERSION = "3.5.9-r0";
+export const REQUIRED_SERVER_ENTRIES = ["backupHealth.js", "clickhouse.js", "index.js"];
 
 // This inspector is evaluated inside the built image using Node's builtins. It
 // never imports application modules, reads credentials or contacts a database.
@@ -14,6 +15,8 @@ export function verifyRuntime({
   root = "/",
   revision = process.env.APP_REVISION,
   uid = process.getuid(),
+  // A fixture cannot chown, so tests inject the owner; the image probe reads it.
+  homeOwner,
   versions = process.versions,
   sharedOpenSSL = process.config.variables.node_shared_openssl,
   expectedRevision,
@@ -74,9 +77,29 @@ export function verifyRuntime({
     "usr/local/bin/yarnpkg", "usr/local/bin/corepack",
     "usr/local/include/node",
     "app/web/node_modules", "app/collect-notices.mjs", "app/verify-runtime.mjs",
+    // The server ships as a self-contained bundle; installed modules or build scripts mean
+    // the runtime stage copied the source tree instead.
+    "app/server/node_modules", "app/server/scripts",
   ]) absent(name);
   if (readdirSync(location("opt")).some((name) => /^yarn-v/.test(name))) {
     fail("unexpected Yarn installation");
+  }
+  // The runtime flattens the cleaned base into scratch; these catch a copy that loses
+  // the base's modes or ownership.
+  const metadata = (name) => {
+    try { return lstatSync(location(name)); }
+    catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  };
+  const tmp = metadata("tmp");
+  if (!tmp?.isDirectory() || (tmp.mode & 0o7777) !== 0o1777) fail("/tmp mode must be 1777");
+  const home = metadata("home/node");
+  if (!home?.isDirectory()) fail("node home directory is missing");
+  if ((homeOwner ?? home.uid) !== 1000) fail("node home owner must be the runtime user");
+  const serverEntries = {};
+  for (const name of REQUIRED_SERVER_ENTRIES) {
+    const entry = metadata(`app/server/${name}`);
+    if (!entry?.isFile() || !entry.size) fail(`server bundle entry ${name} must be a non-empty regular file`);
+    serverEntries[name] = sha256(readFileSync(location(`app/server/${name}`)));
   }
   const license = readFileSync(location("app/APPLICATION_LICENSE"));
   if (!/^[a-f0-9]{64}$/.test(expectedLicenseSha256 || "") ||
@@ -134,6 +157,7 @@ export function verifyRuntime({
     noticesTextSha256: sha256(noticeText),
     applicationLicenseSha256: sha256(license),
     serverLockSha256,
+    serverEntries,
     collectorVersion: collectorManifest.collectorVersion,
     collectorPackages: collectorManifest.packages,
     collectorEnrollHelper: collectorManifest.enrollHelper,

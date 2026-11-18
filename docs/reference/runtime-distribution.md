@@ -15,12 +15,20 @@ The default `NODE_IMAGE` is the index's credential-free `public.ecr.aws/docker/l
 path. `build-release.py --base-image` may substitute another path of the same index, such
 as the deployment account's ECR pull-through cache; it must end in the Dockerfile's pinned
 digest, so registry choice never changes build content.
-The final image removes npm, npx,
-Yarn and Corepack after dependency installation; locked server dependencies, Node,
-OS packages/metadata, readiness tooling and distribution notices remain.
-Unused Node development headers are removed; their absence is not vulnerability clearance.
-The entrypoint uses Node directly. Removing build tools does not establish that the
-remaining packages are free of vulnerabilities.
+The server ships as an esbuild bundle of its three entrypoints (`index.js`,
+`backupHealth.js`, `clickhouse.js`) in `/app/server`, next to the `package.json`,
+lockfile and price snapshot they read; the runtime has no `node_modules`. The notice
+inventory reads a production-only install from the same lockfile and fails when a
+bundled package has no notice.
+
+The runtime stage removes npm, npx, Yarn, Corepack and the unused Node development
+headers from the base, then copies that cleaned filesystem into `scratch`, so the
+removed files leave the image and the pinned index stays the only base input. Node,
+OS packages/metadata, readiness tooling and distribution notices remain. Flattening
+drops the base's image config: the runtime restores `PATH` and `NODE_VERSION`, and its
+`CMD` runs Node directly without the base's `docker-entrypoint.sh`. Removing build
+tools or headers does not establish that the remaining packages are free of
+vulnerabilities.
 
 The runtime stage installs authenticated Alpine `zlib=1.4-r0`, the vendor fix
 for the OS package findings `CVE-2026-85091` and `CVE-2026-4738` (ECR enhanced scan,
@@ -41,8 +49,11 @@ manifest must equal the build's reported digest), nonroot user and full revision
 The committed [verify-runtime.mjs](../../dashboard/verify-runtime.mjs) is evaluated
 inside that immutable image ID using Node builtins. It checks UID 1000, Node 24.22.1,
 Node's OpenSSL 3.5.9 (its linkage is recorded), the runtime revision, absent package managers/frontend
-modules/collectors, license hash, complete nonempty notices, both committed lock
-hashes and the installed server lock. It requires one OS zlib package at the pinned
+modules/collectors and server `node_modules`/build scripts, license hash, complete nonempty
+notices, both committed lock hashes and the runtime server lock. Each bundled server
+entry must be a nonempty regular file; the record keeps their hashes as `serverEntries`.
+Because a flattening copy could lose modes or ownership, it also requires `/tmp` at mode 1777 and
+`/home/node` owned by UID 1000. It requires one OS zlib package at the pinned
 version in `/lib/apk/db/installed`; missing, old or ambiguous metadata fails.
 It applies the same uniqueness/version checks to both OpenSSL runtime packages.
 The image also contains two deterministic device installer archives. Inspection

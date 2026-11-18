@@ -15,6 +15,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard image is smaller: the server ships as an esbuild bundle without
+  `node_modules`, and the runtime copies the cleaned Node base into an empty image so the
+  removed package managers no longer occupy its layers. No behavior change is intended; the
+  startup command, health check and runtime user are unchanged:
+  [runtime distribution](docs/reference/runtime-distribution.md).
+
 ## [1.14.2] - 2026-11-18
 
 ### Fixed
