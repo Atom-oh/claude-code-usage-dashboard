@@ -2088,5 +2088,9 @@
   "m9bbe788ebb2e": "Aunque la sección de configuración de recopilación del archivo de configuración de Codex incluya otros ajustes, como servidores MCP, la instalación del recopilador ahora completa el cambio modificando únicamente los ajustes de recopilación y dejando los demás intactos. Antes, la instalación se interrumpía con un error que indicaba que se modificarían otros ajustes de Codex.",
   "m6156875f815d": "Se corrigió un problema que detenía el cambio de recopilador debido a la configuración de Codex, y otro que hacía que los detalles de la tarea parpadearan con cada actualización.",
   "m06053d114115": "Parpadeo de los detalles de la tarea al actualizarse",
-  "m774351c38de1": "Los detalles de la tarea abiertos desde el intervalo completo y la lista de tareas que aparece detrás ahora actualizan el contenido mostrado en el mismo lugar durante las actualizaciones automáticas, en lugar de cambiar a una pantalla de carga cada vez."
+  "m774351c38de1": "Los detalles de la tarea abiertos desde el intervalo completo y la lista de tareas que aparece detrás ahora actualizan el contenido mostrado en el mismo lugar durante las actualizaciones automáticas, en lugar de cambiar a una pantalla de carga cada vez.",
+  "m9ddb37a0ca46": "Puedes consultar las estimaciones de costos incluso antes de que se registre el precio unitario de una nueva versión de GPT.",
+  "m698ea7511d77": "Estimaciones de costos para nuevas versiones de GPT",
+  "m8fa0abb65dab": "Para los modelos GPT que no tienen un precio específico en Bedrock, los costos se estiman usando el precio unitario de la versión anterior más cercana de la misma serie. Una vez registrado el precio específico, el historial de uso anterior también se recalcula con el nuevo precio unitario.",
+  "m5ed505bd0a2a": "Costos → Costos por modelo"
 }
