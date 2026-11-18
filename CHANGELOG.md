@@ -15,6 +15,24 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Added
+
+- A minimal OpenTelemetry Collector Builder image for the central OTLP receiver
+  (`collector-build/`), with only the components `central.yaml` uses. CI builds it, validates
+  `central.yaml` inside it with the production security context and exports both clients'
+  telemetry through it into the existing ClickHouse schema. It is not published or deployed;
+  production still runs the upstream Collector image:
+  [runtime distribution](docs/reference/runtime-distribution.md#receiver-image).
+
+### Changed
+
+- The dashboard image is smaller: the server ships as an esbuild bundle without
+  `node_modules`, and the runtime copies the cleaned Node base into an empty image so the
+  removed package managers no longer occupy its layers. No behavior change is intended; the
+  startup command, health check and runtime user are unchanged. The image no longer has the
+  Node base's `docker-entrypoint.sh` ENTRYPOINT or `YARN_VERSION`, so arguments-only
+  `docker run IMAGE script.js` no longer prepends `node`; the repository's deployments invoke
+  `node` explicitly: [runtime distribution](docs/reference/runtime-distribution.md).
 ## [1.14.3] - 2026-11-18
 
 ### Fixed

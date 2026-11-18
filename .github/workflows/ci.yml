@@ -89,6 +89,8 @@ jobs:
           node-version: 22
       - name: Verify deterministic packages and configuration preservation
         run: python3 -m unittest discover -s dashboard/collector/tests -p 'test_*.py'
+      - name: Verify the receiver build definition
+        run: python3 -m unittest discover -s collector-build/tests -p 'test_*.py'
       - name: Verify pinned Collector policies and existing ClickHouse schema
         run: python3 scripts/test-device-collector-sql.py
 
@@ -169,6 +171,77 @@ jobs:
             --cache-to "type=local,dest=$RUNNER_TEMP/buildx-cache-new,mode=max"
           # Replace rather than grow the cache directory (buildx never prunes a local cache).
           rm -rf "$RUNNER_TEMP/buildx-cache" && mv "$RUNNER_TEMP/buildx-cache-new" "$RUNNER_TEMP/buildx-cache"
+
+  receiver:
+    # Builds the OCB receiver image (collector-build/) and checks it against central.yaml and the
+    # existing ClickHouse schema. Nothing is published; production still runs the upstream contrib
+    # image. It holds no secrets and runs GitHub-hosted for every event (ARM, for the arm64-only
+    # image), as device-collector does, because the SQL check pulls ClickHouse anonymously from
+    # Docker Hub, which the self-hosted runners' shared NAT would expose to rate limits. Bind mounts come from
+    # $RUNNER_TEMP on the runner's local daemon; --mount fails instead of creating an empty path
+    # when a source is missing.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decide whether this change can affect the receiver image
+        id: scope
+        # The SQL check reads clickhouse-schema.sql and, through the installer and the
+        # collector fixtures, files across dashboard/collector/.
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then echo "build=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          changed="$(git diff --name-only "$BASE_SHA...HEAD")"
+          if printf '%s\n' "$changed" | grep -qE '^(collector-build/|dashboard/collector/|clickhouse-schema\.sql$|scripts/test-device-collector-sql\.py$|\.github/workflows/ci\.yml$)'; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "No receiver build input changed; the build runs on the next main push."
+          fi
+      - name: Verify the build definition against the upstream manifest
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("dashboard/collector/release.json"))["version"])')"
+          curl -fsSL -o "$RUNNER_TEMP/upstream-manifest.yaml" \
+            "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector-releases/v${version}/distributions/otelcol-contrib/manifest.yaml"
+          CCDASH_UPSTREAM_RECEIVER_MANIFEST="$RUNNER_TEMP/upstream-manifest.yaml" \
+            python3 -m unittest discover -s collector-build/tests -p 'test_*.py' -v
+      - uses: docker/setup-buildx-action@v3
+        if: steps.scope.outputs.build == 'true'
+      - name: Build the ARM64 receiver image without publishing
+        if: steps.scope.outputs.build == 'true'
+        run: docker buildx build --platform linux/arm64 --load -t ccdash-receiver:ci collector-build
+      - name: Validate central.yaml in the image with production's security context
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          # central.yaml already names the production mount paths, so it is mounted unchanged.
+          work="$RUNNER_TEMP/receiver-validate"
+          mkdir -p "$work"
+          cp dashboard/collector/generated/central.yaml "$work/config.yaml"
+          printf 'fixture-internal-token' > "$work/token"
+          printf 'fixture-only' > "$work/CH_PASSWORD"
+          chmod 0444 "$work/config.yaml" "$work/token" "$work/CH_PASSWORD"
+          docker run --rm --network none --read-only --user 10001:10001 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --env CH_HOST=127.0.0.1 --env CH_PORT=9000 --env CH_DB=claude_code --env CH_USER=fixture \
+            --mount "type=bind,src=$work/config.yaml,dst=/etc/otelcol/config.yaml,readonly" \
+            --mount "type=bind,src=$work/token,dst=/var/run/ccdash-ingest/token,readonly" \
+            --mount "type=bind,src=$work/CH_PASSWORD,dst=/var/run/ccdash-clickhouse/CH_PASSWORD,readonly" \
+            ccdash-receiver:ci validate --config=/etc/otelcol/config.yaml
+      - name: Verify the extracted binary against the existing ClickHouse schema
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          cid="$(docker create ccdash-receiver:ci)"
+          docker cp "$cid:/otelcol-ccdash-receiver" "$RUNNER_TEMP/otelcol-ccdash-receiver"
+          docker rm "$cid"
+          CCDASH_RECEIVER_BINARY="$RUNNER_TEMP/otelcol-ccdash-receiver" \
+            python3 -m unittest discover -s collector-build/tests -p 'test_*.py' -v
+          CCDASH_TEST_RECEIVER_BINARY="$RUNNER_TEMP/otelcol-ccdash-receiver" \
+            python3 scripts/test-device-collector-sql.py
 
   harness:
     runs-on: ubuntu-latest

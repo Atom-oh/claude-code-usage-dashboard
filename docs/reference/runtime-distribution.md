@@ -15,14 +15,24 @@ The default `NODE_IMAGE` is the index's credential-free `public.ecr.aws/docker/l
 path. `build-release.py --base-image` may substitute another path of the same index, such
 as the deployment account's ECR pull-through cache; it must end in the Dockerfile's pinned
 digest, so registry choice never changes build content.
-The final image removes npm, npx,
-Yarn and Corepack after dependency installation; locked server dependencies, Node,
-OS packages/metadata, readiness tooling and distribution notices remain.
-Unused Node development headers are removed; their absence is not vulnerability clearance.
-The entrypoint uses Node directly. Removing build tools does not establish that the
-remaining packages are free of vulnerabilities.
+The server ships as an esbuild bundle of its three entrypoints (`index.js`,
+`backupHealth.js`, `clickhouse.js`) in `/app/server`, next to the `package.json` and
+price snapshot they read and the lockfile that identifies the bundled dependency tree
+(`RUNTIME_FILES` in [bundle.mjs](../../dashboard/server/scripts/bundle.mjs)). The image
+copies the bundle directory without its metafile; the runtime has no `node_modules`.
+The notice inventory reads a production-only install from the same lockfile and fails
+when a bundled package has no notice.
 
-The runtime stage installs authenticated Alpine `zlib=1.4-r0`, the vendor fix
+The `runtime-root` stage removes npm, npx, Yarn, Corepack and the unused Node development
+headers from the base. The final `runtime` stage copies that cleaned filesystem into
+`scratch`, so the removed files leave the image and the pinned index stays the only base
+input. Node, OS packages/metadata, readiness tooling and distribution notices remain. Flattening
+drops the base's image config: the runtime restores `PATH` and `NODE_VERSION`, and its
+`CMD` runs Node directly without the base's `docker-entrypoint.sh`. Removing build
+tools or headers does not establish that the remaining packages are free of
+vulnerabilities.
+
+The `runtime-root` stage installs authenticated Alpine `zlib=1.4-r0`, the vendor fix
 for the OS package findings `CVE-2026-85091` and `CVE-2026-4738` (ECR enhanced scan,
 fixed in `1.4-r0`, 2026-11-09) observed on the pinned base. Keep this
 literal pin and the inspector's required version aligned when refreshing packages.
@@ -41,8 +51,11 @@ manifest must equal the build's reported digest), nonroot user and full revision
 The committed [verify-runtime.mjs](../../dashboard/verify-runtime.mjs) is evaluated
 inside that immutable image ID using Node builtins. It checks UID 1000, Node 24.22.1,
 Node's OpenSSL 3.5.9 (its linkage is recorded), the runtime revision, absent package managers/frontend
-modules/collectors, license hash, complete nonempty notices, both committed lock
-hashes and the installed server lock. It requires one OS zlib package at the pinned
+modules/collectors and server `node_modules`/build scripts, license hash, complete nonempty
+notices, both committed lock hashes and the runtime server lock. Each bundled server
+entry must be a nonempty regular file; the record keeps their hashes as `serverEntries`.
+Because a flattening copy could lose modes or ownership, it also requires `/tmp` at mode 1777 and
+`/home/node` owned by UID 1000. It requires one OS zlib package at the pinned
 version in `/lib/apk/db/installed`; missing, old or ambiguous metadata fails.
 It applies the same uniqueness/version checks to both OpenSSL runtime packages.
 The image also contains two deterministic device installer archives. Inspection
@@ -123,3 +136,32 @@ Existing assets are never replaced; correct a bad asset with a new patch release
 receiver is not included: it remains the upstream Collector image. The asset does not change
 production deployment, which still builds and publishes through the
 [deployment runbook](../runbooks/deploy-production.md), and it is not an ECR scan result.
+
+## Receiver image
+
+[collector-build](../../collector-build/README.md) defines a minimal OpenTelemetry Collector
+Builder distribution for the central OTLP receiver: the nine components
+`dashboard/collector/generated/central.yaml` uses and the `env`/`file` config providers, at the
+`dashboard/collector/release.json` version. It builds from a digest-pinned Go image into an
+empty `linux/arm64` image that runs as `10001:10001`.
+
+The CI `receiver` job builds it without publishing on the GitHub-hosted ARM64 runner, which
+also serves fork pull requests and keeps the anonymous Docker Hub ClickHouse pull off the
+self-hosted runners' shared NAT. It runs on every push, and on pull requests that change
+`collector-build/`, `dashboard/collector/`, `clickhouse-schema.sql`,
+`scripts/test-device-collector-sql.py` or the CI workflow. It checks that:
+
+- the manifest's component lines appear in the upstream contrib manifest at the same tag;
+- the built binary lists exactly the manifest's components and no connectors;
+- the unchanged `central.yaml` passes `validate` inside the image with no network, a read-only
+  root filesystem, UID/GID 10001, no capabilities, and the config, ingest token and ClickHouse
+  password mounted read-only at their production paths. `validate` reads the password file
+  but not the token file;
+- the extracted binary exports both clients' logs, metrics and traces into the existing
+  ClickHouse schema (`scripts/test-device-collector-sql.py`). That script's local-hop fixtures
+  still use the upstream contrib binary.
+
+The image never runs as a Kubernetes pod here, so pod probes, network policy, resource limits
+and registry scans stay unverified.
+Production still runs the upstream Collector image (`device_receiver_image` in
+`infra/device_ingest.tf`); this image is not published or deployed.

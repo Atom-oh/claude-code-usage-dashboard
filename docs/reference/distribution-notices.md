@@ -2,7 +2,7 @@
 
 [collect-notices.mjs](../../dashboard/collect-notices.mjs) inventories installed production
 dependencies from both locked application packages. Docker runs it in an isolated build
-stage and ships `THIRD_PARTY_NOTICES.txt` and `.json` in `/app/notices`; the final runtime
+stage, against a production-only server install, and ships `THIRD_PARTY_NOTICES.txt` and `.json` in `/app/notices`; the final runtime
 does not include frontend `node_modules` or the collector. The application license is
 separate, in `/app/APPLICATION_LICENSE`, and tested against the canonical
 [repository LICENSE](../../LICENSE).
@@ -20,9 +20,13 @@ parent heading. Source files such as `license.js` do not qualify. Development
 dependencies and absent optional platform packages are omitted; missing required packages
 and installed-versus-lockfile version differences fail collection.
 
-This is a conservative production dependency inventory, not a proof of every bundled
-module's inclusion. Runtime package manifests and frontend build dependencies do not
-replace base-image/system-software licensing obligations.
+The image build also passes the server bundle's esbuild metafile (`--bundle-metafile`).
+Every bundled third-party package must be installed in the production-only server install
+and have a notice; otherwise the report is incomplete (`bundled_without_notice`) and the
+build fails. Web dependencies remain a conservative inventory of installed production
+packages, not a proof of each module's inclusion in the Vite output. Runtime package
+manifests and frontend build dependencies do not replace base-image/system-software
+licensing obligations.
 
 Some published packages omit a license file:
 

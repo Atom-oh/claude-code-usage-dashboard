@@ -17,15 +17,22 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
+FROM node-base AS server-build
+WORKDIR /app/server
+# The bundler is a dev dependency; only its output reaches the runtime.
+COPY server/package.json server/package-lock.json ./
+RUN npm ci
+COPY server/ ./
+# The bundle directory holds the entries and the runtime files they read (RUNTIME_FILES in
+# bundle.mjs); its metafile moves out so the runtime can copy the whole directory.
+RUN node scripts/bundle.mjs /app/server-bundle \
+    && mv /app/server-bundle/meta.json /app/bundle-meta.json
+
+# Production-only install from the same lockfile, for the notice inventory only.
 FROM node-base AS server-deps
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
 RUN npm ci --omit=dev --prefix server
-ARG APP_REVISION
-ENV APP_REVISION=${APP_REVISION}
-LABEL org.opencontainers.image.revision=${APP_REVISION}
-COPY server/ ./server/
-COPY --from=web-build /app/web/dist ./web/dist
 
 FROM node-base AS collector-packages
 WORKDIR /package-source
@@ -35,14 +42,17 @@ RUN node build-packages.mjs /collector-packages
 FROM server-deps AS notices-build
 COPY --from=web-build /app/web/node_modules ./web/node_modules
 COPY --from=web-build /app/web/package-lock.json ./web/package-lock.json
+COPY --from=server-build /app/bundle-meta.json /tmp/bundle-meta.json
 COPY collect-notices.mjs ./
 COPY notices/ ./notice-sources/
-# Collector reads its adjacent reviewed catalog, not the network.
-RUN mv notice-sources notices && node collect-notices.mjs /app /tmp/distribution-notices
+# Collector reads its adjacent reviewed catalog, not the network. The metafile makes it
+# fail when a bundled package has no notice.
+RUN mv notice-sources notices && node collect-notices.mjs /app /tmp/distribution-notices \
+      --bundle-metafile /tmp/bundle-meta.json
 
-FROM server-deps AS runtime
-# Package managers are build tools; the production entrypoint needs Node and locked
-# server dependencies. Retain OS software and its metadata for image scanning.
+FROM node-base AS runtime-root
+# Package managers are build tools; the production entrypoint needs only Node and the
+# bundled server. Retain OS software and its metadata for image scanning.
 # Patch the base's OS zlib for CVE-2026-85091 and CVE-2026-4738 using authenticated Alpine packages.
 # Keep this version aligned with verify-runtime.mjs; Node's bundled zlib is separate.
 RUN apk add --no-cache 'zlib=1.4-r0' \
@@ -55,9 +65,24 @@ RUN apk add --no-cache 'zlib=1.4-r0' \
     && test ! -e /usr/local/lib/node_modules/corepack \
     && test ! -e /usr/local/bin/npm \
     && test ! -e /usr/local/bin/yarn
+
+# Deleting files in a later layer does not shrink the base layers, so copy the cleaned
+# filesystem into an empty image. Image config does not carry over: PATH and NODE_VERSION
+# are restored; YARN_VERSION leaves with Yarn, and CMD runs node without the base's
+# docker-entrypoint.sh wrapper.
+FROM scratch AS runtime
+COPY --from=runtime-root / /
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin NODE_VERSION=24.22.1
+WORKDIR /app
+# Bundled entries plus package.json, the lockfile and the price snapshot (see bundle.mjs).
+COPY --from=server-build /app/server-bundle/ ./server/
+COPY --from=web-build /app/web/dist ./web/dist
 COPY --from=notices-build /tmp/distribution-notices ./notices/
 COPY --from=collector-packages /collector-packages ./collector-packages/
 COPY APPLICATION_LICENSE ./APPLICATION_LICENSE
+ARG APP_REVISION
+ENV APP_REVISION=${APP_REVISION}
+LABEL org.opencontainers.image.revision=${APP_REVISION}
 ENV PORT=8080
 EXPOSE 8080
 USER node

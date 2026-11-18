@@ -1,9 +1,10 @@
 // Process-wide snapshot of the Cognito directory, injected into queries as bound array parameters.
 // Kept free of clickhouse.js imports because clickhouse.js imports this module.
-import { createRequire } from "node:module";
+// The client's own formatter, as used for param_* query-string values. A default import of the CommonJS
+// file works in Node and is inlined by esbuild; createRequire would need node_modules at runtime.
+import formatQueryParamsModule from "@clickhouse/client/dist/common/data_formatter/format_query_params.js";
 
-// The client's own formatter, as used for param_* query-string values.
-const { formatQueryParams } = createRequire(import.meta.url)("@clickhouse/client/dist/common/data_formatter/format_query_params.js");
+const { formatQueryParams } = formatQueryParamsModule;
 
 let snapshot = null;
 let version = "none";

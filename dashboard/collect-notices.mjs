@@ -126,7 +126,13 @@ export function collectNotices(dashboardRoot) {
   }
   const report = { schemaVersion: 1, lockfiles, complete: unresolved.length === 0,
     packages: entries, unresolved };
-  const text = [
+  return { report, text: noticesText(report) };
+}
+
+// Renders the text notices from the final report, so the header matches its completeness.
+function noticesText(report) {
+  const missing = report.unresolved.filter(entry => entry.reason === "bundled_without_notice");
+  return [
     "Third-party dependency notices",
     "Source: installed production dependency manifests and packaged license/notice texts.",
     "Web dependencies are conservatively inventoried; this is not a bundler inclusion proof.",
@@ -134,7 +140,8 @@ export function collectNotices(dashboardRoot) {
     "Standard license texts are labelled; copyright placeholders are not invented upstream notices.",
     report.complete ? "All inventoried packages have license declarations and texts."
       : "INCOMPLETE: unresolved packages are listed in THIRD_PARTY_NOTICES.json.",
-    ...entries.flatMap(entry => [
+    ...(missing.length ? [`INCOMPLETE: bundled packages without notices: ${missing.map(entry => entry.package).join(", ")}`] : []),
+    ...report.packages.flatMap(entry => [
       `\n===== ${entry.name}@${entry.version} =====`,
       `Components: ${entry.components.join(", ")}`,
       `Declared license: ${entry.declaredLicense || "unknown"}`,
@@ -146,14 +153,51 @@ export function collectNotices(dashboardRoot) {
       ...entry.files.flatMap(file => [`--- ${file.path} (SHA-256 ${file.sha256}) ---`, file.text]),
     ]),
   ].join("\n") + "\n";
-  return { report, text };
+}
+
+// Maps each esbuild metafile input under node_modules to its installed name@version.
+export function bundleCoverage(serverRoot, metafile, report) {
+  const bundled = new Set();
+  for (const input of Object.keys(metafile.inputs ?? {})) {
+    const segments = input.split("/");
+    if (path.isAbsolute(input) || segments.includes("..")) throw new Error(`unsafe bundle input: ${input}`);
+    const index = segments.lastIndexOf("node_modules");
+    if (index < 0) continue; // Application source, not a third-party package.
+    const length = segments[index + 1]?.startsWith("@") ? 2 : 1;
+    const root = segments.slice(0, index + 1 + length);
+    const manifestPath = path.join(serverRoot, ...root, "package.json");
+    if (root.length < index + 1 + length || !existsSync(manifestPath))
+      throw new Error(`bundled package is not installed: ${root.join("/")}`);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    bundled.add(`${manifest.name}@${manifest.version}`);
+  }
+  const noticed = new Set(report.packages.map(entry => `${entry.name}@${entry.version}`));
+  const sorted = [...bundled].sort((a, b) => a.localeCompare(b, "en"));
+  return { bundled: sorted, missing: sorted.filter(key => !noticed.has(key)) };
 }
 
 function main() {
-  const [root, output] = process.argv.slice(2);
-  if (!root || !output) throw new Error("usage: node collect-notices.mjs DASHBOARD_ROOT NEW_OUTPUT_DIRECTORY");
+  const args = process.argv.slice(2);
+  const flag = args.indexOf("--bundle-metafile");
+  let metafilePath;
+  if (flag >= 0) {
+    metafilePath = args[flag + 1];
+    args.splice(flag, 2);
+    if (!metafilePath) throw new Error("--bundle-metafile requires a path");
+  }
+  const [root, output] = args;
+  if (!root || !output || args.length > 2)
+    throw new Error("usage: node collect-notices.mjs DASHBOARD_ROOT NEW_OUTPUT_DIRECTORY [--bundle-metafile PATH]");
   if (existsSync(output)) throw new Error("notice output must be a new directory");
   const result = collectNotices(path.resolve(root));
+  if (metafilePath) {
+    const metafile = JSON.parse(readFileSync(metafilePath, "utf8"));
+    const { bundled, missing } = bundleCoverage(path.join(path.resolve(root), "server"), metafile, result.report);
+    result.report.bundledPackages = bundled;
+    for (const key of missing) result.report.unresolved.push({ package: key, reason: "bundled_without_notice" });
+    result.report.complete = result.report.unresolved.length === 0;
+    result.text = noticesText(result.report);
+  }
   mkdirSync(output, { recursive: true });
   writeFileSync(path.join(output, "THIRD_PARTY_NOTICES.json"), JSON.stringify(result.report, null, 2) + "\n");
   writeFileSync(path.join(output, "THIRD_PARTY_NOTICES.txt"), result.text);

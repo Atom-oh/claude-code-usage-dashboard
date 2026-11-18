@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { collectNotices } from "./collect-notices.mjs";
+import { spawnSync } from "node:child_process";
+import { collectNotices, bundleCoverage } from "./collect-notices.mjs";
 import { readFileSync } from "node:fs";
 
 test("packaged application license matches the canonical repository license", () => {
@@ -257,4 +258,92 @@ test("missing required dependencies and version drift fail; dev/absent optional 
   const f = fixture({ "node_modules/dev": { version: "1.0.0", dev: true },
     "node_modules/optional": { version: "1.0.0", optional: true } });
   try { assert.equal(collectNotices(f.root).report.packages.length, 0); } finally { f.close(); }
+});
+
+function bundleFixture() {
+  const f = fixture({ "node_modules/a": { version: "1.0.0" }, "node_modules/@s/b": { version: "2.0.0" } });
+  f.add("node_modules/a", { name: "a", version: "1.0.0", license: "MIT" }, { LICENSE: "a license\n" });
+  f.add("node_modules/@s/b", { name: "@s/b", version: "2.0.0", license: "MIT" }, { LICENSE: "b license\n" });
+  f.add("node_modules/a/node_modules/c", { name: "c", version: "3.0.0", license: "MIT" }, { LICENSE: "c license\n" });
+  const inputs = ["node_modules/a/index.js", "node_modules/@s/b/dist/x.js",
+    "node_modules/a/node_modules/c/lib/y.js", "index.js"];
+  return { f, metafile: { inputs: Object.fromEntries(inputs.map(input => [input, { bytes: 1 }])) } };
+}
+const server = f => path.join(f.root, "server");
+
+test("bundle coverage maps scoped and nested node_modules inputs to installed versions", () => {
+  const { f, metafile } = bundleFixture();
+  try {
+    const report = collectNotices(f.root).report;
+    assert.deepEqual(bundleCoverage(server(f), metafile, report),
+      { bundled: ["@s/b@2.0.0", "a@1.0.0", "c@3.0.0"], missing: ["c@3.0.0"] });
+  } finally { f.close(); }
+});
+
+test("application source inputs are not third-party packages", () => {
+  const f = fixture();
+  try {
+    const metafile = { inputs: { "index.js": {}, "scripts/x.js": {} } };
+    assert.deepEqual(bundleCoverage(server(f), metafile, { packages: [] }), { bundled: [], missing: [] });
+  } finally { f.close(); }
+});
+
+test("a bundled package absent from the notices is reported missing", () => {
+  const { f, metafile } = bundleFixture();
+  try {
+    const packages = [{ name: "a", version: "1.0.0" }, { name: "@s/b", version: "2.0.0" }];
+    assert.deepEqual(bundleCoverage(server(f), metafile, { packages }).missing, ["c@3.0.0"]);
+  } finally { f.close(); }
+});
+
+test("bundle coverage rejects unsafe or uninstalled inputs", () => {
+  const { f } = bundleFixture();
+  try {
+    for (const input of ["/abs/node_modules/a/x.js", "../node_modules/a/x.js", "node_modules/a/../../x.js"])
+      assert.throws(() => bundleCoverage(server(f), { inputs: { [input]: {} } }, { packages: [] }), /unsafe/);
+    assert.throws(() => bundleCoverage(server(f), { inputs: { "node_modules/ghost/x.js": {} } },
+      { packages: [] }), /not installed/);
+  } finally { f.close(); }
+});
+
+test("the CLI marks notices incomplete when the bundle has an un-noticed package", () => {
+  const { f, metafile } = bundleFixture();
+  try {
+    const metaPath = path.join(f.root, "meta.json");
+    writeFileSync(metaPath, JSON.stringify(metafile));
+    const script = fileURLToPath(new URL("./collect-notices.mjs", import.meta.url));
+    const run = output => spawnSync(process.execPath,
+      [script, f.root, path.join(f.root, output), "--bundle-metafile", metaPath], { encoding: "utf8" });
+    // c@3.0.0 is nested under a and absent from the lockfile, so no notice covers it.
+    const bad = run("out-bad");
+    assert.equal(bad.status, 1, bad.stderr);
+    const written = JSON.parse(readFileSync(path.join(f.root, "out-bad", "THIRD_PARTY_NOTICES.json"), "utf8"));
+    assert.equal(written.complete, false);
+    assert.deepEqual(written.bundledPackages, ["@s/b@2.0.0", "a@1.0.0", "c@3.0.0"]);
+    assert.deepEqual(written.unresolved, [{ package: "c@3.0.0", reason: "bundled_without_notice" }]);
+    const text = readFileSync(path.join(f.root, "out-bad", "THIRD_PARTY_NOTICES.txt"), "utf8");
+    assert.doesNotMatch(text, /All inventoried packages have/);
+    const header = text.split("\n=====")[0];
+    assert.match(header, /^INCOMPLETE: unresolved packages are listed in THIRD_PARTY_NOTICES\.json\.$/m);
+    assert.match(header, /^INCOMPLETE: bundled packages without notices: c@3\.0\.0$/m);
+  } finally { f.close(); }
+});
+
+test("the CLI accepts a bundle fully covered by the notices", () => {
+  const { f, metafile } = bundleFixture();
+  try {
+    delete metafile.inputs["node_modules/a/node_modules/c/lib/y.js"];
+    const metaPath = path.join(f.root, "meta.json");
+    writeFileSync(metaPath, JSON.stringify(metafile));
+    const script = fileURLToPath(new URL("./collect-notices.mjs", import.meta.url));
+    const ok = spawnSync(process.execPath,
+      [script, f.root, path.join(f.root, "out-ok"), "--bundle-metafile", metaPath], { encoding: "utf8" });
+    assert.equal(ok.status, 0, ok.stderr);
+    const written = JSON.parse(readFileSync(path.join(f.root, "out-ok", "THIRD_PARTY_NOTICES.json"), "utf8"));
+    assert.equal(written.complete, true);
+    assert.deepEqual(written.bundledPackages, ["@s/b@2.0.0", "a@1.0.0"]);
+    const text = readFileSync(path.join(f.root, "out-ok", "THIRD_PARTY_NOTICES.txt"), "utf8");
+    assert.match(text, /^All inventoried packages have license declarations and texts\.$/m);
+    assert.doesNotMatch(text, /INCOMPLETE/);
+  } finally { f.close(); }
 });
