@@ -188,13 +188,15 @@ jobs:
           fetch-depth: 0
       - name: Decide whether this change can affect the receiver image
         id: scope
+        # The SQL check reads clickhouse-schema.sql and, through the installer and the
+        # collector fixtures, files across dashboard/collector/.
         env:
           EVENT: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT" != pull_request ]; then echo "build=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed="$(git diff --name-only "$BASE_SHA...HEAD")"
-          if printf '%s\n' "$changed" | grep -qE '^(collector-build/|dashboard/collector/generated/central\.yaml$|dashboard/collector/release\.json$|scripts/test-device-collector-sql\.py$|\.github/workflows/ci\.yml$)'; then
+          if printf '%s\n' "$changed" | grep -qE '^(collector-build/|dashboard/collector/|clickhouse-schema\.sql$|scripts/test-device-collector-sql\.py$|\.github/workflows/ci\.yml$)'; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
             echo "build=false" >> "$GITHUB_OUTPUT"

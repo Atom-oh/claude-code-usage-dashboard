@@ -66,9 +66,13 @@ def central_types():
         if m := re.match(r"^([a-z]+):\s*$", line):
             section = m.group(1)
         elif section in ("extensions", "receivers", "processors", "exporters") \
-                and (m := re.match(r"^  ([a-z_]+)(?:/[\w-]+)?:", line)):
+                and (m := re.match(r"^  ([a-z0-9_]+)(?:/[\w-]+)?:", line)):
             types.add(m.group(1))
-        elif section == "service" and (m := re.match(r"^  extensions:\s*\[(.*)\]", line)):
+        elif section == "service" and re.match(r"^  extensions:", line):
+            # Only the single-line form is parsed; fail rather than miss a block list.
+            m = re.match(r"^  extensions:\s*\[([^\]]*)\]\s*(?:#.*)?$", line)
+            if not m:
+                raise ValueError(f"service.extensions must be a single-line list: {line!r}")
             types.update(x.strip().split("/")[0] for x in m.group(1).split(","))
     return types
 
@@ -119,6 +123,9 @@ class ReceiverBuild(unittest.TestCase):
         self.assertIn('ENTRYPOINT ["/otelcol-ccdash-receiver"]', text)
         for host in ("docker.io", "ghcr.io"):
             self.assertNotIn(host, text)
+        # Packages come only from the pinned image, so the shipped CA bundle is reproducible.
+        self.assertNotRegex(text, r"(?m)^RUN .*\bapk\b")
+        self.assertIn("COPY --from=build /etc/ssl/certs/ca-certificates.crt", text)
 
 
 BINARY = os.environ.get("CCDASH_RECEIVER_BINARY")

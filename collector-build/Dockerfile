@@ -2,7 +2,8 @@
 ARG GO_IMAGE=public.ecr.aws/docker/library/golang:1.26-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab
 
 FROM ${GO_IMAGE} AS build
-RUN apk add --no-cache ca-certificates
+# The pinned image already carries the CA bundle (ca-certificates-bundle-20261020-r0), so the
+# shipped bundle comes from the digest alone; no unpinned apk add.
 RUN go install go.opentelemetry.io/collector/cmd/builder@v0.163.0
 WORKDIR /src
 COPY manifest.yaml .
