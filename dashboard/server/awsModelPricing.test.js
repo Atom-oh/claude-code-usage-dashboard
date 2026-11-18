@@ -118,6 +118,16 @@ test("Standard and Ultrafast model cards select only Standard prices", () => {
   assert.equal(parseAwsModelCard(alternate.replace("us.openai.gpt-6.1-terra", "eu.openai.gpt-6.1-terra")), null);
 });
 
+test("explicit Standard headings identify GPT-6.2 rates with either pricing introduction", () => {
+  const standard = card.replaceAll("### Commercial Regions — ", "### Standard — Commercial Regions, ");
+  for (const introduction of [" for the Standard tier", ""]) {
+    const document = standard.replace(" for the Standard tier.", introduction + ".");
+    assert.deepEqual(parseAwsModelCard(document), parseAwsModelCard(card));
+    assert.equal(parseAwsModelCard(document.replace("Standard — Commercial Regions, long",
+      "Ultrafast — Commercial Regions, long")), null);
+  }
+});
+
 test("automatic prices do not override the Anthropic pricing and cache TTL contract", async () => {
   const prices = {};
   const fetchText = async name => name === "model-cards.md" ? "[a](model-card-anthropic-a.md)"

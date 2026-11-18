@@ -15,6 +15,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Bedrock price discovery reads the explicitly labeled Standard tables for GPT-6.2 Astra and Sol, including their regional and long-context rates.
+
 ## [1.14.2] - 2026-11-18
 
 ### Fixed
