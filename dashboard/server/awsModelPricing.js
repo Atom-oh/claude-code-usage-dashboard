@@ -31,8 +31,8 @@ function tableRows(text) {
     .map(line => line.trim().replace(/^\||\|$/g, "").split("|").map(cell => cell.trim().replaceAll("**", "").replace(/^`([^`]+)`$/, "$1")));
 }
 
-function priceTable(text, kind, multipleTiers) {
-  const heading = multipleTiers ? "Standard — Commercial Regions, " : "Commercial Regions — ";
+function priceTable(text, kind, explicitStandard) {
+  const heading = explicitStandard ? "Standard — Commercial Regions, " : "Commercial Regions — ";
   const expression = new RegExp(kind === "short"
     ? `^### ${heading}short context \\((\\d+)K input tokens or fewer\\)\\s*$`
     : `^### ${heading}long context \\(more than (\\d+)K input tokens\\)\\s*$`, "mi");
@@ -120,10 +120,11 @@ export function parseAwsModelCard(document) {
 
 function parseTieredModelCard(document) {
   const pricing = section(document, "Pricing");
+  const explicitStandard = /^### Standard — Commercial Regions, /mi.test(pricing);
+  const multipleTiers = /Standard and Ultrafast prices\b/i.test(pricing) || /^### Ultrafast\b/mi.test(pricing);
   if (!/\bUSD per 1 million tokens\b/i.test(pricing)
-      || !(/for the Standard tier\b/i.test(pricing) || /Standard and Ultrafast prices\b/i.test(pricing))) return null;
-  const multipleTiers = /Standard and Ultrafast prices\b/i.test(pricing);
-  const short = priceTable(pricing, "short", multipleTiers), long = priceTable(pricing, "long", multipleTiers);
+      || (!explicitStandard && (multipleTiers || !/for the Standard tier\b/i.test(pricing)))) return null;
+  const short = priceTable(pricing, "short", explicitStandard), long = priceTable(pricing, "long", explicitStandard);
   if (!short || !long || short.limit !== long.limit || short.geoPrefix !== long.geoPrefix
       || !Number.isSafeInteger(short.limit) || short.limit <= 0) return null;
   const access = tableRows(section(document, "Programmatic Access"));

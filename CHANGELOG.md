@@ -33,6 +33,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Node base's `docker-entrypoint.sh` ENTRYPOINT or `YARN_VERSION`, so arguments-only
   `docker run IMAGE script.js` no longer prepends `node`; the repository's deployments invoke
   `node` explicitly: [runtime distribution](docs/reference/runtime-distribution.md).
+## [1.14.3] - 2026-11-18
+
+### Fixed
+
+- Bedrock price discovery reads the explicitly labeled Standard tables for GPT-6.2 Astra and Sol, including their regional and long-context rates.
 
 ## [1.14.2] - 2026-11-18
 
