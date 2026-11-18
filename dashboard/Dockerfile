@@ -23,7 +23,10 @@ WORKDIR /app/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci
 COPY server/ ./
-RUN node scripts/bundle.mjs /app/server-bundle
+# The bundle directory holds the entries and the runtime files they read (RUNTIME_FILES in
+# bundle.mjs); its metafile moves out so the runtime can copy the whole directory.
+RUN node scripts/bundle.mjs /app/server-bundle \
+    && mv /app/server-bundle/meta.json /app/bundle-meta.json
 
 # Production-only install from the same lockfile, for the notice inventory only.
 FROM node-base AS server-deps
@@ -39,7 +42,7 @@ RUN node build-packages.mjs /collector-packages
 FROM server-deps AS notices-build
 COPY --from=web-build /app/web/node_modules ./web/node_modules
 COPY --from=web-build /app/web/package-lock.json ./web/package-lock.json
-COPY --from=server-build /app/server-bundle/meta.json /tmp/bundle-meta.json
+COPY --from=server-build /app/bundle-meta.json /tmp/bundle-meta.json
 COPY collect-notices.mjs ./
 COPY notices/ ./notice-sources/
 # Collector reads its adjacent reviewed catalog, not the network. The metafile makes it
@@ -71,11 +74,8 @@ FROM scratch AS runtime
 COPY --from=runtime-root / /
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin NODE_VERSION=24.22.1
 WORKDIR /app
-# The bundle reads package.json and awsPriceSnapshot.json next to its entries; the
-# lockfile identifies the bundled dependency tree for verify-runtime.mjs.
-COPY --from=server-build /app/server-bundle/index.js /app/server-bundle/backupHealth.js \
-  /app/server-bundle/clickhouse.js ./server/
-COPY server/package.json server/package-lock.json server/awsPriceSnapshot.json ./server/
+# Bundled entries plus package.json, the lockfile and the price snapshot (see bundle.mjs).
+COPY --from=server-build /app/server-bundle/ ./server/
 COPY --from=web-build /app/web/dist ./web/dist
 COPY --from=notices-build /tmp/distribution-notices ./notices/
 COPY --from=collector-packages /collector-packages ./collector-packages/

@@ -187,6 +187,12 @@ test("runtime Dockerfile pin agrees with actual-image OS zlib verification", () 
   assert.ok(!runtime.includes("--allow-untrusted"));
 });
 
+test("the flattened runtime's restored NODE_VERSION agrees with the runtime inspector", () => {
+  const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
+  const versions = [...dockerfile.matchAll(/^ENV .*\bNODE_VERSION=(\S+)/gm)].map(match => match[1]);
+  assert.deepEqual(versions, [REQUIRED_RUNTIME_NODE_VERSION]);
+});
+
 test("official Node base pin agrees with the runtime inspector", () => {
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
   assert.match(dockerfile, new RegExp(`^ARG NODE_IMAGE=[a-z0-9./-]+/node:${REQUIRED_RUNTIME_NODE_VERSION.replaceAll(".", "\\.")}-alpine@sha256:[a-f0-9]{64}$`, "m"));

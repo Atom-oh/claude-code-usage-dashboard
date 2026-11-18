@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { builtinModules } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,15 +12,24 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 let root;
 let out;
 let metafile;
+let entries;
+let RUNTIME_FILES;
+
+// Non-builtin modules the bundle may require() at runtime although they are not bundled.
+// The image has no node_modules, so each entry needs a reason it is safe to be absent.
+const ALLOWED_RUNTIME_REQUIRES = [
+  { module: "@aws-sdk/signature-v4-crt",
+    reason: "optional AWS SDK CRT signer, used only when the application registers it; this one does not" },
+];
 
 before(async () => {
-  const { bundleServer } = await import("./scripts/bundle.mjs");
+  const bundle = await import("./scripts/bundle.mjs");
+  RUNTIME_FILES = bundle.RUNTIME_FILES;
   root = mkdtempSync(path.join(tmpdir(), "ccdash-bundle-"));
   out = path.join(root, "out");
-  const result = await bundleServer({ outdir: out });
+  const result = await bundle.bundleServer({ outdir: out });
   metafile = result.metafile;
-  // The Dockerfile copies these next to the bundle; the server reads both at runtime.
-  for (const file of ["package.json", "awsPriceSnapshot.json"]) copyFileSync(path.join(here, file), path.join(out, file));
+  entries = result.entries;
 });
 
 after(() => { if (root) rmSync(root, { recursive: true, force: true }); });
@@ -32,9 +42,38 @@ const freePort = () => new Promise((resolve, reject) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test("bundle emits exactly the three runtime entries and a metafile", () => {
-  assert.deepEqual(readdirSync(out).sort(),
-    ["awsPriceSnapshot.json", "backupHealth.js", "clickhouse.js", "index.js", "meta.json", "package.json"]);
+test("bundle emits exactly the three runtime entries, its runtime files and a metafile", () => {
+  assert.deepEqual(entries, ["backupHealth.js", "clickhouse.js", "index.js"]);
+  assert.deepEqual(RUNTIME_FILES, ["package.json", "package-lock.json", "awsPriceSnapshot.json"]);
+  assert.deepEqual(readdirSync(out).sort(), [...entries, ...RUNTIME_FILES, "meta.json"].sort());
+  for (const file of RUNTIME_FILES)
+    assert.deepEqual(readFileSync(path.join(out, file)), readFileSync(path.join(here, file)), file);
+});
+
+test("the image ships the bundle directory without its metafile", () => {
+  const dockerfile = readFileSync(path.join(here, "..", "Dockerfile"), "utf8");
+  const stage = name => dockerfile.split(/^FROM /m).find(text => text.split("\n")[0].endsWith(` AS ${name}`));
+  assert.match(stage("server-build"),
+    /^RUN node scripts\/bundle\.mjs \/app\/server-bundle \\\n {4}&& mv \/app\/server-bundle\/meta\.json \/app\/bundle-meta\.json$/m);
+  const runtime = stage("runtime");
+  assert.match(runtime, /^COPY --from=server-build \/app\/server-bundle\/ \.\/server\/$/m);
+  assert.doesNotMatch(runtime, /^COPY server\//m);
+});
+
+test("the bundle requires no non-builtin module outside the allowlist", () => {
+  const builtins = new Set(builtinModules.flatMap(name => [name, `node:${name}`]));
+  const allowed = new Set(ALLOWED_RUNTIME_REQUIRES.map(entry => entry.module));
+  for (const entry of ALLOWED_RUNTIME_REQUIRES) assert.ok(entry.reason, entry.module);
+  const found = new Set();
+  for (const name of entries) {
+    const code = readFileSync(path.join(out, name), "utf8");
+    // esbuild prints string literals with double quotes; any other quoting would escape the scan.
+    // Non-literal calls such as Express's view-engine __require(mod) are outside this check.
+    assert.doesNotMatch(code, /__require\(\s*['`]/, `${name}: non-double-quoted __require literal`);
+    for (const [, literal] of code.matchAll(/__require\(\s*"([^"]+)"\s*\)/g))
+      if (!builtins.has(literal)) found.add(literal);
+  }
+  assert.deepEqual([...found].filter(module => !allowed.has(module)), []);
 });
 
 test("the server bundle excludes CLI entry modules", () => {
