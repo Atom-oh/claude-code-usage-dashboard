@@ -16,21 +16,23 @@ path. `build-release.py --base-image` may substitute another path of the same in
 as the deployment account's ECR pull-through cache; it must end in the Dockerfile's pinned
 digest, so registry choice never changes build content.
 The server ships as an esbuild bundle of its three entrypoints (`index.js`,
-`backupHealth.js`, `clickhouse.js`) in `/app/server`, next to the `package.json`,
-lockfile and price snapshot they read; the runtime has no `node_modules`. The notice
-inventory reads a production-only install from the same lockfile and fails when a
-bundled package has no notice.
+`backupHealth.js`, `clickhouse.js`) in `/app/server`, next to the `package.json` and
+price snapshot they read and the lockfile that identifies the bundled dependency tree
+(`RUNTIME_FILES` in [bundle.mjs](../../dashboard/server/scripts/bundle.mjs)). The image
+copies the bundle directory without its metafile; the runtime has no `node_modules`.
+The notice inventory reads a production-only install from the same lockfile and fails
+when a bundled package has no notice.
 
-The runtime stage removes npm, npx, Yarn, Corepack and the unused Node development
-headers from the base, then copies that cleaned filesystem into `scratch`, so the
-removed files leave the image and the pinned index stays the only base input. Node,
-OS packages/metadata, readiness tooling and distribution notices remain. Flattening
+The `runtime-root` stage removes npm, npx, Yarn, Corepack and the unused Node development
+headers from the base. The final `runtime` stage copies that cleaned filesystem into
+`scratch`, so the removed files leave the image and the pinned index stays the only base
+input. Node, OS packages/metadata, readiness tooling and distribution notices remain. Flattening
 drops the base's image config: the runtime restores `PATH` and `NODE_VERSION`, and its
 `CMD` runs Node directly without the base's `docker-entrypoint.sh`. Removing build
 tools or headers does not establish that the remaining packages are free of
 vulnerabilities.
 
-The runtime stage installs authenticated Alpine `zlib=1.4-r0`, the vendor fix
+The `runtime-root` stage installs authenticated Alpine `zlib=1.4-r0`, the vendor fix
 for the OS package findings `CVE-2026-85091` and `CVE-2026-4738` (ECR enhanced scan,
 fixed in `1.4-r0`, 2026-11-09) observed on the pinned base. Keep this
 literal pin and the inspector's required version aligned when refreshing packages.
@@ -146,8 +148,8 @@ empty `linux/arm64` image that runs as `10001:10001`.
 The CI `receiver` job builds it without publishing on the GitHub-hosted ARM64 runner, which
 also serves fork pull requests and keeps the anonymous Docker Hub ClickHouse pull off the
 self-hosted runners' shared NAT. It runs on every push, and on pull requests that change
-`collector-build/`, `central.yaml`, `release.json`, `scripts/test-device-collector-sql.py` or
-the CI workflow. It checks that:
+`collector-build/`, `dashboard/collector/`, `clickhouse-schema.sql`,
+`scripts/test-device-collector-sql.py` or the CI workflow. It checks that:
 
 - the manifest's component lines appear in the upstream contrib manifest at the same tag;
 - the built binary lists exactly the manifest's components and no connectors;

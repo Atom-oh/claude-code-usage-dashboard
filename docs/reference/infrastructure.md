@@ -6,14 +6,18 @@ SPA. Infrastructure ownership is described in [IaC](iac.md); full topology is in
 
 ## Image and local stack
 
-[dashboard/Dockerfile](../../dashboard/Dockerfile) uses four stages with a digest-pinned
-`node:24-alpine` base. The web stage runs `npm ci` and Vite build; the runtime installs
-server dependencies with `npm ci --omit=dev`, copies the web output, and runs as `node`.
-An isolated notice build inventories installed production dependencies from both lockfiles
-and includes their license/NOTICE texts in `/app/notices`. The runtime also carries the
-canonical application license in `/app/APPLICATION_LICENSE`. Build tools and frontend
-`node_modules` used for collection are not copied into the runtime.
-See [distribution notices](distribution-notices.md) for provenance and limits.
+[dashboard/Dockerfile](../../dashboard/Dockerfile) builds every stage from one
+digest-pinned `node:24-alpine` index. The web stage runs `npm ci` and the Vite build. The
+server stage bundles the three server entrypoints with esbuild, so the runtime has no
+`node_modules`. The final stage copies the base, with its package managers removed, into
+`scratch`, adds the server bundle and web output, and runs as `node`. An isolated notice
+build inventories production dependencies from both lockfiles, using a production-only
+server install, and fails when a bundled server package has no notice. Their license/NOTICE
+texts ship in `/app/notices`, and the canonical application license in
+`/app/APPLICATION_LICENSE`. Build tools, the notice collector and frontend `node_modules`
+are not copied into the runtime. [Runtime distribution](runtime-distribution.md) describes
+the image layout and its checks; [distribution notices](distribution-notices.md) covers
+provenance and limits.
 The EKS NodePool requires arm64. Local builds can use the host architecture because the
 pinned base digest is a multi-architecture image index.
 

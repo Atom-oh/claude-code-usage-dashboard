@@ -29,8 +29,10 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 - The dashboard image is smaller: the server ships as an esbuild bundle without
   `node_modules`, and the runtime copies the cleaned Node base into an empty image so the
   removed package managers no longer occupy its layers. No behavior change is intended; the
-  startup command, health check and runtime user are unchanged:
-  [runtime distribution](docs/reference/runtime-distribution.md).
+  startup command, health check and runtime user are unchanged. The image no longer has the
+  Node base's `docker-entrypoint.sh` ENTRYPOINT or `YARN_VERSION`, so arguments-only
+  `docker run IMAGE script.js` no longer prepends `node`; the repository's deployments invoke
+  `node` explicitly: [runtime distribution](docs/reference/runtime-distribution.md).
 
 ## [1.14.2] - 2026-11-18
 
