@@ -89,6 +89,8 @@ jobs:
           node-version: 22
       - name: Verify deterministic packages and configuration preservation
         run: python3 -m unittest discover -s dashboard/collector/tests -p 'test_*.py'
+      - name: Verify the receiver build definition
+        run: python3 -m unittest discover -s collector-build/tests -p 'test_*.py'
       - name: Verify pinned Collector policies and existing ClickHouse schema
         run: python3 scripts/test-device-collector-sql.py
 
