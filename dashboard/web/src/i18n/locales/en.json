@@ -2092,5 +2092,8 @@
   "m9ddb37a0ca46": "You can check cost estimates even before the unit price for a new GPT version is registered.",
   "m698ea7511d77": "Cost estimates for new GPT versions",
   "m8fa0abb65dab": "For GPT models without dedicated pricing in Bedrock, costs are estimated using the unit price of the closest previous version in the same series. Once dedicated pricing is registered, previous usage history is also recalculated using the new unit price.",
-  "m5ed505bd0a2a": "Costs → Costs by model"
+  "m5ed505bd0a2a": "Costs → Costs by model",
+  "mf1513daed8ae": "GPT-6.2 Astra and Sol cost estimates now use the Standard rates published by AWS.",
+  "m374b37049f57": "Official GPT-6.2 rates applied",
+  "mc8631de8c12d": "The dashboard reads Standard rates for Astra and Sol from Bedrock model cards. It also recalculates previous usage history using rates that match the region, input length, and cache usage."
 }
