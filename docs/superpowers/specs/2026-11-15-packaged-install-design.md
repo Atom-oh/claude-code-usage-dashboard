@@ -124,7 +124,7 @@ These would make the work a failure even if it technically works.
 
 ### Repository layout
 
-```
+```text
 deploy/
   helm/ccdash/                  # chart (source of truth for Kubernetes workloads)
   terraform/

@@ -143,9 +143,11 @@ Builder distribution for the central OTLP receiver: the nine components
 `dashboard/collector/release.json` version. It builds from a digest-pinned Go image into an
 empty `linux/arm64` image that runs as `10001:10001`.
 
-The CI `receiver` job builds it on the runtime job's runners without publishing: on every push,
-and on pull requests that change `collector-build/`, `central.yaml`, `release.json`,
-`scripts/test-device-collector-sql.py` or the CI workflow. It checks that:
+The CI `receiver` job builds it without publishing on the GitHub-hosted ARM64 runner, which
+also serves fork pull requests and keeps the anonymous Docker Hub ClickHouse pull off the
+self-hosted runners' shared NAT. It runs on every push, and on pull requests that change
+`collector-build/`, `central.yaml`, `release.json`, `scripts/test-device-collector-sql.py` or
+the CI workflow. It checks that:
 
 - the manifest's component lines appear in the upstream contrib manifest at the same tag;
 - the built binary lists exactly the manifest's components and no connectors;

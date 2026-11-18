@@ -232,7 +232,7 @@
   Then:
   - `docker image inspect --format '{{.Size}}'` must report less than the 195 MB baseline (`20261115-025552`).
   - `docker save … | gzip -n -9 | wc -c` must report less than 69 MB.
-  - `docker run --rm --network none --entrypoint stat <image> -c '%a %u' /tmp /home/node` must print `1777 0` and `755 1000`.
+  - `docker run --rm --network none --entrypoint stat <image> -c '%a %u' /tmp /home/node` must print `1777 0` and `2755 1000`.
 
   Record the measured sizes in the PR description, not in docs.
 

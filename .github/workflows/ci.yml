@@ -173,12 +173,14 @@ jobs:
           rm -rf "$RUNNER_TEMP/buildx-cache" && mv "$RUNNER_TEMP/buildx-cache-new" "$RUNNER_TEMP/buildx-cache"
 
   receiver:
-    # Builds the OCB receiver image (collector-build/) on the runtime job's runners and checks it
-    # against central.yaml and the existing ClickHouse schema. Nothing is published; production
-    # still runs the upstream contrib image. Bind mounts come from $RUNNER_TEMP, which the ARC
-    # pod's work volume shares with its dind container at the same path; --mount fails instead
-    # of creating an empty path when the daemon cannot see a source.
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'claude-code-usage-dashboard-arm' || 'ubuntu-24.04-arm' }}
+    # Builds the OCB receiver image (collector-build/) and checks it against central.yaml and the
+    # existing ClickHouse schema. Nothing is published; production still runs the upstream contrib
+    # image. It holds no secrets and runs GitHub-hosted for every event (ARM, for the arm64-only
+    # image), as device-collector does, because the SQL check pulls ClickHouse anonymously from
+    # Docker Hub, which the self-hosted runners' shared NAT would expose to rate limits. Bind mounts come from
+    # $RUNNER_TEMP on the runner's local daemon; --mount fails instead of creating an empty path
+    # when a source is missing.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
