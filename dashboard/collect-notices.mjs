@@ -126,7 +126,13 @@ export function collectNotices(dashboardRoot) {
   }
   const report = { schemaVersion: 1, lockfiles, complete: unresolved.length === 0,
     packages: entries, unresolved };
-  const text = [
+  return { report, text: noticesText(report) };
+}
+
+// Renders the text notices from the final report, so the header matches its completeness.
+function noticesText(report) {
+  const missing = report.unresolved.filter(entry => entry.reason === "bundled_without_notice");
+  return [
     "Third-party dependency notices",
     "Source: installed production dependency manifests and packaged license/notice texts.",
     "Web dependencies are conservatively inventoried; this is not a bundler inclusion proof.",
@@ -134,7 +140,8 @@ export function collectNotices(dashboardRoot) {
     "Standard license texts are labelled; copyright placeholders are not invented upstream notices.",
     report.complete ? "All inventoried packages have license declarations and texts."
       : "INCOMPLETE: unresolved packages are listed in THIRD_PARTY_NOTICES.json.",
-    ...entries.flatMap(entry => [
+    ...(missing.length ? [`INCOMPLETE: bundled packages without notices: ${missing.map(entry => entry.package).join(", ")}`] : []),
+    ...report.packages.flatMap(entry => [
       `\n===== ${entry.name}@${entry.version} =====`,
       `Components: ${entry.components.join(", ")}`,
       `Declared license: ${entry.declaredLicense || "unknown"}`,
@@ -146,7 +153,6 @@ export function collectNotices(dashboardRoot) {
       ...entry.files.flatMap(file => [`--- ${file.path} (SHA-256 ${file.sha256}) ---`, file.text]),
     ]),
   ].join("\n") + "\n";
-  return { report, text };
 }
 
 // Maps each esbuild metafile input under node_modules to its installed name@version.
@@ -190,7 +196,7 @@ function main() {
     result.report.bundledPackages = bundled;
     for (const key of missing) result.report.unresolved.push({ package: key, reason: "bundled_without_notice" });
     result.report.complete = result.report.unresolved.length === 0;
-    if (missing.length) result.text += `\nINCOMPLETE: bundled packages without notices: ${missing.join(", ")}\n`;
+    result.text = noticesText(result.report);
   }
   mkdirSync(output, { recursive: true });
   writeFileSync(path.join(output, "THIRD_PARTY_NOTICES.json"), JSON.stringify(result.report, null, 2) + "\n");

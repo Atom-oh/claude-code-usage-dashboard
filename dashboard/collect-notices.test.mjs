@@ -321,6 +321,11 @@ test("the CLI marks notices incomplete when the bundle has an un-noticed package
     assert.equal(written.complete, false);
     assert.deepEqual(written.bundledPackages, ["@s/b@2.0.0", "a@1.0.0", "c@3.0.0"]);
     assert.deepEqual(written.unresolved, [{ package: "c@3.0.0", reason: "bundled_without_notice" }]);
+    const text = readFileSync(path.join(f.root, "out-bad", "THIRD_PARTY_NOTICES.txt"), "utf8");
+    assert.doesNotMatch(text, /All inventoried packages have/);
+    const header = text.split("\n=====")[0];
+    assert.match(header, /^INCOMPLETE: unresolved packages are listed in THIRD_PARTY_NOTICES\.json\.$/m);
+    assert.match(header, /^INCOMPLETE: bundled packages without notices: c@3\.0\.0$/m);
   } finally { f.close(); }
 });
 
@@ -337,5 +342,8 @@ test("the CLI accepts a bundle fully covered by the notices", () => {
     const written = JSON.parse(readFileSync(path.join(f.root, "out-ok", "THIRD_PARTY_NOTICES.json"), "utf8"));
     assert.equal(written.complete, true);
     assert.deepEqual(written.bundledPackages, ["@s/b@2.0.0", "a@1.0.0"]);
+    const text = readFileSync(path.join(f.root, "out-ok", "THIRD_PARTY_NOTICES.txt"), "utf8");
+    assert.match(text, /^All inventoried packages have license declarations and texts\.$/m);
+    assert.doesNotMatch(text, /INCOMPLETE/);
   } finally { f.close(); }
 });
