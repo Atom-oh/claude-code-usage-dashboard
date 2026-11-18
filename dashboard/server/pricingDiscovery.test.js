@@ -64,3 +64,19 @@ test("Codex insights reports observed usage models for discovery", async () => {
     assert.deepEqual(observed, [terra]);
   } finally { setPriceDiscoveryObserver(); }
 });
+
+test("bare GPT usage keeps looking for its exact rate while priced from a predecessor", async () => {
+  const prices = { "openai.gpt-6-sol": {} };
+  let calls = 0;
+  const discovery = createPriceDiscovery({ prices, negativeMs: 0, retryMs: 0, refresh: async () => {
+    calls++;
+    prices["openai.gpt-6.2-sol"] = {};
+    return { changed: 1 };
+  } });
+  const row = { model: "gpt-6.2-sol", backend: "bedrock-mantle" };
+  discovery.observe([row]);
+  await discovery.idle();
+  discovery.observe([row]);
+  await discovery.idle();
+  assert.equal(calls, 1);
+});

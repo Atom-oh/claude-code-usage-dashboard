@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { buildCodexQuery, foldClientMetrics } from "../dashboard/server/clientMetrics.js";
+import { DEFAULT_CODEX_PRICING } from "../dashboard/server/codexPricing.js";
+import { buildCodexLogAggregateQuery } from "../dashboard/server/codexLogAggregates.js";
 import { codexPrices } from "../dashboard/server/priceCatalog.js";
 import { costSchemaSql, costBackfillSql } from "../dashboard/server/codexCostSchema.js";
 import { compareCodexCost } from "../dashboard/server/compareCodexCost.js";
@@ -103,6 +105,9 @@ historical.push(
   event({ "event.name": "codex.api_request", input_token_count: "272000", duration_ms: "11" }),
   event({ "event.kind": "response.failed", error: "synthetic stream failure", duration_ms: "20" }),
 );
+const newModel = "openai.gpt-6.2-sol";
+historical.push(...[272000, 272001].map(input =>
+  event({ ...token, model: newModel, input_token_count: String(input) })));
 insert(historical);
 // Map permits duplicate keys. JSON identity decoding must retain their lookup
 // semantics instead of collapsing the map through a JavaScript object.
@@ -156,6 +161,19 @@ function equal(filter = {}, start = from, end = to, seconds = 3600) {
 }
 assert.equal(query(request("facts")).length, 0, "Creating views must not pretend to backfill history");
 execute(costBackfillSql(), backfillParams);
+const predecessorPrices = { [model]: DEFAULT_CODEX_PRICING[model] };
+const aggregate = query(buildCodexLogAggregateQuery(from, to, { model: newModel }, predecessorPrices,
+  { profile: "effort", diagnosticSource: "raw" })).find(row => row.family === "usage");
+assert.equal(Number(aggregate.priced), 2);
+const shortCost = (271960 * 2.2 + 30 * 0.11 + 10 * 2.75 + 40 * 11) / 1e6;
+const longCost = (271961 * 4.4 + 30 * 0.22 + 10 * 5.5 + 40 * 16.5) / 1e6;
+assert.ok(Math.abs(Number(aggregate.cost_usd) - shortCost - longCost) < 1e-10);
+for (const source of ["raw", "facts"]) {
+  const usage = query(buildCodexQuery(from, to, { modelExact: newModel }, predecessorPrices, "codex", 3600,
+    { costView: true, costSource: source })).filter(row => row.kind === "usage");
+  assert.deepEqual(usage.map(row => [row.model, row.context_tier]).sort(),
+    [[newModel, "long"], [newModel, "short"]]);
+}
 for (const filter of filters) equal(filter);
 // Live/backfill overlap and a complete repeated backfill must be idempotent.
 insert([historical[0], historical[20], event({ ...token, "event.name": "codex.websocket_event" })]);

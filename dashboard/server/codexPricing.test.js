@@ -513,3 +513,34 @@ test("bare model ids resolve to a unique vendor entry and stay unpriced when amb
   assert.equal(bareModelAlias("unique", table), "cc.unique");
   assert.equal(bareModelAlias("direct", table), null, "an id the table prices directly needs no alias");
 });
+
+test("new GPT versions use the nearest priced generation of the same variant", () => {
+  const prices = Object.fromEntries(["6.1-sol", "6-sol", "6-astra", "6-luna", "5.5"].map(version => {
+    const id = `openai.gpt-${version}`;
+    return [id, DEFAULT_CODEX_PRICING[id]];
+  }));
+  prices["openai.gpt-6.10-sol"] = prices["openai.gpt-6-astra"];
+  for (const [model, predecessor] of [
+    ["openai.gpt-6.2-sol", "openai.gpt-6.1-sol"],
+    ["global.openai.gpt-6.2-astra", "global.openai.gpt-6-astra"],
+    ["gpt-6.2-luna", "openai.gpt-6-luna"],
+    ["openai.gpt-6.11-sol", "openai.gpt-6.10-sol"],
+    ["openai.gpt-6.2", "openai.gpt-5.5"],
+  ]) {
+    const row = { ...usage, model, backend: "bedrock-runtime", context_tier: "long" };
+    const priced = priceCodexUsage(row, prices);
+    assert.equal(priced.cost_usd, priceCodexUsage({ ...row, model: predecessor }, prices).cost_usd, model);
+    assert.equal(priced.model, model);
+    assert.equal(priced.price_source_model, codexModel(predecessor));
+  }
+  assert.equal(priceCodexUsage({ ...usage, model: "openai.gpt-6.10-sol" }, prices).price_source_model, undefined);
+  const exact = priceCodexUsage({ ...usage, model: "openai.gpt-6.2-sol" },
+    { ...prices, "openai.gpt-6.2-sol": prices["openai.gpt-6-astra"] });
+  assert.equal(exact.cost_usd, priceCodexUsage(usage, prices).cost_usd);
+  assert.equal(exact.price_source_model, undefined);
+  for (const patch of [{ backend: "unknown" }, { output_tokens: null }, { model: "global.openai.gpt-6.2-sol" }])
+    assert.equal(priceCodexUsage({ ...usage, model: "openai.gpt-6.2-sol", ...patch }, prices).cost_usd, null);
+  for (const model of ["openai.gpt-4-sol", "other.gpt-6.2-sol", "openai.gpt-6.2-new"]) {
+    assert.equal(priceCodexUsage({ ...usage, model }, prices).cost_usd, null, model);
+  }
+});

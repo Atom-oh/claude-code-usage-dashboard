@@ -1,6 +1,6 @@
 import { toChDateTime } from "./clickhouse.js";
 import { ValidationError } from "./http.js";
-import { codexModel, priceCodexUsage } from "./codexPricing.js";
+import { codexRateModel, priceCodexUsage } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
 import { CODEX_USAGE_KEYS, isRejectedRequestEvent, isSetupMetadataEvent as setupMetadata } from "./codexRequests.js";
@@ -175,7 +175,7 @@ export function priceCodexCompletion(attributes, resourceBackend, prices = codex
   const a = attributes || {};
   const input = Object.fromEntries(Object.entries(TOKEN_FIELDS).map(([raw, name]) => [name, count(a[raw])]));
   return priceCodexUsage({ ...input, model: a.model || "", backend: resolveBackend(a.model, resourceBackend),
-    context_tier: input.input_tokens_total > (prices[codexModel(a.model)]?.short_context_limit ?? 0) ? "long" : "short" }, prices);
+    context_tier: input.input_tokens_total > (prices[codexRateModel(a.model, prices)]?.short_context_limit ?? 0) ? "long" : "short" }, prices);
 }
 
 const stream = (event) => ["codex.sse_event", "codex.websocket_event"].includes(event);

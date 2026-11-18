@@ -307,3 +307,12 @@ evidence because Claude Code chooses the endpoint from the same id shape.
 `grouping.test.js` pins the branch order, the route expression and the JS mirror against the
 observed sessions. The generated CTEs ran read-only against production on 2026-11-16 and
 classified the Runtime, Mantle-only, Bedrock+Mantle and unset-alias sessions as above.
+
+### GPT generation estimates (2026-11-18)
+
+When a Bedrock GPT version has no exact rate, use the newest earlier version of the
+same variant in the effective OpenAI catalog. For example, GPT-6.2 Sol uses GPT-6.1
+Sol rates, including its cache rates, routing restrictions and context threshold.
+Bare GPT names can use this lookup when the backend is known. Unqualified versions
+such as GPT-6.2 use the unqualified GPT line. Usage stays attributed to the reported
+model, and discovery can replace the estimate with an exact rate on a later query.

@@ -1,4 +1,4 @@
-import { codexModel } from "./codexPricing.js";
+import { bareModelAlias, codexModel } from "./codexPricing.js";
 
 // Set only by the running server. Importing query modules must not start network work.
 let observer = () => {};
@@ -52,14 +52,15 @@ export function createPriceDiscovery({ prices, refresh, onChanged = () => {}, on
   }
 
   function observe(rows) {
+    const catalog = currentPrices();
     for (const row of rows) {
       const raw = typeof row.model === "string" ? row.model : "";
       if (!["bedrock-mantle", "bedrock-runtime"].includes(row.backend)
           || raw.startsWith("us-gov.")
           || row.backend === "bedrock-mantle" && /^(us|eu|apac|jp|au|in|global)\./.test(raw)) continue;
-      const model = codexModel(raw);
+      const model = codexModel(bareModelAlias(raw, catalog) ?? raw);
       if (!/^[a-z][a-z0-9-]*\.[a-z0-9][a-z0-9._-]{0,110}$/.test(model)
-          || model.startsWith("anthropic.") || Object.hasOwn(currentPrices(), model)
+          || model.startsWith("anthropic.") || Object.hasOwn(catalog, model)
           || (attempted.get(model) ?? -1) > now()) continue;
       if (active) {
         if (activeModels.size < maxTracked) activeModels.add(model);

@@ -160,3 +160,13 @@ test("a context-window suffix prices as the base model and shares its factor key
   assert.notEqual(suffixed.factors[0], -1);
   assert.deepEqual(foldFactors([row("kimi-k3[1m]")]), foldFactors([row("kimi-k3")]));
 });
+
+test("new GPT generation estimates retain the predecessor context tier and the reported model key", () => {
+  const prices = { "openai.gpt-6-luna": codexPrices()["openai.gpt-6-luna"] };
+  const expected = foldFactors([luna], undefined, prices).factors;
+  for (const model of ["us.openai.gpt-6.2-luna", "us.gpt-6.2-luna[1m]", "gpt-6.2-luna"]) {
+    const result = foldFactors([{ ...luna, model }], undefined, prices);
+    assert.deepEqual(result.factors, expected);
+    assert.match(result.keys[0], /6\.2-luna/);
+  }
+});
