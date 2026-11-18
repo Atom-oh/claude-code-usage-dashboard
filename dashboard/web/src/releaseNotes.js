@@ -10,6 +10,23 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.14.2",
+    "date": "2026-11-18",
+    "summary": "새 GPT 버전의 단가가 등록되기 전에도 비용 추정치를 확인할 수 있습니다.",
+    "items": [
+      {
+        "kind": "fixed",
+        "title": "새 GPT 버전의 비용 추정",
+        "body": "Bedrock에 전용 단가가 없는 GPT 모델은 같은 계열의 가장 가까운 이전 버전 단가로 비용을 추정합니다. 전용 단가가 등록되면 이전 사용 기록도 새 단가로 계산합니다.",
+        "to": "/cost",
+        "where": "비용 → 모델별 비용",
+        "refs": [
+          332
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.1",
     "date": "2026-11-17",
     "summary": "수집기 전환이 Codex 설정 때문에 멈추던 문제와 작업 상세가 새로 고칠 때마다 깜박이던 문제를 고쳤습니다.",

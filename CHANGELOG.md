@@ -15,6 +15,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ## [Unreleased]
 
+## [1.14.2] - 2026-11-18
+
 ### Fixed
 
 - GPT versions missing from Bedrock pricing, including GPT-6.2, now use the closest earlier
