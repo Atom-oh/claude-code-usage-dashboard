@@ -1,7 +1,7 @@
 import { query, toChDateTime } from "./clickhouse.js";
 import { ValidationError, parseTeam } from "./http.js";
 import { selectClients } from "./clients.js";
-import { priceCodexUsage, codexModelSql } from "./codexPricing.js";
+import { priceCodexUsage, codexRateModelColumns } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
 import { observePricingModels } from "./pricingDiscovery.js";
 import { GROUP_CTE, GROUP_EXPR, claudeBackendSql } from "./grouping.js";
@@ -601,7 +601,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
   }
   const sql = `${eventSource}, ${modelSessions} typed AS (
     SELECT *,
-      ${codexModelSql("model")} AS base_model,
+      ${codexRateModelColumns(prices, params, "priceModel")},
       ${facts ? "" : `multiIf(event_name IN ('codex.sse_event','codex.websocket_event')
           AND a['event.kind'] = 'response.completed'
           AND arrayExists(k -> mapContains(a, k),

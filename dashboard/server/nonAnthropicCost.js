@@ -1,6 +1,6 @@
 import { query as rawQuery, toChDateTime } from "./clickhouse.js";
 import { normalizeModelId } from "./pricing.js";
-import { bareModelAlias, codexModel, priceCodexUsage } from "./codexPricing.js";
+import { bareModelAlias, codexRateModel, priceCodexUsage } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
 import { resolveBackend } from "./backend.js";
 import { observePricingModels } from "./pricingDiscovery.js";
@@ -58,7 +58,8 @@ export function requestListEstimate(row, priceTable = codexPrices()) {
   // A context-window suffix ("[1m]") names no separate rate; the context tier below prices it.
   const unsuffixed = model.replace(/\[[^\]]*\]$/, "");
   const priceModel = bareModelAlias(unsuffixed, priceTable) ?? unsuffixed;
-  const limit = priceTable[codexModel(priceModel)]?.short_context_limit;
+  const rateModel = codexRateModel(priceModel, priceTable);
+  const limit = priceTable[rateModel]?.short_context_limit;
   const priced = total === null || output === null ? null : priceCodexUsage({
     model: priceModel, backend: resolveBackend(priceModel, ""),
     context_tier: limit !== undefined && total > limit ? "long" : "short",
@@ -118,7 +119,8 @@ export async function nonAnthropicFactors(from, to, run = rawQuery, signal, pric
       { from: toChDateTime(from), to: toChDateTime(to) }, ownedSignal);
     observePricingModels(rows.filter(row => isNonAnthropicModel(row.model)).map(row => {
       const model = String(row.model || "").replace(/\[[^\]]*\]$/, "");
-      return { model, backend: resolveBackend(model, "") };
+      const priceModel = bareModelAlias(model, priceTable) ?? model;
+      return { model: priceModel, backend: resolveBackend(priceModel, "") };
     }));
     return foldFactors(rows, undefined, priceTable);
   }, signal);

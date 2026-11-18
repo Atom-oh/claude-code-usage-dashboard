@@ -1,5 +1,5 @@
 import { logSelection } from "./codexInsightsLogs.js";
-import { codexModelSql } from "./codexPricing.js";
+import { codexRateModelColumns } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
 import { CODEX_USAGE_KEYS, REJECTED_REQUEST_STATUSES, SETUP_METADATA_EVENTS } from "./codexRequests.js";
 import { createObservedTokens, addObservedTokens, finishObservedTokens } from "./observedTokens.js";
@@ -179,7 +179,7 @@ export function buildCodexLogAggregateQuery(from, to, filters = {}, prices = cod
         isNotNull(input_raw) AND isNotNull(output_raw)
           AND ifNull(input_raw + output_raw <= 9007199254740991, 0) AS pair_valid,
         ${TOKEN_KEYS.map(k => `isNotNull(${k}_value)`).join(" AND ")} AS usage_valid,
-        ${diagnosticOnly ? "''" : codexModelSql("model")} AS base_model,
+        ${diagnosticOnly ? "'' AS base_model" : codexRateModelColumns(prices, params, "aggregateModel")},
         ${diagnosticOnly ? "''" : normModel("model")} AS claude_model
       FROM typed
     )${pricing ? `, rated AS (

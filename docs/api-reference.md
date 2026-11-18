@@ -190,6 +190,7 @@ Groups with only unpriced evidence remain null; explicit zero stays zero.
 Positive Claude reports remain usable with missing token fields; zero reports still
 require known zero usage. Codex estimates still require valid usage and a known rate
 (its own table, or the Claude table for an Anthropic model; `price_source: "claude_table"`).
+Bedrock GPT versions missing from the catalog use the nearest earlier rate for the same variant.
 Table rates come from the merged price catalog: operator overrides, then the AWS Price List
 layer, then code tables ([ADR-017 amendment](decisions/ADR-017-backend-cost-fallback.md)).
 Cost unit values use the known subtotal and observed denominators, with partial

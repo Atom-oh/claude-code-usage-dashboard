@@ -348,8 +348,70 @@ export function bareModelAlias(model, prices = DEFAULT_CODEX_PRICING) {
   const raw = String(model || "");
   const id = codexModel(raw);
   if (!id || VENDOR_NAMESPACE.test(id) || Object.hasOwn(prices, id)) return null;
-  const canonical = bareIndex(prices).get(id);
+  const index = bareIndex(prices);
+  const canonical = index.has(id) ? index.get(id)
+    : id.startsWith("gpt-") && codexRateModel(id, prices).startsWith("openai.") ? `openai.${id}` : null;
   return canonical ? raw.slice(0, raw.length - id.length) + canonical : null;
+}
+
+// GPT releases without an exact catalog entry inherit the nearest earlier version in
+// the same product line. Keep the telemetry id for filtering, discovery and routing.
+const GPT_VERSION = "^(?:openai[.])?gpt-([0-9]{1,4})(?:[.]([0-9]{1,4}))?(-[a-z][a-z0-9-]*)?$";
+const gptVersion = new RegExp(GPT_VERSION);
+const generationIndexes = new WeakMap();
+function generationIndex(prices) {
+  if (generationIndexes.has(prices)) return generationIndexes.get(prices);
+  const candidates = [], reservedBare = new Set();
+  for (const [index, model] of Object.keys(prices).entries()) {
+    const bare = VENDOR_NAMESPACE.exec(model)?.[2] ?? model;
+    if (!model.startsWith("openai.") && gptVersion.test(bare)) reservedBare.add(bare);
+    const match = gptVersion.exec(model);
+    if (match && model.startsWith("openai.")) candidates.push({
+      index, model, major: Number(match[1]), minor: Number(match[2] || 0), variant: match[3] || "",
+    });
+  }
+  candidates.sort((a, b) => b.major - a.major || b.minor - a.minor);
+  const index = { candidates, reservedBare };
+  generationIndexes.set(prices, index);
+  return index;
+}
+
+export function codexRateModel(model, prices) {
+  const id = codexModel(model);
+  if (Object.hasOwn(prices, id)) return id;
+  const match = gptVersion.exec(id);
+  if (!match) return id;
+  const { candidates, reservedBare } = generationIndex(prices);
+  if (reservedBare.has(id)) return id;
+  if (id.startsWith("gpt-") && Object.hasOwn(prices, `openai.${id}`)) return `openai.${id}`;
+  const major = Number(match[1]), minor = Number(match[2] || 0);
+  return candidates.find(rate => rate.variant === (match[3] || "")
+    && (rate.major < major || rate.major === major && rate.minor <= minor))?.model ?? id;
+}
+
+// Select the same rate key before SQL assigns a context tier or prices a completion.
+// Model parameters already bound by the calling catalog double as the branch results.
+export function codexRateModelColumns(prices, params, paramPrefix) {
+  const { candidates, reservedBare } = generationIndex(prices);
+  if (!candidates.length) return `${codexModelSql("model")} AS base_model`;
+  const keyParam = index => `{${paramPrefix}${index}:String}`;
+  const branches = candidates.map(({ index, major, minor, variant }) => {
+    const suffix = variant ? `{gptVariant${index}:String}` : "''";
+    if (variant) params[`gptVariant${index}`] = variant;
+    return `gpt_parts[3] = ${suffix} AND gpt_version >= (${major}, ${minor}), ${keyParam(index)}`;
+  });
+  const exactKeys = `[${candidates.map(rate => keyParam(rate.index)).join(", ")}]`;
+  const guards = ["empty(gpt_parts)"];
+  if (reservedBare.size) {
+    params.gptReservedBare = [...reservedBare];
+    guards.push("has({gptReservedBare:Array(String)}, reported_rate_id)");
+  }
+  return `${codexModelSql("model")} AS reported_rate_id,
+    extractGroups(reported_rate_id, '${GPT_VERSION}') AS gpt_parts,
+    (toUInt32OrZero(gpt_parts[1]), toUInt32OrZero(gpt_parts[2])) AS gpt_version,
+    multiIf(${guards.join(" OR ")} OR has(${exactKeys}, reported_rate_id), reported_rate_id,
+      has(${exactKeys}, concat('openai.', reported_rate_id)), concat('openai.', reported_rate_id),
+      ${branches.join(", ")}, reported_rate_id) AS base_model`;
 }
 
 function count(value) {
@@ -373,7 +435,9 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
   const rawModel = String(row.model || "");
   const knownBackend = ["bedrock-mantle", "bedrock-runtime"].includes(row.backend);
   const scope = rawModel.startsWith("global.") ? "global" : "regional";
-  const entry = prices[codexModel(rawModel)]; // ADR-017 backend override, then base rate.
+  const baseModel = codexModel(rawModel);
+  const rateModel = codexRateModel(rawModel, prices);
+  const entry = prices[rateModel]; // ADR-017 backend override, then base rate.
   const routing = CODEX_ROUTING_RE.exec(rawModel)?.[1];
   const validScope = !rawModel.startsWith("us-gov.")
     && !(row.backend === "bedrock-mantle" && routing)
@@ -411,6 +475,8 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
     cost_usd: cost,
     cost_basis: "aws_list_estimate",
     ...(cost === null ? {} : !rates ? { price_source: "claude_table" }
+      : rateModel !== baseModel && rateModel !== `openai.${baseModel}`
+        ? { price_source: "previous_generation", price_source_model: rateModel }
       : PRICE_LIST_RATES.has(rates) ? { price_source: "aws_price_list" } : {}),
     unpriced: cost === null, unpriced_reason, invalid: !valid,
   };
