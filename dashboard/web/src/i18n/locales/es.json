@@ -2092,5 +2092,8 @@
   "m9ddb37a0ca46": "Puedes consultar las estimaciones de costos incluso antes de que se registre el precio unitario de una nueva versión de GPT.",
   "m698ea7511d77": "Estimaciones de costos para nuevas versiones de GPT",
   "m8fa0abb65dab": "Para los modelos GPT que no tienen un precio específico en Bedrock, los costos se estiman usando el precio unitario de la versión anterior más cercana de la misma serie. Una vez registrado el precio específico, el historial de uso anterior también se recalcula con el nuevo precio unitario.",
-  "m5ed505bd0a2a": "Costos → Costos por modelo"
+  "m5ed505bd0a2a": "Costos → Costos por modelo",
+  "mf1513daed8ae": "Las estimaciones de costos de GPT-6.2 Astra y Sol ahora usan las tarifas Standard publicadas por AWS.",
+  "m374b37049f57": "Tarifas oficiales de GPT-6.2 aplicadas",
+  "mc8631de8c12d": "El panel lee las tarifas Standard de Astra y Sol de las tarjetas de modelos de Bedrock. También vuelve a calcular el historial de uso anterior con las tarifas correspondientes a la región, la longitud de entrada y el uso de caché."
 }

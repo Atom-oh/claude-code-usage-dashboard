@@ -10,6 +10,23 @@ import { localize } from "./i18n/index.js";
 // detail view (?client=claude&view=detail), so the link is hidden when Claude is disabled.
 export const RELEASES = localize([
   {
+    "version": "1.14.3",
+    "date": "2026-11-18",
+    "summary": "GPT-6.2 Astra와 Sol의 비용 추정에 AWS가 공개한 Standard 단가를 적용합니다.",
+    "items": [
+      {
+        "kind": "fixed",
+        "title": "GPT-6.2 공식 단가 반영",
+        "body": "대시보드가 Bedrock 모델 카드에서 Astra와 Sol의 Standard 단가를 읽습니다. 이전 사용 기록도 지역, 입력 길이, 캐시 사용량에 맞는 단가로 다시 계산합니다.",
+        "to": "/cost",
+        "where": "비용 → 모델별 비용",
+        "refs": [
+          335
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.14.2",
     "date": "2026-11-18",
     "summary": "새 GPT 버전의 단가가 등록되기 전에도 비용 추정치를 확인할 수 있습니다.",
