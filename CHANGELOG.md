@@ -33,6 +33,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Node base's `docker-entrypoint.sh` ENTRYPOINT or `YARN_VERSION`, so arguments-only
   `docker run IMAGE script.js` no longer prepends `node`; the repository's deployments invoke
   `node` explicitly: [runtime distribution](docs/reference/runtime-distribution.md).
+- The web build configures Tailwind CSS-first: the theme moved from `tailwind.config.js`
+  into `@theme inline` in `src/index.css`, and `@tailwindcss/vite` replaces the PostCSS
+  pipeline (`postcss.config.js`, `@tailwindcss/postcss` and the unused `autoprefixer`
+  removed). The built utility set is unchanged. Scrollbars use the standard
+  `scrollbar-width`/`scrollbar-color` instead of `::-webkit-scrollbar`, so Chromium now
+  draws its thin native scrollbar with a higher-contrast thumb rather than the rounded
+  10px custom one. Array copies before sorting use `toSorted()`.
+
 ## [1.14.3] - 2026-11-18
 
 ### Fixed

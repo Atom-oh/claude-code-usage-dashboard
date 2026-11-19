@@ -45,7 +45,9 @@ Charts use supported Recharts 3 public data-snap scales for pointer-driven zoom 
 than stale tooltip state. Mouse drags preserve UTC bucket/range clamps and the existing
 disabled-while-stale contract. Other frequent events retain throttling. Axis text uses
 the higher-contrast ink token; gridlines retain their separate lighter token.
-The legacy Tailwind theme is explicitly loaded through `@config` under Tailwind 4.
+The Tailwind theme is defined CSS-first in `@theme inline` in
+[index.css](../../dashboard/web/src/index.css), mapping utilities to its `:root` tokens;
+`@tailwindcss/vite` compiles it without a PostCSS config.
 
 [App.jsx](../../dashboard/web/src/App.jsx) shares these nine routes across all clients:
 
