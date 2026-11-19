@@ -43,6 +43,10 @@ LEGACY_LABEL = "com.ccdash.otelcol"
 LEGACY_LINUX_SERVICE = "otelcol.service"
 LEGACY_LINUX_UNIT = Path("/etc/systemd/system") / LEGACY_LINUX_SERVICE
 LEGACY_LINUX_OWNER = 0
+# The line setup-test-telemetry.sh and setup-test-telemetry-all.sh appended to shell startup
+# files. Its helper guarded the legacy service and exported shell telemetry defaults.
+LEGACY_HOOK_LINE = '[ -f "$HOME/.otelcol/enable-test-telemetry.sh" ] && . "$HOME/.otelcol/enable-test-telemetry.sh"'
+LEGACY_HOOK_RC_FILES = (".bashrc", ".zshrc", ".profile")
 MARKER = "ccdash-device-collector-v1"
 TOKEN_PATTERN = re.compile(r"ccd1\.[a-f0-9]{64}\.[a-f0-9]{32}\.[A-Za-z0-9_-]{43}")
 MAINTENANCE_FILES = (
@@ -173,11 +177,12 @@ def unpack_binary(archive, checksum, destination):
         atomic(destination, bundle.extractfile(matches[0]).read(), 0o700)
 
 
-def client_plan(home, user_id, replace_claude_telemetry=False):
+def client_plan(home, user_id, replace_claude_telemetry=False, claude_defaults=None):
     codex = home / ".codex/config.toml"
     claude = home / ".claude/settings.json"
     changes = configurator.plan(codex, claude, True, True, user_id,
-                                replace_claude_telemetry=replace_claude_telemetry)
+                                replace_claude_telemetry=replace_claude_telemetry,
+                                claude_defaults=claude_defaults)
     original = configurator.toml_load(codex.read_text() if codex.exists() else "")
     notes = []
     if original.get("analytics", {}).get("enabled") is False:
@@ -549,6 +554,79 @@ def mac_migration_finished(home, uid):
     return bool(override and override[1] in ("true", "disabled"))
 
 
+def legacy_retired(home, uid):
+    """Nothing can start the legacy Collector again: its unit is absent or masked (Linux), or
+    its LaunchAgent is gone or unloaded and disabled (macOS)."""
+    if sys.platform == "darwin":
+        return mac_migration_finished(home, uid)
+    unit = LEGACY_LINUX_UNIT
+    if unit.is_symlink():
+        return os.path.realpath(unit) == "/dev/null"
+    return not unit.exists()
+
+
+def legacy_hook(home, uid):
+    """The legacy helper's shell hook, or None when no startup file sources it.
+
+    Returns {"note": reason} when it cannot be retired safely, otherwise
+    {"rc": [(path, original bytes)], "toolDetails": bool}: whether the helper exported
+    OTEL_LOG_TOOL_DETAILS=1 to Claude processes started from those shells."""
+    hook = LEGACY_HOOK_LINE.encode()
+    rc = []
+    for name in LEGACY_HOOK_RC_FILES:
+        path = home / name
+        try:
+            content = path.read_bytes()
+        except OSError:
+            continue
+        if not any(line.rstrip(b"\r\n") == hook for line in content.splitlines(keepends=True)):
+            continue
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != uid:
+            return {"note": str(path) + " is a symlink or not your own regular file"}
+        rc.append((path, content))
+    if not rc:
+        return None
+    helper = home / ".otelcol/enable-test-telemetry.sh"
+    if not helper.exists() and not helper.is_symlink():
+        return {"rc": rc, "toolDetails": False}  # the hook sources nothing
+    info = helper.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != uid:
+        return {"note": str(helper) + " is a symlink or not your own regular file"}
+    try:
+        text = helper.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return {"note": "cannot read " + str(helper)}
+    if 'echo "OTel configured (' not in text:
+        return {"note": str(helper) + " is not a recognized setup-test-telemetry helper"}
+    return {"rc": rc, "toolDetails": re.search(r"(?m)^export OTEL_LOG_TOOL_DETAILS=1$", text) is not None}
+
+
+def retire_legacy_hook(hook, home, uid, root):
+    """Remove the exact hook line from each startup file once the device Collector started.
+    Never fatal: on any problem the hook keeps running and the device defaults duplicate it."""
+    line = LEGACY_HOOK_LINE.encode()
+    try:
+        if not legacy_retired(home, uid):
+            raise ValueError("the legacy Collector service can still run")
+        for path, original in hook["rc"]:
+            if path.is_symlink() or path.read_bytes() != original:
+                raise ValueError(str(path) + " changed during setup")
+        directory = Path(tempfile.mkdtemp(prefix="legacy-hook-backup-", dir=root))
+        for path, original in hook["rc"]:
+            mode = stat.S_IMODE(path.lstat().st_mode)
+            atomic(directory / path.name, original)
+            kept = b"".join(part for part in original.splitlines(keepends=True) if part.rstrip(b"\r\n") != line)
+            if path.is_symlink() or path.read_bytes() != original:
+                raise ValueError(str(path) + " changed during setup")
+            atomic(path, kept, mode)
+            print("Removed the legacy shell hook from " + str(path) + " (backup: " + str(directory / path.name) + ")")
+        print("Open a new shell; ~/.otelcol stays in place for recovery.")
+    except (OSError, ValueError) as error:
+        print("Legacy shell hook left unchanged: "
+              + (str(error) if isinstance(error, ValueError) else "cannot update shell startup files"))
+
+
 def confirm_legacy(args, legacy):
     if legacy.get("platform") == "linux":
         print("Found legacy Linux Collector: " + str(legacy["unit"]) + " (runs ~/.otelcol/config.yaml)")
@@ -862,7 +940,22 @@ def install(args, home, user, uid, root, unit):
         history = {"baseClaude": base_claude, "baseCodex": base_codex, "epochs": []}
     new_epoch = not history["epochs"] or history["epochs"][-1]["userId"] != user_id
     replace_claude_telemetry = bool(legacy) or getattr(args, "replace_claude_telemetry", False)
-    changes, notes = client_plan(home, user_id, replace_claude_telemetry)
+    # A legacy shell helper's hook is retired once nothing can start the legacy Collector.
+    # Its tool-detail export moves to Claude settings only when they lack the key. The device
+    # Collector already replaces its user.email in logs and traces; its team is not kept (team
+    # attribution maps users through the directory, or uses a team the client sends itself).
+    try:
+        hook = legacy_hook(home, uid)
+    except OSError:
+        hook = {"note": "cannot inspect the shell startup files or the helper"}
+    if hook and "note" in hook:
+        print("Legacy shell hook left unchanged: " + hook["note"])
+        hook = None
+    if hook and not legacy and not legacy_retired(home, uid):
+        print("Legacy shell hook left unchanged: the legacy Collector service can still run.")
+        hook = None
+    claude_defaults = {"OTEL_LOG_TOOL_DETAILS": "1"} if hook and hook["toolDetails"] else None
+    changes, notes = client_plan(home, user_id, replace_claude_telemetry, claude_defaults)
     for note in notes:
         print(note)
     token = read_token(args.token_file)
@@ -924,7 +1017,7 @@ def install(args, home, user, uid, root, unit):
             # empty change plan, but an edit during download still cancels setup.
             assert_unchanged(managed_before)
             assert_unchanged(clients_before)
-            if client_plan(home, user_id, replace_claude_telemetry)[0] != changes:
+            if client_plan(home, user_id, replace_claude_telemetry, claude_defaults)[0] != changes:
                 raise ValueError("client configuration changed during preparation; rerun setup")
             check_services(unit, renewal, user)
             if legacy and legacy_state(home, uid, user) != legacy:
@@ -1012,6 +1105,8 @@ def install(args, home, user, uid, root, unit):
         finally:
             if not keep_recovery:
                 shutil.rmtree(stage)
+        if hook:
+            retire_legacy_hook(hook, home, uid, root)
         print("Collector service started. Restart Claude Code and Codex to load telemetry settings.")
         print("For Codex backend provenance, launch with: python3 " + shlex.quote(str(root / "launch-codex.py")))
         print("Check: python3 " + shlex.quote(str(root / "install.py")) + " status")

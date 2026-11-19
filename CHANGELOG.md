@@ -33,6 +33,18 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Node base's `docker-entrypoint.sh` ENTRYPOINT or `YARN_VERSION`, so arguments-only
   `docker run IMAGE script.js` no longer prepends `node`; the repository's deployments invoke
   `node` explicitly: [runtime distribution](docs/reference/runtime-distribution.md).
+### Fixed
+
+- Reinstalling the device Collector now retires the shell hook that
+  `setup-test-telemetry*.sh` added, once nothing can start the legacy Collector. Before,
+  migrated machines kept sourcing `~/.otelcol/enable-test-telemetry.sh`: every shell printed
+  a stale `OTel configured … user.email=…` line and exported the old identity, because a
+  reinstall after a finished migration skips legacy handling. `OTEL_LOG_TOOL_DETAILS=1` moves
+  to Claude settings unless they already set it. The helper's `team` is not carried over;
+  team spend uses the directory team. Startup files keep their mode and get private backups;
+  a symlinked or changed file, an unrecognized helper or a legacy service that can still run
+  leaves every hook in place:
+  [legacy shell hook](dashboard/collector/README.md#legacy-shell-hook).
 - The web build configures Tailwind CSS-first: the theme moved from `tailwind.config.js`
   into `@theme inline` in `src/index.css`, and `@tailwindcss/vite` replaces the PostCSS
   pipeline (`postcss.config.js`, `@tailwindcss/postcss` and the unused `autoprefixer`

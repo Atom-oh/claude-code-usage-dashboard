@@ -285,11 +285,8 @@ query: all three ports must be free before a first installation. A permissions e
 Unknown listeners require their owner's migration procedure; do not kill arbitrary PIDs.
 Missing legacy service files can be normal on a new machine.
 
-Return to Install and use the original attribution ID. Keep the legacy
-`enable-test-telemetry.sh` shell hook for now to preserve user/team attributes.
-The unloaded macOS job or masked Linux service will not be restarted by its guard.
-Its printed destination can be stale after migration; confirm the new path through
-device receipt and actual dashboard data.
+Return to Install and use the original attribution ID. Install then retires the
+legacy shell hook; see [Legacy shell hook](#legacy-shell-hook).
 
 Successful macOS automatic recovery needs no manual commands. If manual recovery is
 needed after a new service was created, remove the new managed service:
@@ -326,7 +323,36 @@ sudo systemctl enable --now otelcol.service
 The local endpoints are unchanged. Restart clients and verify the original path.
 If client configuration also needs restoring, compare private `*.ccdash-backup-*`
 files with current files first and preserve subsequent edits and model/login settings.
-Revoke the unused new device token in the dashboard.
+Revoke the unused new device token in the dashboard. A retired shell hook is not
+restored automatically: copy the reviewed file back from the `legacy-hook-backup-*`
+directory if the old service runs again.
+
+### Legacy shell hook
+
+`setup-test-telemetry.sh` and `setup-test-telemetry-all.sh` appended
+`[ -f "$HOME/.otelcol/enable-test-telemetry.sh" ] && . "$HOME/.otelcol/enable-test-telemetry.sh"`
+to `~/.bashrc`, `~/.zshrc` or `~/.profile`. Its helper guards the old service, prints a stale
+`OTel configured … user.email=…` line and exports telemetry defaults to every client started
+from those shells. Every successful install or reinstall retires the hook once nothing can
+start the legacy Collector (Linux: `otelcol.service` absent or masked; macOS: the
+LaunchAgent gone, or unloaded and disabled). Installations without the hook are unchanged.
+
+- **Startup files:** after the new service starts, Install removes only that exact line from
+  each file, keeps its mode, and saves the originals in a private `legacy-hook-backup-*`
+  directory under the installation root. The helper and the rest of `~/.otelcol` stay.
+- **Tool details:** when the helper exported `OTEL_LOG_TOOL_DETAILS=1`, Claude settings gain
+  it unless they already set the key, so tool and MCP names keep arriving.
+- **Identity and team:** for logs and traces the device Collector already replaced the
+  helper's `user.email` with the installed ID. The helper's `team` is not carried over:
+  team attribution uses the user's directory team, or a `team` the client still sends
+  ([team spend](../../docs/metrics.md)). Sessions of users without a directory entry then
+  count as no team.
+
+Install leaves every hook in place and prints why when a startup file containing it is a
+symlink or not your own regular file, the helper is unrecognized or unreadable, the legacy
+service can still run, or a startup file changes during setup. The installation itself
+still succeeds. Open a new shell afterwards: running shells and clients keep the old
+environment until restarted.
 
 ## Troubleshooting
 

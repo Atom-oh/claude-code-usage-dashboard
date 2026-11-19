@@ -228,7 +228,9 @@ already be enabled. Both modes configure:
   project/team resource attributes are retained in the launching shell. An existing
   Claude settings-owned attribute string still overrides that shell string: include
   the required tags in that owner or explicitly transfer ownership to the shell.
-  See [resource attribute precedence](../reference/data.md). No fixed backend/client label
+  See [resource attribute precedence](../reference/data.md). The device Collector
+  installer retires this hook after migration:
+  [legacy shell hook](../../dashboard/collector/README.md#legacy-shell-hook). No fixed backend/client label
   is applied globally to mixed gateway traffic.
 
 Files to be modified are validated before either is written. Setup rechecks planned
