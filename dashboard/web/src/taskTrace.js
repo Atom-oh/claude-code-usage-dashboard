@@ -68,7 +68,7 @@ export function laneOrder(lanes, spans = []) {
   }
   const index = new Map(lanes.map((l, i) => [l.id, i]));
   const rank = (l) => (l.id === "main" ? -Infinity : first.has(l.id) ? first.get(l.id) : Infinity);
-  return [...lanes].sort((a, b) => rank(a) - rank(b) || index.get(a.id) - index.get(b.id));
+  return lanes.toSorted((a, b) => rank(a) - rank(b) || index.get(a.id) - index.get(b.id));
 }
 
 // End of the drawn time axis: the task duration or the last span end, whichever is later.
@@ -216,7 +216,7 @@ export function modelUsage(spans = []) {
 // would draw a dive that is not the conversation's context. Side points stay unconnected.
 export function contextLines(points = [], sourceOf = () => null) {
   const byLane = new Map();
-  for (const p of [...points].sort((a, b) => a.start_ms - b.start_ms)) {
+  for (const p of points.toSorted((a, b) => a.start_ms - b.start_ms)) {
     const g = byLane.get(p.lane) || { points: [], counts: new Map(), first: undefined };
     const source = sourceOf(p.span) ?? null;
     if (g.first === undefined) g.first = source;

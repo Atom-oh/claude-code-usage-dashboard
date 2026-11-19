@@ -45,6 +45,13 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   a symlinked or changed file, an unrecognized helper or a legacy service that can still run
   leaves every hook in place:
   [legacy shell hook](dashboard/collector/README.md#legacy-shell-hook).
+- The web build configures Tailwind CSS-first: the theme moved from `tailwind.config.js`
+  into `@theme inline` in `src/index.css`, and `@tailwindcss/vite` replaces the PostCSS
+  pipeline (`postcss.config.js`, `@tailwindcss/postcss` and the unused `autoprefixer`
+  removed). The built utility set is unchanged. Scrollbars use the standard
+  `scrollbar-width`/`scrollbar-color` instead of `::-webkit-scrollbar`, so Chromium now
+  draws its thin native scrollbar with a higher-contrast thumb rather than the rounded
+  10px custom one. Array copies before sorting use `toSorted()`.
 
 ## [1.14.3] - 2026-11-18
 

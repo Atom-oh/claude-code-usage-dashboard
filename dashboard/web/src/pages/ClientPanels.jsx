@@ -243,7 +243,7 @@ const detailButton = (label, onClick, disabled) => <button type="button" disable
 const partText = (part) => `${clientName(part.client)} ${formatClientCost(part.cost_usd)} (${part.cost_basis_label})`;
 function combinedUserRows(users, clients) {
   return combineUsers(users, clients).map((row) => {
-    const parts = [...row.parts].sort((a, b) => a.client.localeCompare(b.client));
+    const parts = row.parts.toSorted((a, b) => a.client.localeCompare(b.client));
     const unpriced = parts.reduce((n, p) => n + (observedNumber(p.unpriced) ?? 0), 0);
     const bases = [...new Set(parts.map((p) => basisLabel(p.cost_basis)))].join(" + ");
     return { ...row, parts, token_status: tokenStatusLabel(row),

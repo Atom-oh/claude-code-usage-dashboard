@@ -269,7 +269,7 @@ export function SeriesBarChart({ title, subtitle, help, right, rows, xKey, serie
   const { data, series: rawSeries } = pivotByKey(rows, xKey, seriesKey, valueKey);
   // seriesSort는 모델 차트처럼 값(지출 순위)과 무관한 고정 범례 순서가 필요할 때만 쓴다 —
   // 기본은 데이터 등장 순(pivotByKey)을 그대로 둔다(예: tool/skill 시리즈는 이 순서 그대로가 맞음).
-  const series = seriesSort ? [...rawSeries].sort(seriesSort) : rawSeries;
+  const series = seriesSort ? rawSeries.toSorted(seriesSort) : rawSeries;
   const fmt = (v) => `${valuePrefix}${Number(v).toLocaleString(localeTag())}`;
   const h = height ?? (horizontal ? Math.max(220, data.length * 28) : 260);
   return (

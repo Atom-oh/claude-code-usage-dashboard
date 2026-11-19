@@ -56,7 +56,7 @@ export function DataTable({ columns, rows, groupKey = "group", title, subtitle, 
 
   const sortedRows = useMemo(() => {
     if (!sort) return rows;
-    const sorted = [...rows].sort((ra, rb) => compareValues(ra[sort.key], rb[sort.key], sort.dir));
+    const sorted = rows.toSorted((ra, rb) => compareValues(ra[sort.key], rb[sort.key], sort.dir));
     return pinLast ? [...sorted.filter((r) => !pinLast(r)), ...sorted.filter((r) => pinLast(r))] : sorted;
   }, [rows, sort, pinLast, _locale]);
 

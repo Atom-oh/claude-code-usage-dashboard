@@ -119,7 +119,7 @@ function SessionEnvironment({ environment, client, context }) {
   const _locale = useLocale();
   const points = (context?.points || []).filter((p) => observedNumber(p.tokens) !== null && observedNumber(p.start_ms) !== null);
   const main = points.filter((p) => p.lane === "main").sort((a, b) => a.start_ms - b.start_ms)[0];
-  const first = main ?? [...points].sort((a, b) => a.start_ms - b.start_ms)[0];
+  const first = main ?? points.toSorted((a, b) => a.start_ms - b.start_ms)[0];
   const mcp = environment?.mcp, plugins = environment?.plugins;
   const days = environment?.lookback_days ?? 14;
   let body;

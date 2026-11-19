@@ -1,5 +1,68 @@
 @import "tailwindcss";
-@config "../tailwind.config.js";
+
+/* Tailwind theme, CSS-first. `inline` makes utilities reference the :root tokens below
+   (e.g. bg-paper → var(--paper)) instead of re-declaring them as theme variables. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-muted: var(--paper-muted);
+  --color-card: var(--surface-card);
+  --color-ink-50: var(--ink-50);
+  --color-ink-100: var(--ink-100);
+  --color-ink-200: var(--ink-200);
+  --color-ink-300: var(--ink-300);
+  --color-ink-400: var(--ink-400);
+  --color-ink-500: var(--ink-500);
+  --color-ink-600: var(--ink-600);
+  --color-ink-700: var(--ink-700);
+  --color-ink-800: var(--ink-800);
+  --color-ink-900: var(--ink-900);
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-action: var(--brand-action);
+  --color-brand-action-hover: var(--brand-action-hover);
+  --color-chrome: var(--surface-chrome);
+  --color-chrome-muted: var(--surface-chrome-muted);
+  --color-chrome-fg: var(--chrome-fg);
+  --color-chrome-fg-muted: var(--chrome-fg-muted);
+  --color-chrome-border: var(--chrome-border);
+  --color-chrome-active: var(--chrome-active-bg);
+  --color-chrome-active-fg: var(--chrome-active-fg);
+  --color-chrome-active-border: var(--chrome-active-border);
+  --color-positive: var(--positive);
+  --color-positive-surface: var(--positive-surface);
+  --color-positive-text: var(--positive-text);
+  --color-positive-border: var(--positive-border);
+  --color-negative: var(--negative);
+  --color-negative-surface: var(--negative-surface);
+  --color-negative-text: var(--negative-text);
+  --color-negative-border: var(--negative-border);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-text: var(--warning-text);
+  --color-warning-border: var(--warning-border);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadow values live only here: a :root --shadow-* copy would collide with this namespace. */
+  --shadow-card: 0 1px 2px rgba(16, 32, 42, 0.04), 0 4px 16px rgba(16, 32, 42, 0.06);
+  --shadow-sm: 0 1px 2px rgba(16, 32, 42, 0.06);
+  --shadow-pop: 0 6px 24px rgba(16, 32, 42, 0.18);
+  --shadow-focus: 0 0 0 3px rgba(82, 141, 248, 0.26);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Pretendard", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
 
 /* ../awsops의 cobalt 테마 토큰을 그대로 포팅 (light 단일 — 사용자 요청). 그룹 색상은 우연히
    정확히 맞아떨어짐: bedrock = chart-1(blue), enterprise = chart-2(teal). */
@@ -78,11 +141,6 @@
   --border-subtle: var(--ink-100);
   --border-default: var(--ink-200);
   --border-brand: var(--brand-200);
-
-  --shadow-card: 0 1px 2px rgba(16, 32, 42, 0.04), 0 4px 16px rgba(16, 32, 42, 0.06);
-  --shadow-sm: 0 1px 2px rgba(16, 32, 42, 0.06);
-  --shadow-pop: 0 6px 24px rgba(16, 32, 42, 0.18);
-  --shadow-focus: 0 0 0 3px rgba(82, 141, 248, 0.26);
 
   /* A/B 그룹 — 우연히 cobalt의 chart-1/chart-2와 일치 */
   --series-bedrock: var(--chart-1);
@@ -175,17 +233,16 @@ body {
 }
 .chat-md th { background: var(--white); font-weight: 600; }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* Standard scrollbar styling (Chrome 121+, Firefox, Safari 26.2+); Chrome ignores
+   ::-webkit-scrollbar once these are set. The thumb keeps ≥3:1 contrast on paper/white.
+   scrollbar-color inherits but scrollbar-width does not, so every scroller sets the width. */
+:root {
+  --scrollbar-thumb: var(--ink-400);
+  --scrollbar-track: transparent;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-::-webkit-scrollbar-thumb {
-  background: var(--ink-200);
-  border-radius: 999px;
-  border: 2px solid var(--paper);
-}
-::-webkit-scrollbar-track {
-  background: transparent;
+* {
+  scrollbar-width: thin;
 }
 
 /* 그룹(bedrock/enterprise) 카드 쌍의 컨테이너 — 카드가 둘이면 좌우 2열, 상단 채널 필터로 하나만
