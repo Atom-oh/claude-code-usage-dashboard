@@ -367,5 +367,171 @@ class LinuxMigration(unittest.TestCase):
         self.assertIn(self.unit.name, self.running)
 
 
+HOOK = '[ -f "$HOME/.otelcol/enable-test-telemetry.sh" ] && . "$HOME/.otelcol/enable-test-telemetry.sh"'
+# The two helper shapes the legacy setup scripts wrote (abridged to the parsed lines).
+FALLBACK_HELPER = """#!/usr/bin/env bash
+_ccdash_set_identity() {
+  local identity="legacy@example.invalid"
+  local pair attributes="" has_team=false
+  if [ "$has_team" = false ]; then attributes="$attributes,team=fixture-team"; fi
+  export OTEL_RESOURCE_ATTRIBUTES="$attributes"
+}
+_ccdash_set_identity
+export OTEL_LOG_TOOL_DETAILS=1
+if [[ $- == *i* ]]; then
+  echo "OTel configured (claude=true, codex=true) -> localhost:4317/4318 -> ch.example (user.email=legacy@example.invalid)"
+fi
+"""
+FIXED_HELPER = """export OTEL_LOG_TOOL_DETAILS=1
+export OTEL_RESOURCE_ATTRIBUTES="user.email=${1:-legacy@example.invalid},team=fixed-team"
+echo "OTel configured (claude=true, codex=true) -> localhost:4317/4318 -> ch.example (user.email=${1:-legacy@example.invalid})"
+"""
+
+
+class LegacyShellHook(LinuxMigration):
+    """The legacy helper's rc hook is retired once nothing can start the legacy Collector."""
+
+    def setUp(self):
+        super().setUp()
+        self.module.atomic(self.helper, FALLBACK_HELPER)
+        self.original[self.helper] = self.helper.read_bytes()  # inherited tests run with a hook too
+        self.bashrc = self.home / ".bashrc"
+        self.zshrc = self.home / ".zshrc"
+        self.module.atomic(self.bashrc, "export A=1\n\n" + HOOK + "\nexport B=2\n", 0o644)
+        self.module.atomic(self.zshrc, HOOK + "\n", 0o640)
+        self.rc_before = {path: path.read_bytes() for path in (self.bashrc, self.zshrc)}
+
+    def state(self):
+        return json.loads((self.root / "state.json").read_text())
+
+    def settings_env(self):
+        return json.loads((self.home / ".claude/settings.json").read_text())["env"]
+
+    def assert_hook_kept(self):
+        for path, content in self.rc_before.items():
+            self.assertEqual(path.read_bytes(), content)
+        self.assertNotIn("OTEL_LOG_TOOL_DETAILS", self.settings_env())
+        self.assertEqual(list(self.root.glob("legacy-hook-backup-*")), [])
+
+    def test_migration_removes_only_the_hook_lines_and_keeps_tool_details(self):
+        self.install()
+        self.assertEqual(self.bashrc.read_text(), "export A=1\n\nexport B=2\n")
+        self.assertEqual(self.zshrc.read_text(), "")
+        self.assertEqual((self.bashrc.stat().st_mode & 0o777, self.zshrc.stat().st_mode & 0o777), (0o644, 0o640))
+        backups = list(self.root.glob("legacy-hook-backup-*"))
+        self.assertEqual(len(backups), 1)
+        for path, content in self.rc_before.items():
+            self.assertEqual((backups[0] / path.name).read_bytes(), content)
+            self.assertEqual((backups[0] / path.name).stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.helper.read_text(), FALLBACK_HELPER, "the helper stays for recovery")
+        self.assertEqual(self.settings_env()["OTEL_LOG_TOOL_DETAILS"], "1")
+        self.assertNotIn("legacyDefaults", self.state(), "the helper's team is not carried over")
+        self.assertNotIn("team", (self.root / "config.yaml").read_text().split("\nservice:\n")[1])
+        self.assertIn("Removed the legacy shell hook from " + str(self.bashrc), self.output.getvalue())
+
+    def test_older_fixed_helper_is_retired_without_settings_owned_attribution(self):
+        claude = self.home / ".claude/settings.json"
+        self.module.atomic(claude, json.dumps({"env": {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317"}}))
+        self.module.atomic(self.helper, FIXED_HELPER)
+        self.args.user_id = "legacy@example.invalid"
+        self.install()
+        self.assertNotIn(HOOK, self.bashrc.read_text())
+        self.assertEqual(self.settings_env()["OTEL_LOG_TOOL_DETAILS"], "1")
+        self.assertNotIn("OTEL_RESOURCE_ATTRIBUTES", self.settings_env(), "no settings-owned attribution")
+
+    def test_reinstall_after_a_finished_migration_retires_a_remaining_hook(self):
+        self.existing_installation()
+        self.legacy.unlink()
+        self.legacy.symlink_to("/dev/null")
+        self.active, self.masked = False, True
+        self.install()
+        self.assertEqual(self.sudo, [])
+        self.assertNotIn(HOOK, self.bashrc.read_text())
+        self.assertEqual(self.settings_env()["OTEL_LOG_TOOL_DETAILS"], "1")
+
+    def test_hook_whose_helper_was_removed_is_retired_without_defaults(self):
+        self.helper.unlink()
+        self.install()
+        self.assertNotIn(HOOK, self.bashrc.read_text())
+        self.assertNotIn("OTEL_LOG_TOOL_DETAILS", self.settings_env())
+
+    def test_unreadable_helper_directory_keeps_the_hook_and_still_installs(self):
+        self.legacy.unlink()
+        self.legacy.symlink_to("/dev/null")
+        self.active, self.masked = False, True
+        with patch.object(self.module, "legacy_hook", side_effect=PermissionError("fixture")):
+            self.install()
+        self.assertIn("cannot inspect the shell startup files", self.output.getvalue())
+        self.assertIn(self.unit.name, self.running)
+        self.assert_hook_kept()
+
+    def test_existing_tool_detail_setting_is_kept(self):
+        claude = self.home / ".claude/settings.json"
+        data = json.loads(claude.read_text())
+        data["env"]["OTEL_LOG_TOOL_DETAILS"] = "0"
+        self.module.atomic(claude, json.dumps(data))
+        self.install()
+        self.assertEqual(self.settings_env()["OTEL_LOG_TOOL_DETAILS"], "0")
+
+    def test_hook_stays_while_another_legacy_unit_can_run(self):
+        self.exec_config = str(self.home / "workshop.yaml")  # not this user's personal unit
+        self.active = False
+        self.install()
+        self.assert_hook_kept()
+        self.assertIn("legacy Collector service can still run", self.output.getvalue())
+
+    def test_symlinked_startup_file_keeps_every_hook(self):
+        target = self.home / "dotfiles-zshrc"
+        self.zshrc.rename(target)
+        self.zshrc.symlink_to(target)
+        self.install()
+        self.assertEqual(self.bashrc.read_bytes(), self.rc_before[self.bashrc])
+        self.assertEqual(target.read_bytes(), self.rc_before[self.zshrc])
+        self.assertIn("is a symlink", self.output.getvalue())
+
+    def test_unrecognized_helper_keeps_the_hook(self):
+        for text in ("old shell identity", FALLBACK_HELPER.replace('echo "OTel configured (', 'echo "(')):
+            with self.subTest(text=text[:20]):
+                self.module.atomic(self.helper, text)
+                self.install()
+                self.assert_hook_kept()
+                self.assertIn("Legacy shell hook left unchanged", self.output.getvalue())
+                self.legacy.unlink()
+                self.module.atomic(self.legacy, self.unit_text, 0o644)
+                self.backup.unlink()
+                self.active = self.enabled = True
+                self.masked = False
+
+    def test_failed_start_leaves_the_hook(self):
+        self.start_error = True
+        with self.assertRaises(ValueError):
+            self.install()
+        for path, content in self.rc_before.items():
+            self.assertEqual(path.read_bytes(), content)
+
+    def test_startup_file_edited_during_setup_is_not_replaced(self):
+        original = self.external
+
+        def external(command, required=True, output=False):
+            if command[:4] == ["systemctl", "--user", "enable", "--now"] and command[-1] == self.unit.name:
+                with self.bashrc.open("a") as file:
+                    file.write("export EDITED=1\n")
+            return original(command, required, output)
+        with patch.object(self.module, "run", external):
+            self.install()
+        self.assertTrue(self.bashrc.read_text().endswith("export EDITED=1\n"))
+        self.assertIn(HOOK, self.bashrc.read_text())
+        self.assertIn(HOOK, self.zshrc.read_text(), "no startup file is changed after a mismatch")
+        self.assertIn("changed during setup", self.output.getvalue())
+        self.assertIn(self.unit.name, self.running, "the installation still succeeds")
+
+    def test_no_hook_changes_nothing(self):
+        for path in (self.bashrc, self.zshrc):
+            path.unlink()
+        self.install()
+        self.assertNotIn("OTEL_LOG_TOOL_DETAILS", self.settings_env())
+        self.assertEqual(list(self.root.glob("legacy-hook-backup-*")), [])
+
+
 if __name__ == "__main__":
     unittest.main()

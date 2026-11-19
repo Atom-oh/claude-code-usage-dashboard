@@ -176,7 +176,7 @@ def resource_attributes(value, user_id):
     return ",".join(key + "=" + value for key, value in attributes.items())
 
 
-def claude_config(text, enabled, user_id, replace_telemetry=False):
+def claude_config(text, enabled, user_id, replace_telemetry=False, defaults=None):
     try:
         data = json.loads(text or "{}")
     except ValueError:
@@ -203,12 +203,17 @@ def claude_config(text, enabled, user_id, replace_telemetry=False):
             if not isinstance(old, str):
                 raise ValueError("Claude resource attributes must be a string; no files changed")
             env["OTEL_RESOURCE_ATTRIBUTES"] = resource_attributes(old, user_id)
+        # Values a retired shell helper exported (install.py legacy hook cleanup): set
+        # only where settings do not already own the key.
+        for key, value in (defaults or {}).items():
+            env.setdefault(key, value)
     else:
         env.update(CLAUDE_DISABLED_ENV)
     return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
 
-def plan(codex_path, claude_path, codex_enabled, claude_enabled, user_id, replace_claude_telemetry=False):
+def plan(codex_path, claude_path, codex_enabled, claude_enabled, user_id, replace_claude_telemetry=False,
+         claude_defaults=None):
     if not re.fullmatch(r"[A-Za-z0-9._+@-]+", user_id):
         raise ValueError("user ID must contain only letters, digits, . _ + @ -")
     if not codex_enabled and not claude_enabled:
@@ -219,7 +224,7 @@ def plan(codex_path, claude_path, codex_enabled, claude_enabled, user_id, replac
     # Validate both clients before writing either one.
     for path, render in [(codex_path, lambda text: codex_config(text, codex_enabled)),
                          (claude_path, lambda text: claude_config(
-                             text, claude_enabled, user_id, replace_claude_telemetry))]:
+                             text, claude_enabled, user_id, replace_claude_telemetry, claude_defaults))]:
         path = Path(path)
         if path.is_symlink():
             raise ValueError("client configuration is a symlink; configure its owner instead")

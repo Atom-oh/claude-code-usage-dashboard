@@ -215,6 +215,31 @@ class Migration(unittest.TestCase):
         self.assertEqual(list(self.root.glob("legacy-backup-*")), [], "no second migration")
         self.assertNotIn("Found legacy", self.output.getvalue())
 
+    def legacy_hook(self):
+        hook = '[ -f "$HOME/.otelcol/enable-test-telemetry.sh" ] && . "$HOME/.otelcol/enable-test-telemetry.sh"'
+        self.module.atomic(self.helper, 'export OTEL_LOG_TOOL_DETAILS=1\n'
+                           'export OTEL_RESOURCE_ATTRIBUTES="user.email=${1:-fixture},team=mac-team"\n'
+                           'echo "OTel configured (claude=true, codex=true) -> localhost:4317/4318"\n')
+        zshrc = self.home / ".zshrc"
+        self.module.atomic(zshrc, "export A=1\n" + hook + "\n", 0o644)
+        return zshrc
+
+    def test_migration_retires_the_legacy_shell_hook(self):
+        zshrc = self.legacy_hook()
+        self.install()
+        self.assertEqual(zshrc.read_text(), "export A=1\n")
+        settings = json.loads((self.home / ".claude/settings.json").read_text())
+        self.assertEqual(settings["env"]["OTEL_LOG_TOOL_DETAILS"], "1")
+        self.assertEqual(len(list(self.root.glob("legacy-hook-backup-*"))), 1)
+
+    def test_reinstall_after_a_finished_migration_retires_a_remaining_hook(self):
+        zshrc = self.legacy_hook()
+        self.module.atomic(self.unit, "<plist><!-- " + self.module.MARKER + " --></plist>")
+        self.loaded, self.disabled = False, True
+        self.install()
+        self.assertEqual(zshrc.read_text(), "export A=1\n")
+        self.assertEqual(list(self.root.glob("legacy-backup-*")), [], "no second migration")
+
     def test_confirmed_migration_replaces_claude_exporters_and_backs_up_original(self):
         path, original = self.conflicting_claude_settings()
         self.args.migrate_legacy = False
