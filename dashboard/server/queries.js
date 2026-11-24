@@ -188,9 +188,14 @@ export function filterCond(filters = {}, cols = {}) {
 // plus the counter lookback: the most frequent value, ties lexically first. Sessions without
 // evidence (no attribute, or counter-only beyond log retention) have no team; none is guessed.
 const TEAM_EXPR = "coalesce(nullIf(ResourceAttributes['team'], ''), nullIf(LogAttributes['team'], ''))";
+// Codex evidence skips codex.sse_event: it is about 97% of Codex log rows, and the excluded
+// EventName lets the sort key skip those granules. Team and user are resource attributes, so the
+// conversation's other events (api_request, user_prompt, ...) carry the same values; a
+// conversation with only streaming rows has no team evidence. Measured 2026-11-23 on production
+// (60-day window): 68.7M rows read before, 1.06M after, with identical team, source and user.
 const TEAM_SESSIONS = {
   claude: ["SessionId", "NOT startsWith(EventName, 'codex.')"],
-  codex: ["LogAttributes['conversation.id']", "startsWith(EventName, 'codex.')"],
+  codex: ["LogAttributes['conversation.id']", "startsWith(EventName, 'codex.') AND EventName != 'codex.sse_event'"],
 };
 const LOG_USER = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
 // Directory teams (teamDirectoryParams.js): the entry of the session user's email digest whose

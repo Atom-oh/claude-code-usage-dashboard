@@ -33,6 +33,14 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   Node base's `docker-entrypoint.sh` ENTRYPOINT or `YARN_VERSION`, so arguments-only
   `docker run IMAGE script.js` no longer prepends `node`; the repository's deployments invoke
   `node` explicitly: [runtime distribution](docs/reference/runtime-distribution.md).
+- Team resolution no longer reads Codex streaming rows (`codex.sse_event`), about 97% of
+  Codex logs, so `/api/teams`, `/api/users/teams` and team filters read far fewer rows on
+  long ranges. On production data (2026-11-23, 60 days) the shared session-team query read
+  1.06M instead of 68.7M Codex rows and ran in about 1.4 s instead of 7.6 s, with identical
+  teams, sources and users. Before, long-range lookups could exceed the 25 s query limit under
+  concurrent load. A Codex conversation whose team appears only on streaming rows now has no
+  team evidence: [team semi-join](docs/api-reference.md#filter-scope).
+
 ### Fixed
 
 - Reinstalling the device Collector now retires the shell hook that

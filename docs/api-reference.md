@@ -550,7 +550,7 @@ applies a filter only when the query supplies its column expression.
 | Reported-vs-computed and entrypoints | Match the model on each `api_request` log row. |
 | User daily/decisions/heatmap | Exact `email` and optional `group`; ignore global user/model/project. With no group, include all channels. Heatmap uses 91 days ending at `to`, ignoring `from`. Reject team. |
 | Projects, permission modes, decision sources, entrypoints | The only queries applying project filters. Projects filter identity using the email/EndUserId fallback; the other three filter `UserEmail`. |
-| Team (all applying routes) | Session semi-join (`teamViaSession`, else the declared `modelViaSession`/`modelMixed` session), not event-level attribution. Each session's team is its most frequent `otel_logs` value of resource, else log, attribute `team` (ties lexically first) over the range plus the three-day counter lookback. Rows without a session, and sessions without team evidence, never match. |
+| Team (all applying routes) | Session semi-join (`teamViaSession`, else the declared `modelViaSession`/`modelMixed` session), not event-level attribution. Each session's team is its most frequent `otel_logs` value of resource, else log, attribute `team` (ties lexically first) over the range plus the three-day counter lookback. Codex streaming rows (`codex.sse_event`) are not team evidence; the conversation's other events carry the same resource attributes. Rows without a session, and sessions without team evidence, never match. |
 
 `GROUP_MODE=single` affects frontend presentation only. The project filter is silently dropped
 on both server and frontend unless the project probe is true. `/api/usage/projects` also
