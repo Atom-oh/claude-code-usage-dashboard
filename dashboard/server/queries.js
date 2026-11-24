@@ -198,6 +198,12 @@ const TEAM_SESSIONS = {
   codex: ["LogAttributes['conversation.id']", "startsWith(EventName, 'codex.') AND EventName != 'codex.sse_event'"],
 };
 const LOG_USER = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
+// Team evidence ends where the hourly rollup's last included bucket ends: rollup reads use
+// `hour < {to}`, so a mid-hour end still includes that whole hour's samples. Cutting logs at `to`
+// instead left a user whose first session started after a mid-hour end (the web rounds `to` down by
+// up to about 4.5 minutes) in the tables without a team until the next window. An hour-aligned end
+// is unchanged.
+const TEAM_END = "toStartOfHour({to:DateTime} - INTERVAL 1 SECOND) + INTERVAL 1 HOUR";
 // Directory teams (teamDirectoryParams.js): the entry of the session user's email digest whose
 // [from, to) interval holds the session start wins over the device team; a cleared entry ('')
 // falls back to it. With empty arrays no entry matches, so the device-only result is unchanged:
@@ -214,7 +220,7 @@ export function sessionTeamsSql(clients, since = "{from:DateTime}") {
         maxIf(Timestamp, Timestamp >= {from:DateTime}) AS seen, argMax(${LOG_USER}, Timestamp) AS identity,
         max(Timestamp) AS latest, min(Timestamp) AS first_seen
       FROM claude_code.otel_logs
-      WHERE Timestamp >= toStartOfHour(${since}) - INTERVAL ${LOOKBACK_DAYS} DAY AND Timestamp < {to:DateTime}
+      WHERE Timestamp >= toStartOfHour(${since}) - INTERVAL ${LOOKBACK_DAYS} DAY AND Timestamp < ${TEAM_END}
         AND ${where} AND session != ''
       GROUP BY session, value`;
   });
