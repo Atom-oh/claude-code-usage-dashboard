@@ -61,15 +61,15 @@ function CollectorManager() {
   const [issueError, setIssueError] = useState("");
   const [issuing, setIssuing] = useState(false);
   const [devices, setDevices] = useState({ items: [], nextCursor: null, requestedCursor: null, loading: true, loaded: false, error: false });
-  const [confirmId, setConfirmId] = useState(null);
-  const [revoking, setRevoking] = useState(null);
-  const [revokeError, setRevokeError] = useState("");
+  const [confirmation, setConfirmation] = useState(null);
+  const [pendingDeviceId, setPendingDeviceId] = useState(null);
+  const [actionError, setActionError] = useState("");
   const [deviceMessage, setDeviceMessage] = useState("");
   const [clock, setClock] = useState(Date.now);
   const requests = useRef(new Set());
   const issuePending = useRef(false);
   const listPending = useRef(false);
-  const revokePending = useRef(false);
+  const actionPending = useRef(false);
   const copyGeneration = useRef(0);
 
   useEffect(() => {
@@ -138,7 +138,7 @@ function CollectorManager() {
   };
   const issue = async event => {
     event.preventDefault();
-    if (issuePending.current || listPending.current || revokePending.current || issued) return;
+    if (issuePending.current || listPending.current || actionPending.current || issued) return;
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 64 || /[\u0000-\u001f\u007f-\u009f]/.test(trimmed)) {
       setIssueError(localizedMessage("m083b26f6625a"));
@@ -170,32 +170,34 @@ function CollectorManager() {
       if (!controller.signal.aborted) setIssuing(false);
     }
   };
-  const revoke = async device => {
-    if (revokePending.current || listPending.current || issuePending.current) return;
-    revokePending.current = true;
+  const updateDevice = async device => {
+    if (actionPending.current || listPending.current || issuePending.current) return;
+    actionPending.current = true;
     const controller = new AbortController();
     requests.current.add(controller);
-    setRevoking(device.id);
-    setRevokeError("");
+    setPendingDeviceId(device.id);
+    setActionError("");
     setDeviceMessage("");
     try {
-      const response = await fetch(`/api/collector/devices/${encodeURIComponent(device.id)}`, {
+      const path = `/api/collector/devices/${encodeURIComponent(device.id)}`;
+      const response = await fetch(device.revokedAt ? `${path}/registration` : path, {
         method: "DELETE", credentials: "same-origin", cache: "no-store", signal: controller.signal,
       });
       checkAuthentication(response);
-      if (!response.ok) throw new Error("revoke_failed");
+      if (!response.ok) throw new Error("device_update_failed");
       if (controller.signal.aborted) return;
-      setDevices(previous => ({ ...previous, items: previous.items.map(item => item.id === device.id
-        ? { ...item, revokedAt: new Date().toISOString() } : item) }));
+      setDevices(previous => ({ ...previous, items: device.revokedAt
+        ? previous.items.filter(item => item.id !== device.id)
+        : previous.items.map(item => item.id === device.id ? { ...item, revokedAt: new Date().toISOString() } : item) }));
       if (issued?.device.id === device.id) clearToken();
-      setConfirmId(null);
-      setDeviceMessage(localizedMessage("m1d48334bb262", [device.name]));
+      setConfirmation(null);
+      setDeviceMessage(localizedMessage(device.revokedAt ? "m90ffc3b370ce" : "m1d48334bb262", [device.name]));
     } catch {
-      if (!controller.signal.aborted) setRevokeError(localizedMessage("m6cbdc506336f"));
+      if (!controller.signal.aborted) setActionError(localizedMessage(device.revokedAt ? "mc68977f8db92" : "m6cbdc506336f"));
     } finally {
       requests.current.delete(controller);
-      revokePending.current = false;
-      if (!controller.signal.aborted) setRevoking(null);
+      actionPending.current = false;
+      if (!controller.signal.aborted) setPendingDeviceId(null);
     }
   };
   const activePlatform = PLATFORMS[platform];
@@ -208,7 +210,7 @@ function CollectorManager() {
     : "";
   const manualCommand = setup.data?.installScriptUrl
     ? `${prerequisite}curl -fsSL ${quoteShell(setup.data.installScriptUrl)} | sh -s -- --token` : "";
-  const busy = issuing || devices.loading || revoking !== null;
+  const busy = issuing || devices.loading || pendingDeviceId !== null;
   const terminal = (value, label, kind = "command") => <div className="overflow-hidden rounded-lg bg-ink-900 text-ink-50">
     <div className="flex items-center justify-between border-b border-ink-700 px-4 py-2.5">
       <span className="flex items-center gap-2 text-xs text-ink-300"><Terminal size={14} aria-hidden="true" />{richMessage("mc9b5922a487e", [activePlatform.label])}</span>
@@ -352,7 +354,7 @@ function CollectorManager() {
           {devices.loading && !devices.loaded && <Loading />}
           {devices.error && <div className="mb-4 space-y-3"><Notice>{translate("mc46564b51815")}{devices.loaded && translate("md6dd6128067f")}</Notice>
             <button type="button" className={SECONDARY} disabled={busy} onClick={() => loadDevices(devices.requestedCursor)}>{translate("mb171f7ca3226")}</button></div>}
-          {devices.loaded && !devices.items.length && <div className="rounded-md bg-ink-50 px-4 py-7 text-center">
+          {devices.loaded && !devices.items.length && !devices.nextCursor && <div className="rounded-md bg-ink-50 px-4 py-7 text-center">
             <Laptop size={26} className="mx-auto text-ink-400" aria-hidden="true" />
             <p className="mt-3 text-sm font-medium">{translate("m262329fddc4f")}</p>
             <p className="mt-1 text-sm text-ink-500">{translate("mb14c9b0c804f")}</p>
@@ -360,7 +362,8 @@ function CollectorManager() {
           <div className="divide-y divide-ink-100">
             {devices.items.map(device => {
               const expired = Date.parse(device.expiresAt) <= Math.max(clock, Date.now());
-              const disabled = !!device.revokedAt || expired;
+              const deleting = !!device.revokedAt;
+              const disabled = deleting || expired;
               return <section key={device.id} aria-label={translate("m68557178a053", [device.name])} className="py-4 first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -370,8 +373,9 @@ function CollectorManager() {
                     </div>
                     <p className="mt-1 text-xs text-ink-500">{PLATFORMS[device.platform]?.label || device.platform}</p>
                   </div>
-                  {!device.revokedAt && <button type="button" className={SECONDARY} aria-label={translate("medace76aa167", [device.name])} disabled={busy}
-                    onClick={() => { setConfirmId(device.id); setRevokeError(""); }}>{richMessage("mdc9d03f7ee1b", [<Trash2 size={14} aria-hidden="true" />])}</button>}
+                  <button type="button" className={SECONDARY} aria-label={translate(deleting ? "m8f8c3d476b1d" : "medace76aa167", [device.name])} disabled={busy}
+                    onClick={() => { setConfirmation({ id: device.id, deleting }); setActionError(""); }}>{deleting ? <><Trash2 size={14} aria-hidden="true" />{translate("m6139b6c3ed73")}</>
+                      : richMessage("mdc9d03f7ee1b", [<Trash2 size={14} aria-hidden="true" />])}</button>
                 </div>
                 <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
                   <div><dt className="text-ink-500">{translate("mbb216f104fde")}</dt><dd className="mt-1 text-ink-700"><DeviceTime value={device.createdAt} /></dd></div>
@@ -381,15 +385,15 @@ function CollectorManager() {
                 {device.revokedAt && <p className="mt-2 text-xs text-ink-500">{richMessage("m79c35add742c", [<DeviceTime value={device.revokedAt} />])}</p>}
                 {device.renewedAt && <p className="mt-2 text-xs text-ink-500">{richMessage("m3f65984a5fad", [<DeviceTime value={device.renewedAt} />])}</p>}
                 {device.reuseDetectedAt && !device.revokedAt && <p role="alert" className="mt-2 rounded-md border border-warning-border bg-warning-surface p-2 text-xs text-warning-text">{richMessage("md792b5666314", [<DeviceTime value={device.reuseDetectedAt} />])}</p>}
-                {confirmId === device.id && !device.revokedAt && <div role="group" aria-label={translate("m0454b3a47f2b", [device.name])}
+                {confirmation?.id === device.id && confirmation.deleting === deleting && <div role="group" aria-label={translate(deleting ? "m8f8c3d476b1d" : "m0454b3a47f2b", [device.name])}
                   className="mt-3 rounded-md border border-warning-border bg-warning-surface p-3">
-                  <p className="text-sm text-warning-text">{translate("m2800dc1c7ff6")}</p>
+                  <p className="text-sm text-warning-text">{translate(deleting ? "m2e0eed8bafb0" : "m2800dc1c7ff6")}</p>
                   <div className="mt-3 flex gap-2">
-                    <button type="button" className={`${BUTTON} bg-negative text-white`} disabled={busy} onClick={() => revoke(device)}>
-                      {revoking === device.id ? translate("m00b12b48ffbc") : translate("m5ec81f076613")}</button>
-                    <button type="button" className={SECONDARY} disabled={revoking !== null} onClick={() => setConfirmId(null)}>{translate("mbe876433993a")}</button>
+                    <button type="button" className={`${BUTTON} bg-negative text-white`} disabled={busy} onClick={() => updateDevice(device)}>
+                      {pendingDeviceId === device.id ? translate(deleting ? "m069e15f08097" : "m00b12b48ffbc") : translate(deleting ? "me856b9bd3615" : "m5ec81f076613")}</button>
+                    <button type="button" className={SECONDARY} disabled={pendingDeviceId !== null} onClick={() => setConfirmation(null)}>{translate("mbe876433993a")}</button>
                   </div>
-                  {revokeError && <div className="mt-3"><Notice>{messageText(revokeError)}</Notice></div>}
+                  {actionError && <div className="mt-3"><Notice>{messageText(actionError)}</Notice></div>}
                 </div>}
               </section>;
             })}

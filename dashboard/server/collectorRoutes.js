@@ -481,6 +481,10 @@ export function createCollectorFeature({ env = process.env, authentication, pack
         await service.revoke(req.principal?.subject, req.params.id);
         res.status(204).end();
       }));
+      router.delete("/devices/:id/registration", route(async (req, res) => {
+        await service.deleteRevoked(req.principal?.subject, req.params.id);
+        res.status(204).end();
+      }));
       router.get("/enrollments/:handle", route(async (req, res) => {
         if (!enrollment) throw fail("enrollment_unavailable", 503);
         res.json(await enrollment.view(req.principal, req.params.handle));

@@ -2095,5 +2095,12 @@
   "m5ed505bd0a2a": "Costos → Costos por modelo",
   "mf1513daed8ae": "Las estimaciones de costos de GPT-6.2 Astra y Sol ahora usan las tarifas Standard publicadas por AWS.",
   "m374b37049f57": "Tarifas oficiales de GPT-6.2 aplicadas",
-  "mc8631de8c12d": "El panel lee las tarifas Standard de Astra y Sol de las tarjetas de modelos de Bedrock. También vuelve a calcular el historial de uso anterior con las tarifas correspondientes a la región, la longitud de entrada y el uso de caché."
+  "mc8631de8c12d": "El panel lee las tarifas Standard de Astra y Sol de las tarjetas de modelos de Bedrock. También vuelve a calcular el historial de uso anterior con las tarifas correspondientes a la región, la longitud de entrada y el uso de caché.",
+  "m8f8c3d476b1d": "Eliminar {0}",
+  "m6139b6c3ed73": "Eliminar",
+  "m2e0eed8bafb0": "¿Quieres eliminar de la lista el dispositivo cuyas credenciales se han revocado? Se conservarán los registros de uso recopilados.",
+  "me856b9bd3615": "Confirmar eliminación",
+  "m069e15f08097": "Eliminando…",
+  "m90ffc3b370ce": "Se eliminó {0} de la lista.",
+  "mc68977f8db92": "No se pudo eliminar el dispositivo. Inténtalo de nuevo."
 }

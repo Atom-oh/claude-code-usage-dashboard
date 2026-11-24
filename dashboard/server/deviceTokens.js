@@ -137,7 +137,7 @@ export function createDeviceTokenService({ store, issuer, now = Date.now }) {
       if (items.length > 50 || items.some(item => item.owner !== owner)
         || (lastKey && (lastKey.owner !== owner || !ID.test(lastKey.id))))
         throw new DeviceTokenError("store_unavailable", 503);
-      return { devices: items.map(deviceView),
+      return { devices: items.filter(item => item.deletedAt === undefined).map(deviceView),
         nextCursor: lastKey ? Buffer.from(JSON.stringify({ owner, id: lastKey.id })).toString("base64url") : null };
     },
 
@@ -145,6 +145,13 @@ export function createDeviceTokenService({ store, issuer, now = Date.now }) {
       const owner = ownerFor(subject);
       if (typeof id !== "string" || !ID.test(id)) throw new DeviceTokenError("device_not_found", 404);
       if (!await store.revoke(owner, id, now(), options)) throw new DeviceTokenError("device_not_found", 404);
+      cache.delete(cacheKey(owner, id));
+    },
+
+    async deleteRevoked(subject, id, options) {
+      const owner = ownerFor(subject);
+      if (typeof id !== "string" || !ID.test(id) || !await store.deleteRevoked(owner, id, now(), options))
+        throw new DeviceTokenError("revoked_device_not_found", 404);
       cache.delete(cacheKey(owner, id));
     },
 

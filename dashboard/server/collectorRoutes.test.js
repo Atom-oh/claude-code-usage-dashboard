@@ -25,6 +25,12 @@ function storeFixture() {
       record.revokedAt ??= at;
       return true;
     },
+    async deleteRevoked(owner, id, at) {
+      const record = records.get(`${owner}:${id}`);
+      if (record?.revokedAt === undefined) return false;
+      record.deletedAt ??= at;
+      return true;
+    },
     async putEnrollment(record) {
       const key = `enrollment:${record.id}`;
       if (records.has(key)) throw new Error("collision");
@@ -227,6 +233,24 @@ test("management requires same origin and serializes no secret after issuing", a
     { method: "DELETE", headers: { "x-fixture-subject": "bob" } })).status, 404);
   assert.equal((await f.management("/api/collector/devices/" + issued.device.id, { method: "DELETE" })).status, 204);
   assert.equal((await f.ingest(issued.token)).status, 401);
+});
+
+test("only the owner can delete a revoked registration and enrollment retries cannot revive it", async t => {
+  const f = await fixture(t);
+  const enrollment = await f.startEnrollment();
+  const { device } = await (await f.decide(enrollment.handle, "approve")).json();
+  const path = "/api/collector/devices/" + device.id;
+  const remove = headers => f.management(path + "/registration", { method: "DELETE", headers });
+  assert.equal((await remove()).status, 404);
+  assert.equal((await f.management(path, { method: "DELETE" })).status, 204);
+  assert.equal((await remove({ "x-fixture-subject": "bob" })).status, 404);
+  assert.equal((await remove({ origin: "https://other.invalid" })).status, 403);
+  assert.equal((await remove()).status, 204);
+  assert.equal((await remove()).status, 204);
+  const list = await f.management("/api/collector/devices");
+  assert.deepEqual((await list.json()).devices, []);
+  assert.equal((await f.poll(enrollment.pollToken)).status, 410);
+  assert.equal((await f.decide(enrollment.handle, "approve")).status, 410);
 });
 
 test("device ownership uses the same canonical issuer URL as human authentication", async t => {
