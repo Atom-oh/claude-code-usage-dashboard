@@ -64,7 +64,8 @@ See [setup and pricing assumptions](runbooks/codex-telemetry.md).
 Team spend (the Claude detail Cost page's team cost section) attributes each session's reported cost to that
 session's team; sessions without team evidence form the no-team row. A session's team is, in order:
 the directory team of the session's user (the Cognito attribute an admin selected on `/settings`, in
-effect at the session's start time), else the OTel `team` (most frequent value in its logs). The
+effect at the session's start time), else the OTel `team` (most frequent value in its logs; Codex streaming rows, `codex.sse_event`, are
+not counted). The
 directory applies only to sessions whose user email matches a Cognito user; `user.email` is
 client-provided, so the match is not verified identity. The directory team can change a session's team
 for past sessions: the first save applies the current value to the whole past. A later attribute

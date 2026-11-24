@@ -661,7 +661,7 @@ test("sessionTeamsSql resolves the most frequent team per client session from re
 
   const codex = queries.sessionTeamsSql(["codex"]);
   assert.ok(codex.includes("LogAttributes['conversation.id'] AS session"));
-  assert.ok(codex.includes("AND startsWith(EventName, 'codex.') AND session != ''"));
+  assert.ok(codex.includes("AND startsWith(EventName, 'codex.') AND EventName != 'codex.sse_event' AND session != ''"));
   assert.ok(!codex.includes("NOT startsWith"));
 
   const both = queries.sessionTeamsSql(["claude", "codex"]);

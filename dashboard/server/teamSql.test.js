@@ -44,6 +44,8 @@ test("team resolution, lookups and session filters agree in ClickHouse", {
       log(T("c-1"), U("cx"), "14:20:00", { team: T("A"), codex: true, event: "api_request" }),
       log(T("c-2"), U("cx"), "14:21:00", { codex: true, event: "api_request" }),
       usage(T("c-1"), "14:31:00", T("A")), usage(T("c-2"), "14:32:00"),
+      // Streaming rows are not team evidence: this conversation's team appears only on them.
+      usage(T("c-3"), "14:33:00", T("D")),
     ];
     const counter = (session, user, metric, type, clock, value) => ({
       ResourceAttributes: { "user.email": user },
@@ -78,11 +80,12 @@ test("team resolution, lookups and session filters agree in ClickHouse", {
     assert.deepEqual(await sessions(["claude"], T("b-team")), []);
     assert.deepEqual(await sessions(["claude"], T("C")), [T("s-logonly")]);
     assert.deepEqual(await sessions(["codex"], T("A")), [T("c-1")]);
+    assert.deepEqual(await sessions(["codex"], T("D")), []);
 
     const pick = (o) => o.by_client.map((r) => [r.client, r.sessions, r.observed_tokens]);
     const claudeRow = (o) => o.by_client.find((r) => r.client === "claude");
     const all = await clientOverview(from, to, { user: id }, clients);
-    assert.deepEqual(pick(all), [["claude", 2, 110], ["codex", 2, 220]]);
+    assert.deepEqual(pick(all), [["claude", 2, 110], ["codex", 3, 330]]);
     assert.equal(claudeRow(all).cost_usd, 11);
     const teamA = await clientOverview(from, to, { user: id, team: T("A") }, clients);
     assert.deepEqual(pick(teamA), [["claude", 1, 10], ["codex", 1, 110]]);
