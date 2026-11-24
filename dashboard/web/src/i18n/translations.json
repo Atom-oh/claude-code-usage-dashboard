@@ -8,43 +8,43 @@
     "es"
   ],
   "method": "Ephemeral Luna translation subagents; catalog batches use the us.openai.gpt-6-luna Bedrock inference profile.",
-  "updated_at": "2026-11-18T13:23:03.670338+00:00",
-  "source_messages": 2097,
+  "updated_at": "2026-11-24T05:24:40.612045+00:00",
+  "source_messages": 2103,
   "files": [
     {
       "locale": "en",
       "path": "locales/en.json",
-      "messages": 2097,
-      "bytes": 163803,
-      "sha256": "7cc2c1607443b00e7addd33903f9a6d8bdc094e31cf8d779263acef2e60c6f65"
+      "messages": 2103,
+      "bytes": 164258,
+      "sha256": "767dfa57a0111c58263af4d1aa8485052b38a935ed7eb8b525beeb2603a52f91"
     },
     {
       "locale": "es",
       "path": "locales/es.json",
-      "messages": 2097,
-      "bytes": 193742,
-      "sha256": "28a6aca8ca81293773e88b4170224e47f6cbbbd12b1e3384eab3ea841c336506"
+      "messages": 2103,
+      "bytes": 194279,
+      "sha256": "6255ded302bd5250c5d4f71da37fd8f297fe6bc53e7c3188ab16f135c154c1d2"
     },
     {
       "locale": "ja",
       "path": "locales/ja.json",
-      "messages": 2097,
-      "bytes": 203067,
-      "sha256": "8c958d78b87e6e3fb61c1daeb7a48d63047ac926c67940a6947d17363bb17856"
+      "messages": 2103,
+      "bytes": 203639,
+      "sha256": "9d1b39ea59e5c563f7952fcd9942a2fa4258acd7be89f5e71e79ae7b6d5f8c1f"
     },
     {
       "locale": "ko",
       "path": "locales/ko.json",
-      "messages": 2097,
-      "bytes": 174042,
-      "sha256": "143bacd5810dec53ce347bb00cfa461108877cc95426186539af8ab023db5d43"
+      "messages": 2103,
+      "bytes": 174492,
+      "sha256": "1b6797f11466e75cf3e18f200ffddadcea21abda9b36477c9c074eef5397119d"
     },
     {
       "locale": "zh-CN",
       "path": "locales/zh-CN.json",
-      "messages": 2097,
-      "bytes": 154826,
-      "sha256": "da68748ff00fe7172f6f3ad5a6dfe9cc82a0e2241ffb6529d0218225606116d2"
+      "messages": 2103,
+      "bytes": 155249,
+      "sha256": "a3ab0b7a65b4a6141bf5935c8e8c95640d482a3d3b0927e60c3ded75a29228c1"
     }
   ],
   "catalog_calls": [
@@ -1928,5 +1928,97 @@
       "m374b37049f57",
       "mc8631de8c12d"
     ]
+  },
+  "device_list_messages": {
+    "requested_model": "openai.gpt-6-luna",
+    "inference_profile": "us.openai.gpt-6-luna",
+    "provider": "amazon-bedrock",
+    "region": "us-east-1",
+    "timestamp_utc": "2026-11-24T05:24:40.612045+00:00",
+    "calls": [
+      {
+        "source_sha256": "ff5ee7b8379474734bf0bf52d618eaac45e09ccd49ff6299b296beba72538720",
+        "output_sha256": "5b5f12c82ff7056f35d75fbc95bfdb7af5201430dcce8a52ac75997bdc4409b5",
+        "usage": {
+          "inputTokens": 708,
+          "outputTokens": 1137,
+          "totalTokens": 1845,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn"
+      },
+      {
+        "source_sha256": "ea130fa2cf9f0ed4d04a6ff680bb3fa2162d303bc8f10e5aa1af1cc2a9538fba",
+        "output_sha256": "d734141eade6deb7852692b7d7fc9da61ab09f18ef6f8c7bf6e9299c55f9bea4",
+        "usage": {
+          "inputTokens": 304,
+          "outputTokens": 373,
+          "totalTokens": 677,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "reason": "The subtitle source was changed to the catalog's established term 기기 수집기 and translated again; this output read the devices as collectors and was replaced by the next call."
+      },
+      {
+        "source_sha256": "ea130fa2cf9f0ed4d04a6ff680bb3fa2162d303bc8f10e5aa1af1cc2a9538fba",
+        "output_sha256": "1b00b62cdd0fe78763383b3c9f1e264b179da382c79eeb0a46c24c38e525718b",
+        "usage": {
+          "inputTokens": 338,
+          "outputTokens": 336,
+          "totalTokens": 674,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        },
+        "stop_reason": "end_turn",
+        "reason": "Same source with a disambiguation (devices are registered through the device collector); output used unchanged."
+      }
+    ],
+    "added_message_count": 6,
+    "source_locale": "ko",
+    "target_locales": [
+      "en",
+      "zh-CN",
+      "ja",
+      "es"
+    ],
+    "added_keys": [
+      "m13932a26bb5d",
+      "m271e41a65967",
+      "m2d70d433657d",
+      "m857c85e0d963",
+      "maedd5145c50e",
+      "me3299f2d5fed"
+    ],
+    "reused_keys": [
+      "m2834016a200a",
+      "m8143161f55aa",
+      "mb367c7d58dda",
+      "me600d4f5926e",
+      "m56ba41779428",
+      "mb6d4dd12b920"
+    ],
+    "superseded_keys": [
+      "mc75c3f317eea"
+    ],
+    "host_corrections": {
+      "by": "claude-opus-5-5 (feature host)",
+      "reason": "The names note covers every listed device (plural).",
+      "changes": [
+        {
+          "locale": "en",
+          "key": "m271e41a65967",
+          "from": "Unable to load the device name; displaying the ID.",
+          "to": "Device names couldn't be loaded, so IDs are shown."
+        },
+        {
+          "locale": "es",
+          "key": "m271e41a65967",
+          "from": "No se pudo cargar el nombre del dispositivo; se muestra el ID.",
+          "to": "No se pudieron cargar los nombres de los dispositivos; se muestran los ID."
+        }
+      ]
+    }
   }
 }

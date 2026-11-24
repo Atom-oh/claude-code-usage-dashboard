@@ -8,6 +8,7 @@ import { SectionLabel } from "./SectionLabel.jsx";
 import { ClientTrend } from "./ClientTrend.jsx";
 import { TaskList } from "./TaskList.jsx";
 import { TaskTraceOverlay } from "./TaskTraceOverlay.jsx";
+import { UserDevices } from "./UserDevices.jsx";
 import { useApi } from "../useApi.js";
 import { useRange } from "../RangeContext.jsx";
 import { maskEmail } from "../fmt.js";
@@ -230,6 +231,7 @@ export function UserDetail({ user, clients, group = null, hours, parentRange, st
       from={bucket.from} to={bucket.to} onOpen={openTask} selectedId={taskId} linkedRange={followsRange} />}
     {bucket && taskId && <TaskTraceOverlay key={taskId} taskId={taskId} user={user} from={bucket.from} to={bucket.to}
       onClose={closeTask} linkedRange={followsRange} />}
+    <UserDevices user={user} clients={clients} bounds={bounds} linked={linked} stale={stale} />
     <Card title={translate("m3063271fad21")} subtitle={translate("m0f8bfd1a87ce")}>
       {heat.error ? <ErrorBox error={heat.error} /> : heat.loading || heat.stale || stale ? <Loading />
         : !heatSupported ? <p role="alert" className="text-sm text-ink-700">{translate("mf73b0574988d")}</p>

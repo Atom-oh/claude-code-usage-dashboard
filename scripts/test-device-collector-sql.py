@@ -108,8 +108,11 @@ def main():
                 now = str(time.time_ns())
                 logs, metrics, spans = [], [], []
                 for client in ("claude", "codex"):
+                    # A client-sent ccdash.device is never trusted: the receiver replaces it with the
+                    # ingest proxy's verified x-ccdash-device header, or removes it.
                     resource = {"attributes": attributes({"service.name": "claude-code" if client == "claude" else "codex",
-                        "user.email": "fixture@example.invalid", "backend": "bedrock-mantle"})}
+                        "user.email": "fixture@example.invalid", "backend": "bedrock-mantle",
+                        "ccdash.device": "forged.device"})}
                     logs.append({"resource": resource, "scopeLogs": [{"logRecords": [{"timeUnixNano": now,
                         # The SQL contract always derives EventName from the
                         # attribute, regardless of the newer OTLP field.
@@ -151,14 +154,24 @@ def main():
                         "name": "claude_code.llm_request" if client == "claude" else "codex.turn",
                         "startTimeUnixNano": now, "endTimeUnixNano": now,
                         "attributes": attributes({"session.id": client, "span.type": "llm_request"})}]}]})
-                for signal, key, items in (("logs", "resourceLogs", logs), ("metrics", "resourceMetrics", metrics),
-                                           ("traces", "resourceSpans", spans)):
+                # Not proxied (no header): the forged attribute must be removed, not kept.
+                unproxied = [{"resource": {"attributes": attributes({"service.name": "claude-code",
+                    "user.email": "fixture@example.invalid", "ccdash.device": "forged.device"})},
+                    "scopeLogs": [{"logRecords": [{"timeUnixNano": now, "attributes": attributes(
+                        {"event.name": "api_request", "session.id": "unproxied"})}]}]}]
+                device = "a" * 64 + "." + "b" * 32
+                for signal, key, items, proxied in (("logs", "resourceLogs", logs, True),
+                                                    ("metrics", "resourceMetrics", metrics, True),
+                                                    ("traces", "resourceSpans", spans, True),
+                                                    ("logs", "resourceLogs", unproxied, False)):
+                    headers = {"Content-Type": "application/json", "Authorization": "Bearer fixture-internal-token"}
+                    if proxied:
+                        headers["X-Ccdash-Device"] = device
                     request = urllib.request.Request("http://127.0.0.1:" + str(otlp_port) + "/v1/" + signal,
-                        json.dumps({key: items}).encode(), {"Content-Type": "application/json",
-                                                         "Authorization": "Bearer fixture-internal-token"})
+                        json.dumps({key: items}).encode(), headers)
                     with urllib.request.urlopen(request, timeout=10) as response:
                         assert response.status == 200
-                expected = {"otel_logs": 3, "otel_traces": 2, "otel_metrics_sum": 1,
+                expected = {"otel_logs": 4, "otel_traces": 2, "otel_metrics_sum": 1,
                             "codex_metrics_sum": 1, "codex_metrics_gauge": 1,
                             "codex_metrics_histogram": 1, "codex_metrics_exponential_histogram": 1}
                 for attempt in range(60):
@@ -185,9 +198,20 @@ def main():
                      "Min": 0, "Max": 4, "AggregationTemporality": 2}]
                 assert all(row["Body"] == "" for row in query("SELECT Body FROM claude_code.otel_logs"))
                 assert query("SELECT EventName FROM claude_code.otel_logs ORDER BY EventName") == [
-                    {"EventName": ""}, {"EventName": "api_request"}, {"EventName": "codex.api_request"}]
+                    {"EventName": ""}, {"EventName": "api_request"}, {"EventName": "api_request"},
+                    {"EventName": "codex.api_request"}]
                 assert query("SELECT count() AS n FROM claude_code.otel_logs "
                              "WHERE EventName != LogAttributes['event.name']") == [{"n": "0"}]
+                assert query("SELECT LogAttributes['session.id'] AS session, ResourceAttributes['ccdash.device'] AS device "
+                             "FROM claude_code.otel_logs ORDER BY session, device") == [
+                    {"session": "claude", "device": device}, {"session": "claude", "device": device},
+                    {"session": "codex", "device": device}, {"session": "unproxied", "device": ""}]
+                assert query("SELECT DISTINCT ResourceAttributes['ccdash.device'] AS device "
+                             "FROM claude_code.otel_traces") == [{"device": device}]
+                # Metrics never carry a device: the forged value is dropped and none is set.
+                for table in ("otel_metrics_sum", "codex_metrics_sum"):
+                    assert query("SELECT count() AS n FROM claude_code." + table +
+                                 " WHERE mapContains(ResourceAttributes, 'ccdash.device')") == [{"n": "0"}]
                 assert query("SELECT count() AS n FROM claude_code.codex_cost_events_v1 "
                              "WHERE Kind = 'request'") == [{"n": "1"}]
                 denied = subprocess.run(

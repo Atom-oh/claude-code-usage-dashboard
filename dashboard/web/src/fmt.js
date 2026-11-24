@@ -47,6 +47,12 @@ export const maskEmail = (s) => {
   return at === -1 ? `${str.slice(0, 2)}******` : `${str.slice(0, Math.min(2, at))}******${str.slice(at)}`;
 };
 
+// Device names are user-entered registry labels (often a person's name), so they follow the PII
+// mask too. A device key is `<owner>.<id>`; the masked form shows only the id's first six hex
+// characters, which also tells devices apart. API payloads stay raw.
+export const deviceShortId = (key) => String(key ?? "").split(".")[1]?.slice(0, 6) || "";
+export const maskDevice = (name, key) => (piiMask || !name ? `**·${deviceShortId(key)}` : String(name));
+
 // Team names follow the same display policy. Directory values can be personal aliases (for
 // example a lead's login), and team names are short, so prefix-only masking made different
 // teams look identical (6 of 19 production teams collided on two characters). The masked form

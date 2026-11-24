@@ -241,12 +241,16 @@ test("only the owner can delete a revoked registration and enrollment retries ca
   const { device } = await (await f.decide(enrollment.handle, "approve")).json();
   const path = "/api/collector/devices/" + device.id;
   const remove = headers => f.management(path + "/registration", { method: "DELETE", headers });
+  const owner = [...f.store.records.values()].find(r => r.id === device.id).owner;
   assert.equal((await remove()).status, 404);
   assert.equal((await f.management(path, { method: "DELETE" })).status, 204);
+  assert.equal((await f.feature.lookupDevice(owner, device.id)).revoked, true);
   assert.equal((await remove({ "x-fixture-subject": "bob" })).status, 404);
   assert.equal((await remove({ origin: "https://other.invalid" })).status, 403);
   assert.equal((await remove()).status, 204);
   assert.equal((await remove()).status, 204);
+  // The device list shows a deleted device as deleted, not as a nameless revoked one.
+  assert.equal(await f.feature.lookupDevice(owner, device.id), null);
   const list = await f.management("/api/collector/devices");
   assert.deepEqual((await list.json()).devices, []);
   assert.equal((await f.poll(enrollment.pollToken)).status, 410);
@@ -284,15 +288,17 @@ test("all three OTLP signals forward only bounded bytes and trusted headers", as
     const result = await f.request(`/api/ingest/v1/${signal}`, {
       method: "POST", body: Buffer.from([10, 0]),
       headers: { authorization: `Bearer ${token}`, "content-type": "application/x-protobuf",
-        cookie: "sensitive=ignored", "x-arbitrary-header": "do-not-forward" },
+        cookie: "sensitive=ignored", "x-arbitrary-header": "do-not-forward", "x-ccdash-device": "forged.device" },
     });
     assert.equal(result.status, 200);
     assert.equal(await result.text(), "{}");
   }
   assert.deepEqual(f.deliveries.map(d => d.url), ["http://collector.internal:4318/v1/metrics",
     "http://collector.internal:4318/v1/logs", "http://collector.internal:4318/v1/traces"]);
-  assert.deepEqual(f.deliveries[0].options.headers,
-    { authorization: `Bearer ${"i".repeat(64)}`, "content-type": "application/x-protobuf" });
+  const [, owner, id] = token.split(".");
+  for (const delivery of f.deliveries) assert.deepEqual(delivery.options.headers,
+    { authorization: `Bearer ${"i".repeat(64)}`, "content-type": "application/x-protobuf",
+      "x-ccdash-device": `${owner}.${id}` });
   assert.deepEqual(f.deliveries[0].options.body, Buffer.from([10, 0]));
   assert.equal(f.deliveries[0].options.redirect, "manual");
   assert.ok((await (await f.management("/api/collector/devices")).json()).devices[0].lastSeenAt);

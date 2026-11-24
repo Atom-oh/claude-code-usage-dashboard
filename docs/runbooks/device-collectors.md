@@ -26,6 +26,20 @@ navigation nor management/download API access. Group names remain configurable t
    receipt separately. A healthy process or accepted OTLP batch is not proof of a
    database commit or complete cost telemetry.
 
+Device identity: the ingest proxy forwards each verified token's `<owner>.<id>` as
+`x-ccdash-device`. The pair identifies a device but cannot authenticate one: ingestion
+still needs the token's secret part. The device receiver deletes any client-sent
+`ccdash.device` resource attribute and sets it from that header on logs and traces. On
+metrics it only deletes a client-sent value: setting a new resource attribute would split
+cumulative series that are running at rollout. Only dashboard pods reach the receiver
+(network policy), so for rows that came through device ingestion the value is
+server-verified, unlike `user.email`. Rows written to ClickHouse by other paths, such as
+legacy collectors with direct insert credentials, are not constrained by it. The user
+detail drawer lists devices from it (`/api/users/devices`), with registry names only while
+the PII mask is off. Data from before this change, or from other paths, has no device.
+During the receiver rollout, a batch retried across the change can be stored once without
+and once with the attribute; whole-row deduplication then keeps both copies.
+
 Existing model/provider/login settings are preserved. Conflicting unmanaged OTel
 settings/services are rejected; migrate their owner explicitly. Codex's
 `analytics.enabled=false` disables its custom metrics export too; the installer does
