@@ -46,6 +46,8 @@ test("team resolution, lookups and session filters agree in ClickHouse", {
       usage(T("c-1"), "14:31:00", T("A")), usage(T("c-2"), "14:32:00"),
       // Streaming rows are not team evidence: this conversation's team appears only on them.
       usage(T("c-3"), "14:33:00", T("D")),
+      // After a mid-hour range end but inside its hour, which the hourly rollup still includes.
+      log(T("s-late"), U("u6"), "16:40:00", { team: T("E") }),
     ];
     const counter = (session, user, metric, type, clock, value) => ({
       ResourceAttributes: { "user.email": user },
@@ -81,6 +83,15 @@ test("team resolution, lookups and session filters agree in ClickHouse", {
     assert.deepEqual(await sessions(["claude"], T("C")), [T("s-logonly")]);
     assert.deepEqual(await sessions(["codex"], T("A")), [T("c-1")]);
     assert.deepEqual(await sessions(["codex"], T("D")), []);
+
+    // Team evidence runs to the end of the range's last hour, like the rollup reads; an
+    // hour-aligned end adds nothing.
+    const at = (clock) => new Date(`${day}T${clock}Z`);
+    const lateUsers = async (start, end) => (await q.userTeams(start, end, clients)).users.filter((r) => r.user.includes(id));
+    assert.deepEqual(await lateUsers(at("16:00:00"), at("16:30:00")),
+      [{ user: U("u6"), team: T("E"), teams: [T("E")], sources: ["device"] }]);
+    assert.deepEqual((await q.listTeams(at("16:00:00"), at("16:30:00"), clients)).teams.filter((t) => t.startsWith(id)), [T("E")]);
+    assert.deepEqual(await lateUsers(at("15:00:00"), at("16:00:00")), []);
 
     const pick = (o) => o.by_client.map((r) => [r.client, r.sessions, r.observed_tokens]);
     const claudeRow = (o) => o.by_client.find((r) => r.client === "claude");

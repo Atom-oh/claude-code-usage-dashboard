@@ -43,6 +43,11 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Fixed
 
+- A user whose first session started in the last few minutes no longer shows no team ("—")
+  while the cost tables already list them. Team evidence was cut at the range end, which the
+  web rounds down by up to about 4.5 minutes, while hourly rollup reads include that end's
+  whole hour. Team evidence now runs to the end of the range's last hour; an
+  hour-aligned end is unchanged: [team semi-join](docs/api-reference.md#filter-scope).
 - Reinstalling the device Collector now retires the shell hook that
   `setup-test-telemetry*.sh` added, once nothing can start the legacy Collector. Before,
   migrated machines kept sourcing `~/.otelcol/enable-test-telemetry.sh`: every shell printed

@@ -635,7 +635,8 @@ test("filterCond leaves queries untouched when no team is selected", () => {
 
 test("team sessions scan the window plus the counter lookback from the declared start", () => {
   assert.ok(filterCond({ team: "x" }, { teamViaSession: "m.SessionId" }).where
-    .includes("Timestamp >= toStartOfHour({from:DateTime}) - INTERVAL 3 DAY AND Timestamp < {to:DateTime}"));
+    .includes("Timestamp >= toStartOfHour({from:DateTime}) - INTERVAL 3 DAY"
+      + " AND Timestamp < toStartOfHour({to:DateTime} - INTERVAL 1 SECOND) + INTERVAL 1 HOUR"));
   assert.ok(filterCond({ team: "x" }, { teamViaSession: "m.SessionId", teamSince: "{prevFrom:DateTime}" }).where
     .includes("Timestamp >= toStartOfHour({prevFrom:DateTime}) - INTERVAL 3 DAY"));
 });
