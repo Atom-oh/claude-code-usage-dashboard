@@ -17,6 +17,8 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Collector owners can delete revoked devices from their list while retaining usage history.
+
 - A minimal OpenTelemetry Collector Builder image for the central OTLP receiver
   (`collector-build/`), with only the components `central.yaml` uses. CI builds it, validates
   `central.yaml` inside it with the production security context and exports both clients'

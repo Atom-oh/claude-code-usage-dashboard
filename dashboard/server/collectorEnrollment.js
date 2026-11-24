@@ -53,6 +53,7 @@ export function createEnrollmentService({ store, issuer, publicOrigin, now = Dat
   // Idempotent: approval and every later poll converge on the one device the approval named.
   async function ensureDevice(record, options) {
     const existing = await store.get(record.deviceOwner, record.deviceId, options);
+    if (existing?.deletedAt !== undefined) throw fail("device_revoked", 410);
     if (existing) return existing;
     const expiresAt = record.approvedAt + TOKEN_LIFETIME_MS;
     const device = { owner: record.deviceOwner, id: record.deviceId, name: record.name, platform: record.platform,

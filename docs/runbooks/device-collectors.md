@@ -72,6 +72,10 @@ Use the [Workshop Studio preparation notes](../workshop-studio-notes.md#installa
 for organizer-provisioned participant EC2 instances. Those instances keep their prepared
 Collector and do not need individual device enrollment.
 
+Owners can delete a revoked device from their list. The registry keeps a deletion marker
+until its existing TTL cleanup so a retry of browser enrollment cannot reactivate the token.
+Historical usage stays available.
+
 A token authorizes ingestion only and expires 30 days after issue. Installed packages
 [renew it](../../dashboard/collector/README.md#automatic-token-renewal) within seven days of
 expiry; the replacement becomes current on first use and the old token is then rejected.

@@ -2095,5 +2095,12 @@
   "m5ed505bd0a2a": "Costs → Costs by model",
   "mf1513daed8ae": "GPT-6.2 Astra and Sol cost estimates now use the Standard rates published by AWS.",
   "m374b37049f57": "Official GPT-6.2 rates applied",
-  "mc8631de8c12d": "The dashboard reads Standard rates for Astra and Sol from Bedrock model cards. It also recalculates previous usage history using rates that match the region, input length, and cache usage."
+  "mc8631de8c12d": "The dashboard reads Standard rates for Astra and Sol from Bedrock model cards. It also recalculates previous usage history using rates that match the region, input length, and cache usage.",
+  "m8f8c3d476b1d": "Delete {0}",
+  "m6139b6c3ed73": "Delete",
+  "m2e0eed8bafb0": "Remove the device with revoked credentials from the list? Previously collected usage records will be retained.",
+  "me856b9bd3615": "Confirm deletion",
+  "m069e15f08097": "Deleting…",
+  "m90ffc3b370ce": "Removed {0} from the list.",
+  "mc68977f8db92": "Couldn't delete the device. Try again."
 }

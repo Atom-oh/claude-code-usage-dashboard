@@ -248,6 +248,28 @@ test("issue and revoke failures preserve the available recovery actions", async 
   expect(await screen.findByText("해지됨")).toBeTruthy();
 });
 
+test("revoked device deletion supports cancellation and retry and removes only the selected row", async () => {
+  const revoked = { ...device, id: "old-device", name: "노트북", revokedAt: "2026-10-28T06:00:00Z" };
+  let attempts = 0;
+  installFetch({ devices: [device, revoked], request: (url, options) => {
+    if (url.pathname === "/api/collector/devices/old-device/registration" && options.method === "DELETE")
+      return response({}, ++attempts === 1 ? 503 : 204);
+  } });
+  mount();
+  const remove = await screen.findByRole("button", { name: "노트북 삭제" });
+  expect(screen.queryByRole("button", { name: device.name + " 삭제" })).toBeNull();
+  fireEvent.click(remove);
+  fireEvent.click(screen.getByRole("button", { name: "취소" }));
+  expect(attempts).toBe(0);
+  fireEvent.click(remove);
+  fireEvent.click(screen.getByRole("button", { name: "삭제 확인" }));
+  await screen.findByText(/기기를 삭제하지 못했습니다/);
+  fireEvent.click(screen.getByRole("button", { name: "삭제 확인" }));
+  await screen.findByText("노트북 기기를 목록에서 삭제했습니다.");
+  expect(screen.queryByText(revoked.name)).toBeNull();
+  expect(screen.getByText(device.name)).toBeTruthy();
+});
+
 test("clearing a token while clipboard access is pending cannot restore its copy status", async () => {
   let finishCopy;
   vi.stubGlobal("navigator", { ...navigator, clipboard: {

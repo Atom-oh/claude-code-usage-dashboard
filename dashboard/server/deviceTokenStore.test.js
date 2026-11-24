@@ -35,6 +35,13 @@ test("writes reject collisions and conditional updates never resurrect missing o
   assert.equal(commands[2].input.ConditionExpression,
     "attribute_exists(#owner) AND attribute_exists(#id) AND attribute_not_exists(revokedAt) AND expiresAt > :at");
   assert.deepEqual(commands[2].input.ExpressionAttributeValues, { ":at": 200 });
+  assert.equal(await store.deleteRevoked("alice", "id", 300), true);
+  const deletion = commands[3].input;
+  assert.deepEqual(deletion.Key, { owner: "alice", id: "id" });
+  assert.equal(deletion.ConditionExpression, "attribute_exists(revokedAt)");
+  assert.equal(deletion.ExpressionAttributeNames["#name"], "name");
+  assert.match(deletion.UpdateExpression, /REMOVE #name, #platform, secretHash, previousHash, pendingHash/);
+  assert.doesNotMatch(deletion.UpdateExpression, /revokedAt|purgeAt/);
 });
 
 test("conditional update misses return false; failures are sanitized and cancellation aborts sends", async () => {

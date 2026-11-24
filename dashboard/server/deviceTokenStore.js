@@ -75,6 +75,17 @@ export function createDynamoDeviceStore({ tableName, client }) {
         ExpressionAttributeNames: keyNames, ExpressionAttributeValues: { ":at": at } }), options, true);
       return result !== false;
     },
+    async deleteRevoked(owner, id, at, options) {
+      // Keep the revoked key until TTL cleanup so an approved enrollment cannot recreate it.
+      const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner, id },
+        ConditionExpression: "attribute_exists(revokedAt)",
+        UpdateExpression: "SET deletedAt = if_not_exists(deletedAt, :at)"
+          + " REMOVE #name, #platform, secretHash, previousHash, pendingHash, pendingIssuedAt, pendingExpiresAt,"
+          + " createdAt, expiresAt, lastSeenAt, renewedAt, reuseDetectedAt",
+        ExpressionAttributeNames: { "#name": "name", "#platform": "platform" },
+        ExpressionAttributeValues: { ":at": at } }), options, true);
+      return result !== false;
+    },
     // Replaces any pending token, only while the verified current token is still active.
     async stage(owner, id, currentHash, pending, options) {
       const result = await send(new UpdateCommand({ TableName: tableName, Key: { owner, id },
