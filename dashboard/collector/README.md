@@ -152,6 +152,8 @@ python3 "$HOME/.local/share/ccdash-collector/install.py" status
 
 `check` is an alias for `status`. It checks local service health and configuration.
 Refresh **My devices** on the installation page and check the device last-delivery time.
+The user detail drawer's **Devices** card lists the devices that sent a user's logs, by the
+registered device name.
 Then check actual usage with the intended dashboard time, client, and user filters. Empty
 queues or local health alone do not prove complete or successful telemetry.
 Linux logs use `journalctl --user -u ccdash-collector`; macOS logs are in

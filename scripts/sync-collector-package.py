@@ -127,6 +127,7 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
         max_request_body_size: 2097152
+        include_metadata: true
         auth:
           authenticator: bearertokenauth
 """
@@ -146,7 +147,34 @@ receivers:
           - set(event_name, "")
           - set(event_name, String(attributes["event.name"])) where attributes["event.name"] != nil
 """
+    # Device identity: the dashboard ingest proxy verifies the device token and sends
+    # `x-ccdash-device: <owner>.<id>`; only dashboard pods reach this receiver (network
+    # policy). A client-sent value is deleted first, so the attribute exists only on
+    # proxied requests. It runs last before batch, after the Codex keep_keys allowlists.
+    # Logs and traces only: a new resource attribute would split every cumulative metric
+    # series that is running when this is deployed, and the server differences samples
+    # per series.
+    central_processors += """
+  resource/device:
+    attributes:
+      - key: ccdash.device
+        action: delete
+      - key: ccdash.device
+        from_context: metadata.x-ccdash-device
+        action: upsert
+"""
     central_service = service.replace("resource/codex_transport, ", "")
+    central_service = re.sub(r"(processors: \[memory_limiter, filter/(?:logs|traces)[^\]]*?), batch\]",
+                             r"\1, resource/device, batch]", central_service)
+    # Metrics only drop a client-sent value: no client sends the key, so deleting it splits no series.
+    central_processors += """
+  resource/device_drop:
+    attributes:
+      - key: ccdash.device
+        action: delete
+"""
+    central_service = re.sub(r"(processors: \[memory_limiter, filter/metrics[^\]]*?), batch\]",
+                             r"\1, resource/device_drop, batch]", central_service)
     central_service = central_service.replace("transform/device_log_content,",
                                               "transform/device_log_content, transform/clickhouse_event_name,")
     central_service = central_service.replace("extensions: [file_storage]",

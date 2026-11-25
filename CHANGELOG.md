@@ -21,7 +21,16 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
   five-minute and one-hour Claude cache writes and the unclassified remainder.
 
 - Collector owners can delete revoked devices from their list while retaining usage history.
-
+- The user detail drawer has a **Devices** card that lists the devices a user's logs came
+  from, with registered name, OS, clients, sessions and last receipt. For data that comes
+  through device ingestion the device is server-verified: the ingest proxy forwards the
+  verified device token's identity and the device receiver sets the `ccdash.device`
+  resource attribute on logs and traces from it, replacing any client-sent value. Only
+  devices enrolled in the device Collector are identified; earlier data and other paths are
+  counted as sessions without a device. While the PII mask is on, the server does not send
+  device names and the card shows short device IDs. Taking effect needs both the dashboard image and the receiver
+  configuration (Terraform):
+  [`/api/users/devices`](docs/api-reference.md), [device collectors](docs/runbooks/device-collectors.md).
 - A minimal OpenTelemetry Collector Builder image for the central OTLP receiver
   (`collector-build/`), with only the components `central.yaml` uses. CI builds it, validates
   `central.yaml` inside it with the production security context and exports both clients'

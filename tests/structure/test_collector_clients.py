@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "otel/opentelemetry-collector-contrib:0.119.0"
 NOW = time.time_ns()
 CLAUDE_EVENTS = {"api_request", "tool_result", "user_prompt", "skill_activated", "claude_code.api_request"}
+# Only the device receiver may set the verified device; a client-sent value must not survive.
+FORGED_DEVICE = {"ccdash.device": "a" * 64 + "." + "1" * 32}
 
 
 def docker(*arguments, check=True):
@@ -70,7 +72,7 @@ def payload():
     return {"resourceLogs": [{
         "resource": {"attributes": attributes({
             "service.name": "fixture", "user.email": "fixture@example.invalid", "team": "test",
-            "backend": "bedrock-mantle", "experiment.group": "enterprise",
+            "backend": "bedrock-mantle", "experiment.group": "enterprise", **FORGED_DEVICE,
         })},
         "scopeLogs": [{"scope": {"name": "fixture"}, "logRecords": records}],
     }]}
@@ -152,7 +154,7 @@ class CollectorTests(unittest.TestCase):
     def metrics(self):
         point = {"startTimeUnixNano": str(NOW - 100), "timeUnixNano": str(NOW), "asDouble": 7,
                  "attributes": attributes({"session.id": "claude-session", "type": "input"})}
-        return {"resourceMetrics": [{"resource": {"attributes": attributes({"service.name": "claude-code"})},
+        return {"resourceMetrics": [{"resource": {"attributes": attributes({"service.name": "claude-code", **FORGED_DEVICE})},
                 "scopeMetrics": [{"scope": {"name": "fixture"}, "metrics": [
                     {"name": name, "sum": {"aggregationTemporality": 2, "isMonotonic": True, "dataPoints": [point]}}
                     for name in ["claude_code.token.usage", "codex.token.usage", "unrelated.metric"]
@@ -160,7 +162,7 @@ class CollectorTests(unittest.TestCase):
 
     def traces(self):
         return {"resourceSpans": [
-            {"resource": {"attributes": attributes({"service.name": service})}, "scopeSpans": [{
+            {"resource": {"attributes": attributes({"service.name": service, **FORGED_DEVICE})}, "scopeSpans": [{
                 "scope": {"name": service}, "spans": [{
                     "traceId": "0102030405060708090a0b0c0d0e0f10", "spanId": "0102030405060708",
                     "name": service + ".request", "startTimeUnixNano": str(NOW - 100),
@@ -211,6 +213,10 @@ class CollectorTests(unittest.TestCase):
                 if metrics:
                     self.assertEqual(metrics[0]["sum"]["aggregationTemporality"], 2)
                     self.assertEqual(metrics[0]["sum"]["dataPoints"][0]["asDouble"], 7)
+                for batch in events:
+                    for kind in ["resourceLogs", "resourceMetrics", "resourceSpans"]:
+                        for res in batch.get(kind, []):
+                            self.assertNotIn("ccdash.device", values(res["resource"]["attributes"]))
                 spans = [span for batch in events for res in batch.get("resourceSpans", [])
                          for scope in res["scopeSpans"] for span in scope["spans"]]
                 self.assertEqual([span["name"] for span in spans], ["claude-code.request"] if "claude_code.api_request" in expected else [])

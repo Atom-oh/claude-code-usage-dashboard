@@ -37,6 +37,9 @@ processors:
       - key: experiment.group
         value: ${env:EXPERIMENT_GROUP}
         action: upsert
+      # Only the device receiver may set the verified device (resource/device in central.yaml).
+      - key: ccdash.device
+        action: delete
 
   # ---- (b) metric 화이트리스트 -------------------------------------------
   # Claude Code 공식 8개 metric만 통과. 버전업으로 새 metric 생겨도 안 샌다.
@@ -113,6 +116,7 @@ processors:
           # resource identity. Fill only an absent one with the bootstrap's host default.
           - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
           - delete_key(attributes, "experiment.group")
+          - delete_key(attributes, "ccdash.device")
     metric_statements:
       - context: resource
         statements: *codex_resource

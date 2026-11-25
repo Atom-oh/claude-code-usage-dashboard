@@ -25,6 +25,7 @@ PRODUCTIVITY_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test productivitySql.t
 CLIENT_PRODUCTIVITY_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test clientProductivitySql.test.js
 CODEX_LOG_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test codexInsightsLogs.test.js
 TEAM_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test teamSql.test.js
+USER_DEVICES_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test userDevicesSql.test.js
 TEAM_COST_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test teamCostSql.test.js
 TASK_TRACE_SQL_TEST_URL="http://127.0.0.1:$PORT" node --test taskTraceSql.test.js
 CODEX_SIGNALS_SQL_TEST=1 node --test codexSignalsSql.test.js
