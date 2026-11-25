@@ -2102,5 +2102,12 @@
   "me856b9bd3615": "Confirm deletion",
   "m069e15f08097": "Deleting…",
   "m90ffc3b370ce": "Removed {0} from the list.",
-  "mc68977f8db92": "Couldn't delete the device. Try again."
+  "mc68977f8db92": "Couldn't delete the device. Try again.",
+  "m90ba8e3e4a0d": "Estimated cost by token type",
+  "me2275055beed": "Calculated from token counts in request logs and model rates. The cache write total also includes amounts with unclassified TTLs.",
+  "m5cdd90cc8878": "Calculated from token counts in completion logs and model rates. Cache write TTLs are not recorded.",
+  "m880f9acdb506": "5-minute cache write",
+  "ma29a2cd6a629": "1-hour cache write",
+  "m79a9491ccd6b": "Unclassified TTL",
+  "mb3e0c44fa3c5": "Cost calculated for only some requests."
 }

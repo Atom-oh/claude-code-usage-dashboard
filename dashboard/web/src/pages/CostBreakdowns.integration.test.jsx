@@ -76,6 +76,19 @@ test("GPT model legends expose separate Mantle and Runtime labels alongside long
   expect(legend.getByText("global.openai.gpt-6-astra", { exact: true })).toBeTruthy();
 });
 
+test("cost shows tiny USD, measured zero and missing TTLs independently for each client", async () => {
+  const parts = { input: 1, output: 2, cacheRead: 0.000001, cacheWrite: 3, cacheWrite5m: 0,
+    cacheWriteUnknown: 3, partial: true };
+  mount({ data: overview({ token_type_cost_usd: { claude: parts, codex: { ...parts, partial: false } } }) });
+  await screen.findByText("토큰 유형별 추정 비용 — Claude Code");
+  const panel = within(card("토큰 유형별 추정 비용 — Claude Code"));
+  await waitFor(() => expect(panel.getByText("캐시 읽기").nextElementSibling.textContent).toBe("$0.000001"));
+  expect(panel.getByText("5분 캐시 쓰기").nextElementSibling.textContent).toBe("$0");
+  expect(panel.getByText("1시간 캐시 쓰기").nextElementSibling.textContent).toBe("—");
+  expect(panel.getByText("일부 요청만 계산한 금액입니다.")).toBeTruthy();
+  expect(within(card("토큰 유형별 추정 비용 — Codex")).queryByText("5분 캐시 쓰기")).toBeNull();
+});
+
 test("structured model legends retain each row's cost basis when reports and estimates share a card", async () => {
   const estimate = { ...claude, model: "openai.gpt-6.1-sol", backend: "bedrock-mantle",
     cost_usd: 2, cost_basis: "aws_list_estimate" };

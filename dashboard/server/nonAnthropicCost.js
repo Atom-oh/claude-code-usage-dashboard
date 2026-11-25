@@ -48,6 +48,11 @@ const count = (value) => {
 // counts, input excluding cache). null when a token count is unusable or the model is unpriced.
 // Exported so per-task trace costs (taskTraces.js) reuse this exact pricing path.
 export function requestListEstimate(row, priceTable = codexPrices()) {
+  return priceRequestUsage(row, priceTable)?.cost_usd ?? null;
+}
+
+// Aggregated rows may use this only after grouping on request context boundaries.
+export function priceRequestUsage(row, priceTable, { maxRequestInput, includeParts = false } = {}) {
   const model = String(row.model || "");
   const input = count(row.input_tokens), read = count(row.cache_read_tokens);
   const write = count(row.cache_creation_tokens), output = count(row.output_tokens);
@@ -60,13 +65,13 @@ export function requestListEstimate(row, priceTable = codexPrices()) {
   const priceModel = bareModelAlias(unsuffixed, priceTable) ?? unsuffixed;
   const rateModel = codexRateModel(priceModel, priceTable);
   const limit = priceTable[rateModel]?.short_context_limit;
-  const priced = total === null || output === null ? null : priceCodexUsage({
+  if (total === null || output === null) return null;
+  return priceCodexUsage({
     model: priceModel, backend: resolveBackend(priceModel, ""),
-    context_tier: limit !== undefined && total > limit ? "long" : "short",
+    context_tier: limit !== undefined && (maxRequestInput ?? total) > limit ? "long" : "short",
     input_tokens_total: total, cache_read_tokens: read, cache_write_tokens: write,
     output_tokens: output, reasoning_tokens: 0,
-  }, priceTable).cost_usd;
-  return priced === undefined ? null : priced;
+  }, priceTable, includeParts);
 }
 
 // Pure fold, exported for tests. rows: one per api_request log with raw model and counts.

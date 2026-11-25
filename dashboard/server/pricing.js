@@ -228,6 +228,21 @@ export function computeCost(model, backend, tokens) {
   return Number.isFinite(amount) ? amount : null;
 }
 
+export function claudeCostParts(model, backend, tokens, write5m = null, write1h = null) {
+  const current = claudePricing();
+  const p = lookup(current, model, backend);
+  if (!p) return null;
+  const scale = regionalMultiplier(model) / 1e6;
+  const unknown = tokens.cacheWrite - (write5m ?? 0) - (write1h ?? 0);
+  const cacheWriteUnknown = unknown * effectiveCacheWrite(current, p) * scale;
+  const cacheWrite5m = write5m === null ? null : write5m * p.cacheWrite * scale;
+  const cacheWrite1h = write1h === null ? null : write1h * p.cacheWrite1h * scale;
+  return { input: tokens.input * p.input * scale, output: tokens.output * p.output * scale,
+    cacheRead: tokens.cacheRead * p.cacheRead * scale,
+    cacheWrite: (cacheWrite5m ?? 0) + (cacheWrite1h ?? 0) + cacheWriteUnknown,
+    cacheWrite5m, cacheWrite1h, cacheWriteUnknown };
+}
+
 // withComputedCost/tierCosts는 서버 env PRICING_CACHE_WRITE_TTL(단일 가정)로만 캐시 쓰기 단가를
 // 고른다 — reportedVsComputedByVersion(리포트 비용의 TTL 근거를 진단)은 5m/1h 두 시나리오를
 // "동시에" 봐야 하므로, env 기본값과 무관하게 TTL을 명시적으로 골라 계산하는 버전이 따로 필요하다.

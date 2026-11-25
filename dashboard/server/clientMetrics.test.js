@@ -18,6 +18,9 @@ test("cost profile adds user/model/backend amounts without changing totals or co
   const costs = foldClientMetrics(records, ["claude", "codex"], undefined, { costView: true });
   assert.equal(ordinary.by_user_model, undefined);
   assert.equal(costs.by_user_model.length, 3);
+  assert.deepEqual(costs.token_type_cost_usd.claude, { partial: true });
+  assert.equal(costs.token_type_cost_usd.codex.partial, true);
+  assert.ok(costs.token_type_cost_usd.codex.input > 0);
   assert.equal(costs.totals.cost_usd, ordinary.totals.cost_usd);
   assert.equal(costs.totals.sessions, 2);
   const unknown = costs.by_user_model.find(row => row.model === "openai.unpriced");
@@ -794,7 +797,8 @@ test("cost folds preserve coverage, tiers, identities and idle buckets while omi
     expected.totals = trim(expected.totals);
     for (const key of ["by_client", "by_user", "by_model", "by_model_time", "by_user_time", "timeseries"])
       expected[key] = expected[key].map(trim);
-    const { by_user_model, ...existingCost } = cost;
+    const { by_user_model, token_type_cost_usd, ...existingCost } = cost;
+    assert.deepEqual(Object.keys(token_type_cost_usd), modelTimeClients);
     assert.deepEqual(existingCost, { ...expected, view: "cost" });
     assert.ok(Array.isArray(by_user_model));
     assert.ok(by_user_model.every(row => fields.every(field => !Object.hasOwn(row, field))));

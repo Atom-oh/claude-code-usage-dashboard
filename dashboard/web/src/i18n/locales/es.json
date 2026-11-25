@@ -2102,5 +2102,12 @@
   "me856b9bd3615": "Confirmar eliminación",
   "m069e15f08097": "Eliminando…",
   "m90ffc3b370ce": "Se eliminó {0} de la lista.",
-  "mc68977f8db92": "No se pudo eliminar el dispositivo. Inténtalo de nuevo."
+  "mc68977f8db92": "No se pudo eliminar el dispositivo. Inténtalo de nuevo.",
+  "m90ba8e3e4a0d": "Costo estimado por tipo de token",
+  "me2275055beed": "Calculado a partir del número de tokens en los registros de solicitudes y las tarifas del modelo. El total de escrituras en caché también incluye importes con TTL sin clasificar.",
+  "m5cdd90cc8878": "Calculado a partir del número de tokens en los registros de finalización y las tarifas del modelo. No se registra el TTL de las escrituras en caché.",
+  "m880f9acdb506": "Escritura en caché de 5 minutos",
+  "ma29a2cd6a629": "Escritura en caché de 1 hora",
+  "m79a9491ccd6b": "TTL sin clasificar",
+  "mb3e0c44fa3c5": "Costo calculado solo para algunas solicitudes."
 }

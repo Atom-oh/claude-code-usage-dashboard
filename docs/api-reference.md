@@ -255,6 +255,14 @@ is separate from the default view. Cost, token coverage, populations, rejected-r
 evidence, effective bounds and exact-filter acknowledgments retain the same semantics.
 The response echoes `view="cost"`. It omits `by_project`, `tools`, and row fields `api_errors`, `tool_calls`,
 `tool_errors`, `request_duration_ms`, `ttft_ms`; omitted diagnostics are not measured zeros.
+`token_type_cost_usd` maps each selected client to estimated `input` (uncached),
+`output`, `cacheRead` and `cacheWrite` USD. Codex uses deduplicated completions.
+Claude uses request logs and model rates, independently of its reported spend.
+`cacheWrite5m` and `cacheWrite1h` require observed splits and applicable rates.
+`cacheWriteUnknown` prices the remainder using the applicable write rate.
+The three write amounts are subsets of `cacheWrite`. Absent values are unavailable.
+`partial` marks detected usage gaps or unpriceable requests.
+
 It adds `by_user_model`, grouped by `client`, raw `user` (`""` when absent), `model`,
 `backend` and, for Claude, the inferred session `channel` (`bedrock`/`enterprise`/`unknown`),
 using the same bounded records and cost accumulator as `by_user`.

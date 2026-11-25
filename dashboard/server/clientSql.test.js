@@ -1316,6 +1316,28 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assert.deepEqual((await clientActivity(from, to, { client: "codex",
         userExact: "' OR 1=1" }, ["codex"])).timeseries, []);
     });
+    await t.test("request cost components deduplicate logs and keep measured TTLs separate from unknown writes", async () => {
+      const user = "ttl-cost@example.invalid";
+      const usage = { model: "claude-sonnet-5", input_tokens: "1000", output_tokens: "200",
+        cache_read_tokens: "500", cache_creation_tokens: "100" };
+      const split = log(8100, "api_request", { ...usage, cache_creation_5m_tokens: "40",
+        cache_creation_1h_tokens: "60" }, { "user.email": user });
+      await insertLogs([split, split, log(8101, "claude_code.api_request", usage, { "user.email": user }),
+        log(8102, "api_request", { ...usage, input_tokens: "-1" }, { "user.email": user })]);
+      const result = await overview({ client: "claude", userExact: user, view: "cost" }, ["claude"]);
+      const parts = result.token_type_cost_usd.claude;
+      const { priceFor, pricingConfig } = await import("./pricing.js");
+      const rates = priceFor(usage.model, result.by_model[0].backend);
+      const usd = (value, expected) => assert.ok(Math.abs(value - expected / 1e6) < 1e-12, String(value));
+      usd(parts.input, 2000 * rates.input);
+      usd(parts.output, 400 * rates.output);
+      usd(parts.cacheRead, 1000 * rates.cacheRead);
+      usd(parts.cacheWrite5m, 40 * rates.cacheWrite);
+      usd(parts.cacheWrite1h, 60 * rates.cacheWrite1h);
+      usd(parts.cacheWriteUnknown, 100 * (pricingConfig.cacheWriteTtl === "1h" ? rates.cacheWrite1h : rates.cacheWrite));
+      assert.ok(Math.abs(parts.cacheWrite - parts.cacheWrite5m - parts.cacheWrite1h - parts.cacheWriteUnknown) < 1e-12);
+      assert.equal(parts.partial, true);
+    });
     await t.test("a 90-day heatmap survives more than 50000 Claude session rows", async () => {
       await db.command({ query: `INSERT INTO claude_code.otel_metrics_sum
         (ResourceAttributes, Attributes, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic)
