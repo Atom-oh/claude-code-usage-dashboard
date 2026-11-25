@@ -193,11 +193,11 @@ const TEAM_EXPR = "coalesce(nullIf(ResourceAttributes['team'], ''), nullIf(LogAt
 // conversation's other events (api_request, user_prompt, ...) carry the same values; a
 // conversation with only streaming rows has no team evidence. Measured 2026-11-23 on production
 // (60-day window): 68.7M rows read before, 1.06M after, with identical team, source and user.
-const TEAM_SESSIONS = {
+export const TEAM_SESSIONS = {
   claude: ["SessionId", "NOT startsWith(EventName, 'codex.')"],
   codex: ["LogAttributes['conversation.id']", "startsWith(EventName, 'codex.') AND EventName != 'codex.sse_event'"],
 };
-const LOG_USER = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
+export const LOG_USER = "coalesce(nullIf(ResourceAttributes['user.email'], ''), nullIf(ResourceAttributes['enduser.id'], ''), '')";
 // Team evidence ends where the hourly rollup's last included bucket ends: rollup reads use
 // `hour < {to}`, so a mid-hour end still includes that whole hour's samples. Cutting logs at `to`
 // instead left a user whose first session started after a mid-hour end (the web rounds `to` down by

@@ -403,7 +403,10 @@ export function createCollectorFeature({ env = process.env, authentication, pack
         let responseType;
         try {
           upstream = await fetchImpl(config.upstream + req.path.slice("/api/ingest".length), {
-            method: "POST", body, headers: { authorization: `Bearer ${config.upstreamToken}`, "content-type": type },
+            // The verified device, for the receiver's `ccdash.device` resource attribute. Headers are
+            // built here, so a client-sent x-ccdash-device never reaches the receiver.
+            method: "POST", body, headers: { authorization: `Bearer ${config.upstreamToken}`, "content-type": type,
+              "x-ccdash-device": `${identity.owner}.${identity.id}` },
             redirect: "manual", signal,
           });
           signal.throwIfAborted();
@@ -444,6 +447,14 @@ export function createCollectorFeature({ env = process.env, authentication, pack
 
   return {
     enabled: config.enabled,
+    // Read-only registry lookup for the device list (userDevices.js): name, platform and
+    // revocation of one registered device, or null once it is deleted (the registry keeps a
+    // nameless deletion marker until TTL cleanup) or gone.
+    lookupDevice: deviceStore ? async (owner, id, options) => {
+      const record = await deviceStore.get(owner, id, options);
+      return record && record.deletedAt === undefined
+        ? { name: record.name, platform: record.platform, revoked: record.revokedAt !== undefined } : null;
+    } : null,
     installIngest(app) {
       app.use((req, res, next) => {
         const path = req.path.toLowerCase();

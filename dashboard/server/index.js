@@ -37,6 +37,7 @@ import { createAwsModelPriceUpdater, priceCatalogFits } from "./awsModelPricing.
 import { createPriceDiscovery, setPriceDiscoveryObserver } from "./pricingDiscovery.js";
 import { clearNonAnthropicFactorCache } from "./nonAnthropicCost.js";
 import { taskCacheKey, userTasks, validateTaskQuery } from "./taskTraces.js";
+import { createDeviceNames, deviceCacheKey, userDevices, validateDeviceQuery } from "./userDevices.js";
 import { taskDetailCacheKey, userTaskDetail, validateTaskDetailQuery } from "./taskTraceDetail.js";
 import { directoryVersion } from "./teamDirectoryParams.js";
 import { createDynamoDeviceStore } from "./deviceTokenStore.js";
@@ -314,6 +315,7 @@ function cacheKey(path, query) {
 }
 function routeCacheKey(path, query) {
   if (path === "/api/users/tasks") return `${path}?${taskCacheKey(query, clientConfig.enabledClients)}`;
+  if (path === "/api/users/devices") return `${path}?${deviceCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/users/tasks/detail") return `${path}?${taskDetailCacheKey(query, clientConfig.enabledClients)}`;
   if (path === "/api/clients/overview" || path === "/api/codex/insights" || path === "/api/clients/claude-effort"
       || path === "/api/clients/productivity" || path === "/api/clients/activity"
@@ -581,6 +583,11 @@ route("/api/users/tasks", (from, to, raw) => userTasks(from, to, raw, clientConf
 route("/api/users/tasks/detail", (from, to, raw) => userTaskDetail(from, to, raw, clientConfig.enabledClients),
   { client: null, warm: false, team: false, validate: (raw) => validateTaskDetailQuery(raw, clientConfig.enabledClients) });
 route("/api/users/teams", (from, to) => q.userTeams(from, to, clientConfig.enabledClients), { client: null, team: false });
+// Per-user devices from the verified ingest identity; names come from the device registry.
+const deviceNames = createDeviceNames({ lookup: collectorFeature.lookupDevice });
+route("/api/users/devices", (from, to, raw) => userDevices(from, to, raw, clientConfig.enabledClients,
+  { names: deviceNames, maskNames: piiMaskEnabled }),
+  { client: null, warm: false, team: false, validate: (raw) => validateDeviceQuery(raw, clientConfig.enabledClients) });
 
 // 2026-08-11 스펙 동기화 — STEP 2/3/4 신규 패널. traces beta(권한 대기/TTFT)는 아직 라이브
 // 데이터가 없을 수 있어 warm: false(빈 결과를 매 사이클 워밍하는 낭비를 피함) — 데이터가

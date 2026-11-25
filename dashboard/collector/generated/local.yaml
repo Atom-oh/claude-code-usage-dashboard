@@ -25,6 +25,8 @@ processors:
       - key: user.email
         value: "${env:CCDASH_BASE_CLAUDE_USER_ID:-}"
         action: insert
+      - key: ccdash.device
+        action: delete
 
   filter/metrics:
     error_mode: ignore
@@ -88,6 +90,7 @@ processors:
           - set(attributes["client"], "codex")
           - set(attributes["user.email"], "${env:CCDASH_BASE_CODEX_USER_ID:-}") where "${env:CCDASH_BASE_CODEX_USER_ID:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
           - delete_key(attributes, "experiment.group")
+          - delete_key(attributes, "ccdash.device")
     metric_statements:
       - context: resource
         statements: *codex_resource

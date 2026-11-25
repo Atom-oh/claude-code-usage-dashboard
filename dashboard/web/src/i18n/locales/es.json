@@ -2102,5 +2102,11 @@
   "me856b9bd3615": "Confirmar eliminación",
   "m069e15f08097": "Eliminando…",
   "m90ffc3b370ce": "Se eliminó {0} de la lista.",
-  "mc68977f8db92": "No se pudo eliminar el dispositivo. Inténtalo de nuevo."
+  "mc68977f8db92": "No se pudo eliminar el dispositivo. Inténtalo de nuevo.",
+  "me3299f2d5fed": "Dispositivo",
+  "m2d70d433657d": "{0} sesiones sin información del dispositivo: datos anteriores al registro del dispositivo o recopilados por otra vía.",
+  "maedd5145c50e": "Dispositivo eliminado",
+  "m271e41a65967": "No se pudieron cargar los nombres de los dispositivos; se muestran los ID.",
+  "m857c85e0d963": "Se muestran solo los {0} dispositivos más recientes.",
+  "m13932a26bb5d": "Solo se pueden distinguir los registros recibidos de dispositivos registrados a través del recopilador del dispositivo."
 }
