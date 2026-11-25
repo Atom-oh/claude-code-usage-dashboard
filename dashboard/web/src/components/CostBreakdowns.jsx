@@ -132,7 +132,7 @@ export default function CostBreakdowns({ clients, data, loading, error, empty, c
         || effortCoverage?.limited_sections?.includes("effort"));
       return <div key={client} className="grid items-start gap-4 md:grid-cols-2 2xl:grid-cols-4">
         <CostBreakdownCard title={suffix(translate("m90ba8e3e4a0d"), client)}
-          subtitle={translate(client === "claude" ? "me2275055beed" : "m5cdd90cc8878")}
+          subtitle={translate(client === "claude" ? "mb66c63b3dc49" : "m5cdd90cc8878")}
           loading={loading} error={error} empty={clientEmpty}>
           <TokenTypeCosts parts={data?.token_type_cost_usd?.[client]} client={client} />
         </CostBreakdownCard>

@@ -111,6 +111,13 @@ function usageScope(row, model = row.model || "") {
   return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
 }
 
+// Claude counters carry email and no project, even when request logs identify a
+// user by enduser.id. Compare only dimensions both sources actually record.
+function claudeCounterScope(row, email) {
+  return JSON.stringify([row.session || ["unidentified", row.scope_t ?? row.t],
+    email || "", row.model || "", row.backend || "unknown"]);
+}
+
 // Exported for token economics (clientTokenEconomics.js), which prices the same counter rows.
 export { claudeUsage as priceClaudeUsage };
 function claudeUsage(row) {
@@ -316,7 +323,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
   const requiringUsage = new Set(), requiringSessions = new Set();
   const claudeRequests = new Set();
   for (const row of records) {
-    if (costView && row.client === "claude" && Number(row.component_request)) claudeRequests.add(usageScope(row));
+    if (costView && row.client === "claude" && Number(row.component_request)) claudeRequests.add(claudeCounterScope(row, row.component_user));
     if (row.client !== "codex") continue;
     if (!isRejectedRequestGroup(row)) {
       requiringUsage.add(usageScope(row));
@@ -363,7 +370,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     if (costView) {
       const parts = costParts.get(row.client);
       if (row.client === "codex" && (usage || missingScope)) addCostParts(parts, usage?.cost_parts);
-      if (row.client === "claude" && usage && (usage.tokens > 0 || usage.cost_usd > 0) && !claudeRequests.has(scope))
+      if (row.client === "claude" && usage && (usage.tokens > 0 || usage.cost_usd > 0) && !claudeRequests.has(claudeCounterScope(row, row.user)))
         parts.partial = true;
       if (row.client === "claude" && Number(row.component_request))
         addCostParts(parts, claudeRequestParts(row, prices));
@@ -424,6 +431,12 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     if (costView && row.request_rejections_only) costParts.set(row.client, {
       input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWriteUnknown: 0, partial: false,
     });
+    if (costView) {
+      // Keep the same USD precision as primary spend after summing all rows.
+      // Raw completions and stored facts can arrive in different orders.
+      const parts = costParts.get(row.client);
+      for (const key of Object.keys(parts)) if (key !== "partial") parts[key] = round(parts[key]);
+    }
     return { ...row, observed_input: observedInput(target),
       observed_token_parts: finishObservedTokenParts(target._tokenParts, {
         // ADR-016: identified rejection-only scopes have zero recorded completion usage.

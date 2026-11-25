@@ -2110,10 +2110,10 @@
   "m857c85e0d963": "Se muestran solo los {0} dispositivos más recientes.",
   "m13932a26bb5d": "Solo se pueden distinguir los registros recibidos de dispositivos registrados a través del recopilador del dispositivo.",
   "m90ba8e3e4a0d": "Costo estimado por tipo de token",
-  "me2275055beed": "Calculado a partir del número de tokens en los registros de solicitudes y las tarifas del modelo. El total de escrituras en caché también incluye importes con TTL sin clasificar.",
   "m5cdd90cc8878": "Calculado a partir del número de tokens en los registros de finalización y las tarifas del modelo. No se registra el TTL de las escrituras en caché.",
   "m880f9acdb506": "Escritura en caché de 5 minutos",
   "ma29a2cd6a629": "Escritura en caché de 1 hora",
   "m79a9491ccd6b": "TTL sin clasificar",
-  "mb3e0c44fa3c5": "Costo calculado solo para algunas solicitudes."
+  "mb3e0c44fa3c5": "Costo calculado solo para algunas solicitudes.",
+  "mb66c63b3dc49": "Estimación calculada a partir del número de tokens en los registros de solicitudes y los precios unitarios del modelo; puede diferir del coste total indicado por Claude Code. El total de escrituras en caché también incluye importes sin clasificar por TTL."
 }

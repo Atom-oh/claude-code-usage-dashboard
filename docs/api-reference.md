@@ -259,7 +259,8 @@ The response echoes `view="cost"`. It omits `by_project`, `tools`, and row field
 `output`, `cacheRead` and `cacheWrite` USD. Codex uses deduplicated completions.
 Claude uses request logs and model rates, independently of its reported spend.
 `cacheWrite5m` and `cacheWrite1h` require observed splits and applicable rates.
-`cacheWriteUnknown` prices the remainder using the applicable write rate.
+`cacheWriteUnknown` prices remaining Anthropic writes at the configured assumed TTL rate
+(`PRICING_CACHE_WRITE_TTL`), and other writes at the applicable model write rate.
 The three write amounts are subsets of `cacheWrite`. Absent values are unavailable.
 `partial` marks detected usage gaps or unpriceable requests.
 

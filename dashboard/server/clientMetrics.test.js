@@ -7,6 +7,19 @@ const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", sessio
   project: "fixture", context_tier: "short", count: 1, input_tokens_total: 100, cache_read_tokens: 40,
   cache_write_tokens: 11, output_tokens: 30, reasoning_tokens: 10, invalid: 0 };
 
+test("Claude cost coverage matches request logs on the counter email and ignores project", () => {
+  const counter = { ...event, client: "claude", model: "claude-sonnet-5", backend: "anthropic",
+    user: "", project: "", input_tokens: 1, reported_cost: 1 };
+  const log = { ...counter, kind: "request", project: "project-a", user: "device-id",
+    component_user: "", component_request: 1, component_model: counter.model, component_valid: 1,
+    component_input: 1, component_output: 0, component_read: 0, component_write: 0 };
+  const partial = request => foldClientMetrics([counter, request], ["claude"], undefined,
+    { costView: true }).token_type_cost_usd.claude.partial;
+  assert.equal(partial(log), false);
+  assert.equal(partial({ ...log, component_user: "other@example.invalid" }), true);
+  assert.equal(partial({ ...log, session: "other-session" }), true);
+});
+
 test("cost profile adds user/model/backend amounts without changing totals or counting sessions per model", () => {
   const records = [
     event,
