@@ -33,8 +33,10 @@ still needs the token's secret part. The device receiver deletes any client-sent
 metrics it only deletes a client-sent value: setting a new resource attribute would split
 cumulative series that are running at rollout. Only dashboard pods reach the receiver
 (network policy), so for rows that came through device ingestion the value is
-server-verified, unlike `user.email`. Rows written to ClickHouse by other paths, such as
-legacy collectors with direct insert credentials, are not constrained by it. The user
+server-verified, unlike `user.email`. The repository's other collector configurations
+(`collector-config.yaml` and the generated `local.yaml`) delete a client-sent value, so
+honest participant collectors cannot claim a device. Anyone holding ClickHouse insert
+credentials, as participant collectors on the direct path do, can still write any value. The user
 detail drawer lists devices from it (`/api/users/devices`), with registry names only while
 the PII mask is off. Data from before this change, or from other paths, has no device.
 During the receiver rollout, a batch retried across the change can be stored once without

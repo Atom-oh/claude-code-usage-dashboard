@@ -19,6 +19,8 @@ processors:
       - key: experiment.group
         value: ${env:EXPERIMENT_GROUP:-unknown}
         action: insert
+      - key: ccdash.device
+        action: delete
 
   filter/metrics:
     error_mode: ignore
@@ -75,6 +77,7 @@ processors:
           - set(attributes["client"], "codex")
           - set(attributes["user.email"], "${env:CODEX_DEFAULT_USER_EMAIL:-}") where "${env:CODEX_DEFAULT_USER_EMAIL:-}" != "" and (attributes["user.email"] == nil or attributes["user.email"] == "") and (attributes["enduser.id"] == nil or attributes["enduser.id"] == "")
           - delete_key(attributes, "experiment.group")
+          - delete_key(attributes, "ccdash.device")
     metric_statements:
       - context: resource
         statements: *codex_resource

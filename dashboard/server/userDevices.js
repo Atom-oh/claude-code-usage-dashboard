@@ -1,7 +1,8 @@
 // Per-user device list. The device receiver sets the `ccdash.device` resource attribute
 // (`<owner>.<id>`) on logs and traces from the ingest proxy's verified device token (see
-// collectorRoutes.js and scripts/sync-collector-package.py), replacing any client-sent value.
-// Rows written to ClickHouse by other paths are not constrained by it. Data from before the
+// collectorRoutes.js and scripts/sync-collector-package.py), replacing any client-sent value;
+// the other collector configurations delete it. A writer with ClickHouse insert credentials
+// is not constrained by it. Data from before the
 // stamp, or from paths outside device ingestion, has no device: those sessions are counted as
 // unattributed, never assigned a guessed device.
 import { query as defaultQuery, toChDateTime } from "./clickhouse.js";
