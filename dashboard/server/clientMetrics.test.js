@@ -20,6 +20,27 @@ test("Claude cost coverage matches request logs on the counter email and ignores
   assert.equal(partial({ ...log, session: "other-session" }), true);
 });
 
+test("unpriced counter without request evidence marks the known Claude request subtotal partial", () => {
+  const counter = { ...event, client: "claude", input_tokens: 0, output_tokens: 0,
+    cache_read_tokens: 0, cache_write_tokens: 0, reported_cost: null, token_observed: 0 };
+  const known = { ...event, client: "claude", kind: "request", session: "priced",
+    component_request: 1, component_model: "claude-sonnet-5", component_valid: 1,
+    component_input: 100, component_output: 0, component_read: 0, component_write: 0 };
+  const fold = rows => foldClientMetrics(rows, ["claude"], undefined, { costView: true }).token_type_cost_usd.claude;
+  const complete = fold([known]);
+  assert.ok(complete.input > 0);
+  assert.deepEqual(fold([known, counter]), { ...complete, partial: true });
+  assert.deepEqual(fold([known, { ...counter, token_observed: 1 }]), { ...complete, partial: true });
+  assert.deepEqual(fold([known, { ...counter, token_observed: 1, reported_cost: 0 }]), complete);
+});
+
+test("cost components retain the last representable subtotal on overflow", async () => {
+  const { addCostParts } = await import("./tokenTypeCosts.js");
+  const subtotal = { input: 1, output: 2, partial: false };
+  addCostParts(subtotal, { input: 4, output: Number.MAX_VALUE });
+  assert.deepEqual(subtotal, { input: 1, output: 2, partial: true });
+});
+
 test("cost profile adds user/model/backend amounts without changing totals or counting sessions per model", () => {
   const records = [
     event,

@@ -370,7 +370,9 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     if (costView) {
       const parts = costParts.get(row.client);
       if (row.client === "codex" && (usage || missingScope)) addCostParts(parts, usage?.cost_parts);
-      if (row.client === "claude" && usage && (usage.tokens > 0 || usage.cost_usd > 0) && !claudeRequests.has(claudeCounterScope(row, row.user)))
+      if (row.client === "claude" && usage
+        && (usage.tokens !== 0 || usage.cost_usd !== 0 || Number(row.token_observed ?? 1) === 0 || Number(row.token_missing) > 0)
+        && !claudeRequests.has(claudeCounterScope(row, row.user)))
         parts.partial = true;
       if (row.client === "claude" && Number(row.component_request))
         addCostParts(parts, claudeRequestParts(row, prices));

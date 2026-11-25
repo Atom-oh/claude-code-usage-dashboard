@@ -261,7 +261,8 @@ Claude uses request logs and model rates, independently of its reported spend.
 `cacheWrite5m` and `cacheWrite1h` require observed splits and applicable rates.
 `cacheWriteUnknown` prices remaining Anthropic writes at the configured assumed TTL rate
 (`PRICING_CACHE_WRITE_TTL`), and other writes at the applicable model write rate.
-The three write amounts are subsets of `cacheWrite`. Absent values are unavailable.
+The three write amounts are subsets of `cacheWrite`, rounded independently to
+12 decimal places. Codex reports no TTL split. Absent values are unavailable.
 `partial` marks detected usage gaps or unpriceable requests.
 
 It adds `by_user_model`, grouped by `client`, raw `user` (`""` when absent), `model`,

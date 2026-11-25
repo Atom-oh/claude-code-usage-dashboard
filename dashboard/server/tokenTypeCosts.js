@@ -49,7 +49,13 @@ export function claudeRequestParts(row, prices) {
 }
 
 export function addCostParts(target, parts) {
-  if (!parts) { target.partial = true; return; }
+  // Keep the previous known subtotal if a request would overflow the USD
+  // precision used by the response. Never accept only part of one request.
+  if (!parts || Object.entries(parts).some(([key, value]) =>
+    value != null && !Number.isFinite(((target[key] ?? 0) + value) * 1e12))) {
+    target.partial = true;
+    return;
+  }
   for (const [key, value] of Object.entries(parts)) {
     if (value != null) target[key] = (target[key] ?? 0) + value;
   }
