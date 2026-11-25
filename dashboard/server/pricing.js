@@ -9,7 +9,7 @@ import { claudePricing } from "./priceCatalog.js";
 // 0.025x, opus-5-5는 0.05x인 예외라 값을 명시한다(아래 주석). 아래 단가는 global(=1st-party) 기준이다.
 // Bedrock 리전/지역 엔드포인트(us./eu./apac./jp./au./in. 프로파일, 접두사 없는 anthropic.* in-region)는
 // Claude 4.5+ 모델에 10% 할증이 붙는다(pricing 페이지, 2026-10-02 확인). computeCost는 원본 모델 ID를
-// 받을 때만 regionalMultiplier()를 적용한다 — 현재는 Codex의 Claude 단가표 fallback뿐이다. Claude
+// 받을 때만 regionalMultiplier()를 적용한다 — Codex의 Claude 단가표 fallback과 요청 로그의 유형별 비용이 원본 ID를 사용한다. Claude
 // 클라이언트 행과 withComputedCost/tierCosts/costAtTtl 진단은 정규화된 ID로 오므로 global 단가로 남는다.
 // PRICING_JSON 요율도 global 기준으로 해석되어 리전 경로에는 할증이 더해진다. us-gov.는 GovCloud 별도
 // 요율이라 할증을 추정하지 않는다.
@@ -228,11 +228,13 @@ export function computeCost(model, backend, tokens) {
   return Number.isFinite(amount) ? amount : null;
 }
 
-export function claudeCostParts(model, backend, tokens, write5m = null, write1h = null) {
+export function claudeCostParts(model, backend, tokens, write5m = null, write1h = null, contextMultiplier = 1) {
   const current = claudePricing();
   const p = lookup(current, model, backend);
   if (!p) return null;
-  const scale = regionalMultiplier(model) / 1e6;
+  // Operator overrides specify a flat price for all contexts.
+  const tier = current.overriddenModels.includes(normalizeModelId(model)) ? 1 : contextMultiplier;
+  const scale = regionalMultiplier(model) * tier / 1e6;
   const unknown = tokens.cacheWrite - (write5m ?? 0) - (write1h ?? 0);
   const cacheWriteUnknown = unknown * effectiveCacheWrite(current, p) * scale;
   const cacheWrite5m = write5m === null ? null : write5m * p.cacheWrite * scale;

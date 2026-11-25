@@ -1338,6 +1338,23 @@ test("real ClickHouse client aggregation preserves transport identity and counte
       assert.ok(Math.abs(parts.cacheWrite - parts.cacheWrite5m - parts.cacheWrite1h - parts.cacheWriteUnknown) < 1e-12);
       assert.equal(parts.partial, true);
     });
+    await t.test("Claude Haiku 5.5 prices both sides of the inclusive 100K boundary before folding", async () => {
+      const user = "haiku-cost@example.invalid";
+      const attrs = { model: "us.anthropic.claude-haiku-5-5", input_tokens: "99900", output_tokens: "10",
+        cache_read_tokens: "40", cache_creation_tokens: "60", cache_creation_5m_tokens: "20",
+        cache_creation_1h_tokens: "40" };
+      await insertLogs([log(8200, "api_request", attrs, { "user.email": user }),
+        log(8201, "api_request", { ...attrs, input_tokens: "99901" }, { "user.email": user })]);
+      const result = await overview({ client: "claude", userExact: user, view: "cost" }, ["claude"]);
+      const parts = result.token_type_cost_usd.claude;
+      const usd = (actual, microUsd) => assert.ok(Math.abs(actual - microUsd / 1e6) < 1e-12, String(actual));
+      usd(parts.input, 99900 * 0.11 + 99901 * 0.55);
+      usd(parts.output, 10 * (0.55 + 2.75));
+      usd(parts.cacheRead, 40 * (0.011 + 0.055));
+      usd(parts.cacheWrite5m, 20 * (0.1375 + 0.6875));
+      usd(parts.cacheWrite1h, 40 * (0.22 + 1.10));
+      assert.equal(parts.cacheWriteUnknown, 0);
+    });
     await t.test("a 90-day heatmap survives more than 50000 Claude session rows", async () => {
       await db.command({ query: `INSERT INTO claude_code.otel_metrics_sum
         (ResourceAttributes, Attributes, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic)
