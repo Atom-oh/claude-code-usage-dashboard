@@ -1,5 +1,5 @@
 import { observedTokenPair } from "./observedTokens.js";
-import { computeCost as claudeComputedCost } from "./pricing.js";
+import { claudeCostParts, computeCost as claudeComputedCost } from "./pricing.js";
 
 // A model whose rates do not change with context length: the same rates for both tiers.
 const flat = (rates) => ({ short: rates, long: rates });
@@ -420,7 +420,7 @@ function count(value) {
   return Number.isSafeInteger(n) && n >= 0 ? n : null;
 }
 
-export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
+export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING, includeParts = false) {
   const input = count(row.input_tokens_total);
   let read = count(row.cache_read_tokens);
   let write = count(row.cache_write_tokens);
@@ -450,11 +450,11 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
     ? claudeComputedCost(rawModel, row.backend, { input: input - read - write, output, cacheRead: read, cacheWrite: write })
     : null;
   const available = valid && knownBackend && validScope && (rates || claudeCost !== null);
-  const amount = available
-    ? rates ? ((input - read - write) * rates.input + read * rates.cacheRead
-      + write * rates.cacheWrite + output * rates.output) / 1e6
-      : claudeCost
-    : null;
+  const inputAmount = rates && (input - read - write) * rates.input;
+  const readAmount = rates && read * rates.cacheRead;
+  const writeAmount = rates && write * rates.cacheWrite;
+  const outputAmount = rates && output * rates.output;
+  const amount = available ? (rates ? (inputAmount + readAmount + writeAmount + outputAmount) / 1e6 : claudeCost) : null;
   const rounded = amount === null ? null : Math.round(amount * 1e12) / 1e12;
   const cost = Number.isFinite(rounded) ? rounded : null;
   // One reason per unpriced response, checked in this order. A known model without a rate
@@ -472,6 +472,11 @@ export function priceCodexUsage(row, prices = DEFAULT_CODEX_PRICING) {
     cache_read_tokens: read, cache_write_tokens: write, output_tokens: output,
     reasoning_tokens: reasoning, tokens: valid ? input + output : null,
     observed_tokens: observedTokenPair(row.input_tokens_total, row.output_tokens),
+    ...(includeParts ? { cost_parts: cost === null ? null : rates ? {
+      input: inputAmount / 1e6, output: outputAmount / 1e6,
+      cacheRead: readAmount / 1e6, cacheWrite: writeAmount / 1e6,
+      cacheWriteUnknown: writeAmount / 1e6,
+    } : claudeCostParts(rawModel, row.backend, { input: input - read - write, output, cacheRead: read, cacheWrite: write }) } : {}),
     cost_usd: cost,
     cost_basis: "aws_list_estimate",
     ...(cost === null ? {} : !rates ? { price_source: "claude_table" }

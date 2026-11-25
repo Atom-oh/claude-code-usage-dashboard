@@ -16,6 +16,15 @@ test("Codex prices cache subsets once and includes reasoning only through output
   assert.equal(row.unpriced, false);
 });
 
+test("token type USD uses the same per-completion rates and keeps write TTL unclassified", () => {
+  const row = priceCodexUsage(usage, DEFAULT_CODEX_PRICING, true);
+  const { input, output, cacheRead, cacheWrite, cacheWriteUnknown } = row.cost_parts;
+  assert.deepEqual([input, output, cacheRead, cacheWrite], [49 * 11, 30 * 55, 40 * 1.1, 11 * 13.75].map(n => n / 1e6));
+  assert.equal(cacheWriteUnknown, cacheWrite);
+  assert.ok(Math.abs(input + output + cacheRead + cacheWrite - row.cost_usd) < 1e-12);
+  assert.equal(priceCodexUsage({ ...usage, reasoning_tokens: 31 }, DEFAULT_CODEX_PRICING, true).cost_parts, null);
+});
+
 test("observed tokens use the input/output pair independently of pricing and subset validation", () => {
   for (const patch of [
     {}, { model: "openai.unknown" }, { cache_write_tokens: undefined },

@@ -7,6 +7,40 @@ const event = { client: "codex", kind: "usage", t: "2026-09-14 10:00:00", sessio
   project: "fixture", context_tier: "short", count: 1, input_tokens_total: 100, cache_read_tokens: 40,
   cache_write_tokens: 11, output_tokens: 30, reasoning_tokens: 10, invalid: 0 };
 
+test("Claude cost coverage matches request logs on the counter email and ignores project", () => {
+  const counter = { ...event, client: "claude", model: "claude-sonnet-5", backend: "anthropic",
+    user: "", project: "", input_tokens: 1, reported_cost: 1 };
+  const log = { ...counter, kind: "request", project: "project-a", user: "device-id",
+    component_user: "", component_request: 1, component_model: counter.model, component_valid: 1,
+    component_input: 1, component_output: 0, component_read: 0, component_write: 0 };
+  const partial = request => foldClientMetrics([counter, request], ["claude"], undefined,
+    { costView: true }).token_type_cost_usd.claude.partial;
+  assert.equal(partial(log), false);
+  assert.equal(partial({ ...log, component_user: "other@example.invalid" }), true);
+  assert.equal(partial({ ...log, session: "other-session" }), true);
+});
+
+test("unpriced counter without request evidence marks the known Claude request subtotal partial", () => {
+  const counter = { ...event, client: "claude", input_tokens: 0, output_tokens: 0,
+    cache_read_tokens: 0, cache_write_tokens: 0, reported_cost: null, token_observed: 0 };
+  const known = { ...event, client: "claude", kind: "request", session: "priced",
+    component_request: 1, component_model: "claude-sonnet-5", component_valid: 1,
+    component_input: 100, component_output: 0, component_read: 0, component_write: 0 };
+  const fold = rows => foldClientMetrics(rows, ["claude"], undefined, { costView: true }).token_type_cost_usd.claude;
+  const complete = fold([known]);
+  assert.ok(complete.input > 0);
+  assert.deepEqual(fold([known, counter]), { ...complete, partial: true });
+  assert.deepEqual(fold([known, { ...counter, token_observed: 1 }]), { ...complete, partial: true });
+  assert.deepEqual(fold([known, { ...counter, token_observed: 1, reported_cost: 0 }]), complete);
+});
+
+test("cost components retain the last representable subtotal on overflow", async () => {
+  const { addCostParts } = await import("./tokenTypeCosts.js");
+  const subtotal = { input: 1, output: 2, partial: false };
+  addCostParts(subtotal, { input: 4, output: Number.MAX_VALUE });
+  assert.deepEqual(subtotal, { input: 1, output: 2, partial: true });
+});
+
 test("cost profile adds user/model/backend amounts without changing totals or counting sessions per model", () => {
   const records = [
     event,
@@ -18,6 +52,9 @@ test("cost profile adds user/model/backend amounts without changing totals or co
   const costs = foldClientMetrics(records, ["claude", "codex"], undefined, { costView: true });
   assert.equal(ordinary.by_user_model, undefined);
   assert.equal(costs.by_user_model.length, 3);
+  assert.deepEqual(costs.token_type_cost_usd.claude, { partial: true });
+  assert.equal(costs.token_type_cost_usd.codex.partial, true);
+  assert.ok(costs.token_type_cost_usd.codex.input > 0);
   assert.equal(costs.totals.cost_usd, ordinary.totals.cost_usd);
   assert.equal(costs.totals.sessions, 2);
   const unknown = costs.by_user_model.find(row => row.model === "openai.unpriced");
@@ -794,7 +831,8 @@ test("cost folds preserve coverage, tiers, identities and idle buckets while omi
     expected.totals = trim(expected.totals);
     for (const key of ["by_client", "by_user", "by_model", "by_model_time", "by_user_time", "timeseries"])
       expected[key] = expected[key].map(trim);
-    const { by_user_model, ...existingCost } = cost;
+    const { by_user_model, token_type_cost_usd, ...existingCost } = cost;
+    assert.deepEqual(Object.keys(token_type_cost_usd), modelTimeClients);
     assert.deepEqual(existingCost, { ...expected, view: "cost" });
     assert.ok(Array.isArray(by_user_model));
     assert.ok(by_user_model.every(row => fields.every(field => !Object.hasOwn(row, field))));

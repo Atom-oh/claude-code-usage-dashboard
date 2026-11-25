@@ -78,6 +78,26 @@ function InputCache({ row }) {
   </>;
 }
 
+function TokenTypeCosts({ parts, client }) {
+  const _locale = useLocale();
+  if (parts?.input == null) return <p className="text-sm text-ink-500">{translate("me4559fce2ced")}</p>;
+  const rows = [
+    ["input", "mc43da268406e"], ["output", "m13c53880c24e"],
+    ["cacheRead", "m12be3da02b6d"], ["cacheWrite", "m1be0e1388dc5"],
+  ];
+  if (client === "claude") rows.push(["cacheWrite5m", "m880f9acdb506"],
+    ["cacheWrite1h", "ma29a2cd6a629"], ["cacheWriteUnknown", "m79a9491ccd6b"]);
+  return <>
+    {parts.partial && <p className="mb-2 text-xs text-warning-text">{translate("mb3e0c44fa3c5")}</p>}
+    <dl className="divide-y divide-ink-100 text-sm">
+      {rows.map(([key, label], index) => <div key={key}
+        className={`flex justify-between gap-3 py-1.5 ${index >= 4 ? "pl-4 text-xs text-ink-500" : ""}`}>
+        <dt>{translate(label)}</dt><dd className="tabular">{formatClientCost(parts[key])}</dd>
+      </div>)}
+    </dl>
+  </>;
+}
+
 const backendLabel = (backend) => backend === "unknown" ? translate("mf3637bf5089f") : backend;
 const modelLabel = (row) => [row.model || translate("m5ac69470a0da"), backendLabel(row.backend) || translate("mf3637bf5089f")].join(" · ");
 const modelLegend = (row) => <>
@@ -110,7 +130,12 @@ export default function CostBreakdowns({ clients, data, loading, error, empty, c
       const effortCoverage = effortApi?.data?.coverage?.logs;
       const effortLimited = client === "codex" && (effortCoverage?.status === "limited"
         || effortCoverage?.limited_sections?.includes("effort"));
-      return <div key={client} className="grid items-start gap-4 xl:grid-cols-3">
+      return <div key={client} className="grid items-start gap-4 md:grid-cols-2 2xl:grid-cols-4">
+        <CostBreakdownCard title={suffix(translate("m90ba8e3e4a0d"), client)}
+          subtitle={translate(client === "claude" ? "mb66c63b3dc49" : "m5cdd90cc8878")}
+          loading={loading} error={error} empty={clientEmpty}>
+          <TokenTypeCosts parts={data?.token_type_cost_usd?.[client]} client={client} />
+        </CostBreakdownCard>
         <CostBreakdownCard title={suffix(translate("m05e49b4b2c5c"), client)}
           subtitle={translate("m5854aaf94ba8")}
           loading={loading} error={error} empty={clientEmpty || modelRows.length === 0}>

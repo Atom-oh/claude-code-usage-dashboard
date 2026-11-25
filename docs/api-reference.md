@@ -255,6 +255,19 @@ is separate from the default view. Cost, token coverage, populations, rejected-r
 evidence, effective bounds and exact-filter acknowledgments retain the same semantics.
 The response echoes `view="cost"`. It omits `by_project`, `tools`, and row fields `api_errors`, `tool_calls`,
 `tool_errors`, `request_duration_ms`, `ttft_ms`; omitted diagnostics are not measured zeros.
+`token_type_cost_usd` maps each selected client to estimated `input` (uncached),
+`output`, `cacheRead` and `cacheWrite` USD. Codex uses deduplicated completions.
+Claude uses request logs and model rates, independently of its reported spend.
+Raw Bedrock model IDs retain regional pricing. Haiku 5.5 switches to long-context
+prices above 100,000 input tokens per request (including cache reads and writes).
+Explicit Claude model price overrides remain flat across contexts.
+`cacheWrite5m` and `cacheWrite1h` require observed splits and applicable rates.
+`cacheWriteUnknown` prices remaining Anthropic writes at the configured assumed TTL rate
+(`PRICING_CACHE_WRITE_TTL`), and other writes at the applicable model write rate.
+The three write amounts are subsets of `cacheWrite`, rounded independently to
+12 decimal places. Codex reports no TTL split. Absent values are unavailable.
+`partial` marks detected usage gaps or unpriceable requests.
+
 It adds `by_user_model`, grouped by `client`, raw `user` (`""` when absent), `model`,
 `backend` and, for Claude, the inferred session `channel` (`bedrock`/`enterprise`/`unknown`),
 using the same bounded records and cost accumulator as `by_user`.

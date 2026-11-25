@@ -5,6 +5,7 @@ import { priceCodexUsage, codexRateModelColumns } from "./codexPricing.js";
 import { codexPrices } from "./priceCatalog.js";
 import { observePricingModels } from "./pricingDiscovery.js";
 import { GROUP_CTE, GROUP_EXPR, claudeBackendSql } from "./grouping.js";
+import { claudeRequestCostSql, claudeRequestParts, addCostParts } from "./tokenTypeCosts.js";
 import { clientQueryBatch } from "./clientQueryBatch.js";
 import { normalizeModelId, computeCost } from "./pricing.js";
 import { isNonAnthropicModel } from "./nonAnthropicCost.js";
@@ -108,6 +109,13 @@ function usageScope(row, model = row.model || "") {
   // Unidentified records match only within their native bucket (scope_t), whatever the display bucket.
   const identity = [row.client, row.session || ["unidentified", row.scope_t ?? row.t], row.user || "", row.project || ""];
   return JSON.stringify(model === null ? identity : [...identity, row.backend || "unknown", model]);
+}
+
+// Claude counters carry email and no project, even when request logs identify a
+// user by enduser.id. Compare only dimensions both sources actually record.
+function claudeCounterScope(row, email) {
+  return JSON.stringify([row.session || ["unidentified", row.scope_t ?? row.t],
+    email || "", row.model || "", row.backend || "unknown"]);
 }
 
 // Exported for token economics (clientTokenEconomics.js), which prices the same counter rows.
@@ -297,6 +305,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
   }
   if ([...budgets.values()].some(rows => rows > ROW_LIMIT))
     throw new ValidationError("too much client data", "narrow the requested date range");
+  const costParts = new Map(clients.map(client => [client, { partial: false }]));
   const totals = accumulator({});
   const byClient = new Map(clients.map((client) => [client, {
     ...accumulator({ client, cost_basis: client === "claude" ? "client_reported" : "aws_list_estimate" }),
@@ -312,7 +321,9 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
   const usageScopes = new Set();
   const usageSessions = new Set();
   const requiringUsage = new Set(), requiringSessions = new Set();
+  const claudeRequests = new Set();
   for (const row of records) {
+    if (costView && row.client === "claude" && Number(row.component_request)) claudeRequests.add(claudeCounterScope(row, row.component_user));
     if (row.client !== "codex") continue;
     if (!isRejectedRequestGroup(row)) {
       requiringUsage.add(usageScope(row));
@@ -355,7 +366,17 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
       && !usageScopes.has(scope)
       && !(row.session && !row.model && usageSessions.has(usageScope(row, null))) ? scope : null;
     if (missingScope) missingUsage.add(missingScope);
-    const usage = row.kind === "usage" ? (row.client === "codex" ? priceCodexUsage(row, prices) : claudeUsage(row)) : null;
+    const usage = row.kind === "usage" ? (row.client === "codex" ? priceCodexUsage(row, prices, costView) : claudeUsage(row)) : null;
+    if (costView) {
+      const parts = costParts.get(row.client);
+      if (row.client === "codex" && (usage || missingScope)) addCostParts(parts, usage?.cost_parts);
+      if (row.client === "claude" && usage
+        && (usage.tokens !== 0 || usage.cost_usd !== 0 || Number(row.token_observed ?? 1) === 0 || Number(row.token_missing) > 0)
+        && !claudeRequests.has(claudeCounterScope(row, row.user)))
+        parts.partial = true;
+      if (row.client === "claude" && Number(row.component_request))
+        addCostParts(parts, claudeRequestParts(row, prices));
+    }
     if (usage) {
       quality.unpriced += usage.unpriced ? Number(row.count || 1) : 0;
       quality.invalid += usage.invalid ? Number(row.invalid || row.count || 1) : 0;
@@ -409,6 +430,15 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
   };
   const by_client = [...byClient.values()].map((target) => {
     const row = finishRow(target);
+    if (costView && row.request_rejections_only) costParts.set(row.client, {
+      input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWriteUnknown: 0, partial: false,
+    });
+    if (costView) {
+      // Keep the same USD precision as primary spend after summing all rows.
+      // Raw completions and stored facts can arrive in different orders.
+      const parts = costParts.get(row.client);
+      for (const key of Object.keys(parts)) if (key !== "partial") parts[key] = round(parts[key]);
+    }
     return { ...row, observed_input: observedInput(target),
       observed_token_parts: finishObservedTokenParts(target._tokenParts, {
         // ADR-016: identified rejection-only scopes have zero recorded completion usage.
@@ -430,7 +460,7 @@ export function foldClientMetrics(records, clients, prices = codexPrices(), { mo
     ...(!costView ? {
       by_project: [...groups.by_project.values()].map(finishRow).sort((a, b) => (b.observed_tokens || 0) - (a.observed_tokens || 0)),
       tools: [...tools.values()].sort((a, b) => b.calls - a.calls),
-    } : { view: "cost", by_user_model: backedRows("by_user_model")
+    } : { view: "cost", token_type_cost_usd: Object.fromEntries(costParts), by_user_model: backedRows("by_user_model")
       .sort((a, b) => (b.cost_usd ?? -1) - (a.cost_usd ?? -1)
         || compareIdentity(a.client, b.client) || compareIdentity(a.user, b.user)
         || compareIdentity(a.model, b.model) || compareIdentity(a.backend, b.backend)) }),
@@ -599,8 +629,10 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
         WHERE team = {clientTeam:String})` : ""}
     GROUP BY t${activitySessions ? ", session" : ""} ORDER BY t`, params };
   }
+  const components = !isCodex && costView ? claudeRequestCostSql(prices, params) : null;
   const sql = `${eventSource}, ${modelSessions} typed AS (
     SELECT *,
+      ${components?.typed || ""}
       ${codexRateModelColumns(prices, params, "priceModel")},
       ${facts ? "" : `multiIf(event_name IN ('codex.sse_event','codex.websocket_event')
           AND a['event.kind'] = 'response.completed'
@@ -643,6 +675,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
     countIf(kind = 'request' AND ${facts ? "rejected" : `
       trimBoth(a['http.response.status_code']) IN (${REJECTED_REQUEST_STATUSES.map(s => `'${s}'`).join(",")})
       AND NOT arrayExists(k -> mapContains(a,k), [${CODEX_USAGE_KEYS.map(k => `'${k}'`).join(",")}])`}) AS rejected_count,
+    ${components?.select || ""}
     ${tokenSums},
     countIf(kind = 'usage' AND NOT (${validUsage})) AS invalid,
     ${costView ? "NULL AS errors, NULL AS duration_ms, NULL AS duration_count" : `countIf(event_name = '${prefix}api_error' OR toInt32OrZero(trimBoth(a['http.response.status_code'])) >= 400
@@ -651,7 +684,7 @@ export function buildCodexQuery(from, to, filters = {}, prices = codexPrices(), 
     countIf(isNotNull(toFloat64OrNull(a['duration_ms'])) AND isFinite(toFloat64OrZero(a['duration_ms']))
       AND toFloat64OrZero(a['duration_ms']) >= 0) AS duration_count`}
   FROM typed WHERE kind != ''
-  GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid, token_pair_valid
+  GROUP BY t, session, user, model, backend, project, kind, tool, context_tier, usage_valid, token_pair_valid${components?.group || ""}
   ), covered AS (
     -- Window only compacted scopes/groups, never raw diagnostic volume. Keep
     -- evidence in this table read and remove markers after evaluating coverage.

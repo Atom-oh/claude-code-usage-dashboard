@@ -17,6 +17,9 @@ invoices, guaranteed billing bounds or evidence of complete telemetry.
 
 ### Added
 
+- Shared Cost shows estimated USD by token type for each client, including observed
+  five-minute and one-hour Claude cache writes and the unclassified remainder.
+
 - Collector owners can delete revoked devices from their list while retaining usage history.
 - The user detail drawer has a **Devices** card that lists the devices a user's logs came
   from, with registered name, OS, clients, sessions and last receipt. For data that comes

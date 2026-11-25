@@ -63,6 +63,11 @@ The Tailwind theme is defined CSS-first in `@theme inline` in
 | `/reliability` | Reliability |
 | `/analytics` | Analytics |
 
+On shared Cost, each client's token-type card prices the observed input, output,
+cache reads and writes. Claude request logs can identify five-minute and one-hour
+writes. Codex completions carry the write count without a TTL. See the
+[API contract](../api-reference.md) for coverage and rounding.
+
 `/settings` (admin, `settings:manage`) is a separate page like `/installation`: it edits the Cognito team
 attribute and labels, previews value counts and shows sync status (stale, `directory_too_large`). Elsewhere,
 labels replace raw team names in display and CSV (filters and URLs keep raw values). While directory teams
